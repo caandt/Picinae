@@ -18,7 +18,7 @@ Ltac destruct_match_in H :=
   repeat match type of H with context[match ?x with _ => _ end] =>
     let e := fresh "e" in destruct x eqn:e
   end.
-Ltac destruct_match_eqn :=
+Ltac destruct_match :=
   repeat match goal with |- context[match ?x with _ => _ end] =>
     let e := fresh "e" in destruct x eqn:e
   end.
@@ -102,13 +102,15 @@ Proof.
   cbv[arm_R] in XS.
   rewrite !N2Z.id in XS.
   replace (Z.to_N _) with (offset) in XS by lia.
-  replace (rn =? 15) with false in XS by lia. replace (rt =? 15) with false in XS by lia. unfold arm_varid in *. remember (a mod _). destruct_match_eqn; try lia;
+  replace (rn =? 15) with false in XS by lia. replace (rt =? 15) with false in XS by lia. unfold arm_varid in *. remember (a mod _). destruct_match; try lia;
   step_stmt XS; destruct XS as [XS _]; step_stmt XS; destruct XS as [XS _]; destruct (s R_E); step_stmt XS; now destruct XS as [[? ?] [? _]].
 Qed.
+(* the t and j flags control the cpu mode (arm/thumb) and the e flag controls endianness *)
 Definition same_flags (s s':store) :=
   s' R_T = s R_T /\
   s' R_JF = s R_JF /\
   s' R_E = s R_E.
+(* an instruction is safe if it never jumps and always preserves t,j,e flags *)
 Definition SafeInst inst :=
   forall a s c' s' x i,
     exec_stmt armc s (arm2il i inst) c' s' x ->
@@ -116,16 +118,17 @@ Definition SafeInst inst :=
 Definition NoJ q := forall_stmts_in_stmt (fun q' : stmt => forall e : exp, q' <> Jmp e) q.
 Definition NoE q := forall_stmts_in_stmt (fun q' : stmt => forall i : N, q' <> Exn i) q.
 Definition NoJE q := NoJ q /\ NoE q.
-Lemma safe:
+Lemma SafeInstNoassign:
   forall i
     (J: forall a, noassign R_JF (arm2il a i))
     (T: forall a, noassign R_T (arm2il a i))
     (E: forall a, noassign R_E (arm2il a i))
     (NJ: forall a, NoJ (arm2il a i)),
-    SafeInst i.
+  SafeInst i.
 Proof.
-  cbv[SafeInst]. intros. repeat split. eapply stmt_xnotaddr. apply H. apply NJ.
-  all: eapply noassign_stmt_same in H; inversion H; now try rewrite H1.
+  cbv[SafeInst]. intros. repeat split.
+    eapply stmt_xnotaddr. apply H. apply NJ.
+    all: eapply noassign_stmt_same in H; inversion H; now try rewrite H1.
 Qed.
 Remark armvnotarmv: forall v v2, v < 15 -> v2 < 15 -> v <> v2 -> arm_varid v <> arm_varid v2.
 Proof. unfold arm_varid. intros. destruct_match; easy || lia. Qed.
@@ -154,18 +157,45 @@ Proof. unfold arm_varid. intros. now destruct_match. Qed.
 Remark armvnotmem': forall v, V_MEM32 <> arm_varid v.
 Proof. unfold arm_varid. intros. now destruct_match. Qed.
 Hint Resolve armvnotarmv armvnotsp armvnotsp' armvnotpc armvnotpc' armvnotj armvnotj' armvnott armvnott' armvnote armvnote' armvnotmem armvnotmem': cfi.
+Lemma noje_seq: forall a b, NoJE a -> NoJE b -> NoJE (a $; b).
+Proof. intros. now destruct H, H0. Qed.
+Lemma for_0_14_noje:
+  forall reg_list f,
+    (forall n m, NoJE (f n m)) -> NoJE (for_0_14 reg_list f).
+Proof.
+  intros. destruct reg_list. easy. simpl. generalize 0 at 1, 0 at 2. induction p. intros. simpl. cbv. apply noje_seq. easy. easy. 
+  intro. simpl. easy. intro. simpl. easy.
+Qed.
+Lemma for_context:
+forall reg_list f c, (forall n m s s' c' x, exec_stmt c s (f n m) c' s' x -> c' = c) ->
+  (forall s s' c' x, exec_stmt c s (for_0_14 reg_list f) c' s' x -> c' = c).
+Proof.
+  intros. destruct reg_list. simpl in H0. inversion H0. easy. simpl in H0. revert H0. generalize 0 at 1, 0 at 2, s. induction p.
+    intros. simpl in H0. inversion H0. subst. now apply H in XS. apply H in XS1. subst. now apply IHp in XS0.
+    intros. simpl in H0. now apply IHp in H0.
+    intros. simpl in H0. now apply H in H0.
+Qed.
+Lemma for_noassign:
+  forall reg_list f v, (forall n m, noassign v (f n m)) -> noassign v (for_0_14 reg_list f).
+Proof.
+  intros. destruct reg_list. simpl. constructor.
+    simpl. generalize 0 at 1, 0 at 2. induction p.
+      intros. simpl. constructor. apply H. apply IHp.
+      intros. simpl. apply IHp.
+      intros. simpl. apply H.
+Qed.
 Lemma str_safe:
   forall rt rn offset,
   SafeInst (STR rt rn offset).
 Proof.
-  intros. apply safe; repeat constructor; discriminate.
+  intros. apply SafeInstNoassign; repeat constructor; discriminate.
 Qed.
 Lemma ldr_safe:
   forall rt rn offset
   (RT: rt <> 15%Z),
   SafeInst (LDR rt rn offset).
 Proof.
-  intros. apply safe;
+  intros. apply SafeInstNoassign;
   cbv [LDR arm2il arm_ls_i_il arm_ls_op_il arm_ls_il];
   repeat constructor; try discriminate; replace (_ =? _) with false by lia;
   repeat constructor; auto with cfi; easy.
@@ -174,13 +204,88 @@ Lemma movw_safe:
   forall rd imm,
   SafeInst (MOVW rd imm).
 Proof.
-  intros. apply safe; repeat constructor; try discriminate; auto with cfi.
+  intros. apply SafeInstNoassign; repeat constructor; try discriminate; auto with cfi.
 Qed.
 Lemma movt_safe:
   forall rd imm,
   SafeInst (MOVT rd imm).
 Proof.
-  intros. apply safe; repeat constructor; try discriminate; auto with cfi.
+  intros. apply SafeInstNoassign; repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma datar_safe:
+  forall op cond S Rn Rd imm5 type Rm
+    (RD: Rd <> 15%Z),
+  SafeInst (ARM_data_r op cond S Rn Rd imm5 type Rm).
+Proof.
+  intros. apply SafeInstNoassign; cbv[arm2il arm_data_r_il arm_data_op_il arm_data_r_shiftc arm_data_r_addwcarry];
+  destruct_match;
+  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
+  destruct_match;
+  repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma datarsr_safe:
+  forall op cond S Rn Rd Rs type Rm
+    (RD: Rd <> 15%Z),
+  SafeInst (ARM_data_rsr op cond S Rn Rd Rs type Rm).
+Proof.
+  intros. apply SafeInstNoassign; cbv[arm2il arm_data_rsr_il arm_data_op_il arm_data_rsr_shiftc arm_data_rsr_addwcarry];
+  destruct_match;
+  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
+  destruct_match;
+  repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma datai_safe:
+  forall op cond S Rn Rd imm12
+    (RD: Rd <> 15%Z),
+  SafeInst (ARM_data_i op cond S Rn Rd imm12).
+Proof.
+  intros. apply SafeInstNoassign; cbv[arm2il arm_data_i_il arm_data_op_il arm_data_i_shiftc arm_data_i_addwcarry];
+  destruct_match;
+  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
+  destruct_match;
+  repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma lsi_safe:
+  forall op cond P U W Rn Rt imm12
+    (R: match op with | ARM_LDR => Rt <> 15%Z | _ => True end),
+  SafeInst (ARM_ls_i op cond P U W Rn Rt imm12).
+Proof.
+  intros. apply SafeInstNoassign; cbv[arm2il arm_ls_i_il arm_ls_op_il arm_ls_il]; destruct_match; try lia; repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma lsr_safe:
+  forall op cond P U W Rn Rt imm5 type Rm
+    (R: match op with | ARM_LDR => Rt <> 15%Z | _ => True end),
+  SafeInst (ARM_ls_r op cond P U W Rn Rt imm5 type Rm).
+Proof.
+  intros. apply SafeInstNoassign; cbv[arm2il arm_ls_r_il arm_ls_op_il arm_ls_il]; destruct_match; try lia; repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma mov_safe:
+  forall rd rm
+  (RT: (rd <> 15%Z)),
+  SafeInst (MOV rd rm).
+Proof.
+  intros. apply SafeInstNoassign;
+  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
+  repeat constructor; auto with cfi; easy.
+Qed.
+Hint Resolve mov_safe: cfi.
+Lemma ldm_safe:
+  forall op cond W Rn register_list
+    (R: N.testbit (Z.to_N register_list) 15 = false),
+  SafeInst (ARM_lsm op cond W Rn register_list).
+Proof.
+  intros. apply SafeInstNoassign; destruct op; repeat constructor; try discriminate;
+  rewrite R; repeat (constructor || discriminate || lia || destruct_match || auto with cfi);
+  apply for_noassign || apply for_0_14_noje; intros; repeat constructor; try discriminate; auto with cfi.
+Qed.
+Lemma stm_safe:
+  forall op cond W Rn register_list
+    (OP: match op with | ARM_STMDA | ARM_STMDB | ARM_STMIA | ARM_STMIB => True | _ => False end),
+  SafeInst (ARM_lsm op cond W Rn register_list).
+Proof.
+  intros. apply SafeInstNoassign; destruct op; repeat constructor; try discriminate;
+  repeat (constructor || discriminate || lia || destruct_match || auto with cfi);
+  apply for_noassign || apply for_0_14_noje; intros; repeat constructor; try discriminate; auto with cfi.
 Qed.
 Lemma exec_ldr:
   forall reg s a c' s' x,
@@ -193,7 +298,7 @@ Proof.
   cbv[LDR arm2il arm_ls_i_il arm_ls_op_il arm_ls_il arm_cond_il arm_cond_exp arm_assign_R arm_MemU] in H1.
   simpl in H1. rewrite !N2Z.id in H1. destruct N.eqb eqn:e; try lia.
   specialize (H0 (arm_varid reg) 32).
-  unfold arm_varid. destruct_match_eqn; try lia; step_stmt H1; destruct H1; step_stmt H1; simpl in H1; destruct H1 as [[? ?] _];
+  unfold arm_varid. destruct_match; try lia; step_stmt H1; destruct H1; step_stmt H1; simpl in H1; destruct H1 as [[? ?] _];
   rewrite H1, N.add_0_r, N.mod_small by (now apply H0); destruct (s R_E); now subst.
 Qed.
 Lemma exec_ldr':
@@ -208,7 +313,7 @@ Proof.
   cbv[LDR arm2il arm_ls_i_il arm_ls_op_il arm_ls_il arm_cond_il arm_cond_exp arm_assign_R arm_MemU] in H2.
   simpl in H2. rewrite !N2Z.id in H2. destruct N.eqb eqn:e; try lia.
   replace (Z.ltb _ _) with true in H2 by lia. simpl in H2. replace (Z.to_N _) with offset in H2 by lia.
-  unfold arm_varid. destruct_match_eqn; try lia; step_stmt H2; destruct H2; step_stmt H2; simpl in H2; destruct H2 as [[? ?] _];
+  unfold arm_varid. destruct_match; try lia; step_stmt H2; destruct H2; step_stmt H2; simpl in H2; destruct H2 as [[? ?] _];
   rewrite H2; destruct (s R_E); now subst.
 Qed.
 Lemma bfx_bound: forall i s s' c' x widthm1 rd lsb rn,
@@ -231,7 +336,7 @@ Qed.
 Lemma reset_temps_update_r:
   forall s s' n v v', reset_temps s (s'[R_PC := v][arm_varid n := v']) = (reset_temps s s')[R_PC := v][arm_varid n := v'].
 Proof.
-  intros. unfold reset_temps, arm_varid. now rewrite reset_vars_fchoose, !fchoose_update_distr, !fchoose_update_l by now destruct_match_eqn.
+  intros. unfold reset_temps, arm_varid. now rewrite reset_vars_fchoose, !fchoose_update_distr, !fchoose_update_l by now destruct_match.
 Qed.
 Lemma exec_lsl:
   forall reg s a c' s' x,
@@ -240,7 +345,7 @@ Lemma exec_lsl:
   reset_temps s s' = s[R_PC := a mod 2^32][arm_varid reg := (s (arm_varid reg) << 2) mod 2 ^ 32] /\ x = None.
 Proof.
   intros. cbv[LSL arm2il arm_data_r_il arm_data_op_il arm_data_r_shiftc DecodeImmShift arm_data_il arm_cond_il arm_cond_exp arm_assign_R arm_R] in H0. simpl in H0. destruct N.eqb eqn:e; try lia.
-  rewrite N2Z.id in H0. unfold arm_varid. destruct_match_eqn; step_stmt H0; destruct H0; step_stmt H0; destruct H0 as [[? ?] ?]; lia || now rewrite H0.
+  rewrite N2Z.id in H0. unfold arm_varid. destruct_match; step_stmt H0; destruct H0; step_stmt H0; destruct H0 as [[? ?] ?]; lia || now rewrite H0.
 Qed.
 Lemma exec_add: forall i s s' c' x reg imm shift,
   (reg < 15)%Z ->
@@ -259,7 +364,7 @@ Proof.
   rewrite Z2N_inj_lor, Z2N_inj_shiftl, N2Z.id, xbits_lor, xbits_shiftl in Heqn0, Heqn by (try apply Z.shiftl_nonneg; lia).
   rewrite xbits_0_j, N.shiftl_0_l, N.lor_0_l, N2Z.id, xbits_0_i, N.mod_small in Heqn by assumption.
   rewrite xbits_0_i, N.mod_small, N2Z.id, xbits_above, N.lor_0_r, N.shiftl_0_r in Heqn0 by assumption.
-  unfold arm_varid. destruct_match_eqn; try lia; cbv[arm_varid arm_R N.eqb] in H2;
+  unfold arm_varid. destruct_match; try lia; cbv[arm_varid arm_R N.eqb] in H2;
   step_stmt H2; destruct H2 as [H2 _]; step_stmt H2; destruct H2 as [[H2 H3] _];
   (split; [clear H3|apply H3]);
   rewrite H2; subst;
@@ -363,34 +468,7 @@ Proof.
       apply XS1.
       inversion XS0. destruct b; [apply XIf with (b:=0)|apply XIf with (b:=1)]; now try constructor.
 Qed.
-Lemma noje_seq: forall a b, NoJE a -> NoJE b -> NoJE (a $; b).
-Proof. intros. now destruct H, H0. Qed.
-Lemma for_0_14_noje:
-  forall reg_list f,
-    (forall n m, NoJE (f n m)) -> NoJE (for_0_14 reg_list f).
-Proof.
-  intros. destruct reg_list. easy. simpl. generalize 0 at 1, 0 at 2. induction p. intros. simpl. cbv. apply noje_seq. easy. easy. 
-  intro. simpl. easy. intro. simpl. easy.
-Qed.
-Lemma for_context:
-forall reg_list f c, (forall n m s s' c' x, exec_stmt c s (f n m) c' s' x -> c' = c) ->
-  (forall s s' c' x, exec_stmt c s (for_0_14 reg_list f) c' s' x -> c' = c).
-Proof.
-  intros. destruct reg_list. simpl in H0. inversion H0. easy. simpl in H0. revert H0. generalize 0 at 1, 0 at 2, s. induction p.
-    intros. simpl in H0. inversion H0. subst. now apply H in XS. apply H in XS1. subst. now apply IHp in XS0.
-    intros. simpl in H0. now apply IHp in H0.
-    intros. simpl in H0. now apply H in H0.
-Qed.
-Lemma for_noassign:
-  forall reg_list f v, (forall n m, noassign v (f n m)) -> noassign v (for_0_14 reg_list f).
-Proof.
-  intros. destruct reg_list. simpl. constructor.
-    simpl. generalize 0 at 1, 0 at 2. induction p.
-      intros. simpl. constructor. apply H. apply IHp.
-      intros. simpl. apply IHp.
-      intros. simpl. apply H.
-Qed.
-Lemma exec_ldm: 
+Lemma exec_ldm:
   forall op cond Rn register_list a s s' c' x W
     (R: N.testbit register_list 15 = true)
     (RN: Rn < 15)
@@ -502,13 +580,13 @@ Proof.
   cbv[arm_R] in XS;
   rewrite !N2Z.id in XS;
   replace (rn =? 15) with false in XS by lia; replace (rt =? 15) with false in XS by lia. remember (Z.to_N _).
-  unfold arm_varid in *. destruct_match_eqn; try lia;
+  unfold arm_varid in *. destruct_match; try lia;
   step_stmt XS;
   destruct XS as [XS _]; step_stmt XS; destruct XS as [XS _]; destruct (s R_E); step_stmt XS; destruct XS as [[? ?] [? _]];
   subst n; unfold msub in H; rewrite <-N.Div0.add_mod_idemp_r , <-msub_0_l, msub_0_l_neg in H;
   unfold toZ in H; rewrite Z2N.id, Z.opp_eq_mul_m1, canonicalZ_mul_l in H by lia; now replace (_ * -1)%Z with offset in H by lia.
   remember (Z.to_N _).
-  unfold arm_varid in *. destruct_match_eqn; try lia;
+  unfold arm_varid in *. destruct_match; try lia;
   step_stmt XS; destruct XS as [XS _]; step_stmt XS; destruct (s R_E); destruct XS as [XS _]; step_stmt XS; destruct XS as [XS _];
   subst n; replace (Z.abs _) with offset in XS by lia; unfold ofZ; now rewrite Z2N.inj_mod, N.Div0.add_mod_idemp_r by lia.
 Qed.
@@ -524,7 +602,7 @@ Proof.
   cbv[arm2il arm_bx_il arm_cond_il arm_cond_exp BXWritePC arm_R] in H1. simpl in H1.
   rewrite N2Z.id in H1. remember (_ mod _).
   change 4 with (2^2) in H0. inversion H0.
-  unfold arm_varid. destruct_match_eqn; try lia; simpl arm_varid in *;
+  unfold arm_varid. destruct_match; try lia; simpl arm_varid in *;
   step_stmt H1; destruct H1; step_stmt H1;
   rewrite N.shiftr_0_r, N.Div0.mul_mod, N.mul_0_r, N.Div0.mod_0_l in H1; destruct H1;
   step_stmt H1; rewrite N.shiftr_div_pow2, <-N.testbit_spec', N.mul_pow2_bits_low in H1 by lia; destruct H1; step_stmt H1; destruct H1 as [[S X] _]; (repeat split; [now rewrite X, H2|..]); now erewrite <-reset_temps_not_temp, S, !update_frame by discriminate.
@@ -540,13 +618,58 @@ Proof.
   cbv[arm2il arm_bx_il arm_cond_il arm_cond_exp BXWritePC arm_R] in H1. simpl in H1.
   rewrite N2Z.id in H1. remember (_ mod _).
   change 4 with (2^2) in H0. inversion H0.
-  unfold arm_varid. destruct_match_eqn; try lia; simpl arm_varid in *;
+  unfold arm_varid. destruct_match; try lia; simpl arm_varid in *;
   step_stmt H1; destruct H1; step_stmt H1;
   rewrite N.shiftr_0_r, N.Div0.mul_mod, N.mul_0_r, N.Div0.mod_0_l in H1; destruct H1;
   step_stmt H1; rewrite N.shiftr_div_pow2, <-N.testbit_spec', N.mul_pow2_bits_low in H1 by lia; destruct H1; step_stmt H1; destruct H1 as [[S X] _]; (repeat split; [now rewrite X, H2|..]); now erewrite <-reset_temps_not_temp, S, !update_frame by discriminate.
 Qed.
 
+Lemma exec_GOTO:
+  forall s l cond src dest c' s' x i,
+    src < 2^30 ->
+    dest < 2^30 ->
+    GOTO l cond (Z.of_N src) (Z.of_N dest) = Some i ->
+    exec_stmt armc s (arm2il (src * 4) i) c' s' x ->
+    (x = Some (Addr (dest * 4)) \/ (x = None /\ cond <> 14%Z)) /\ same_flags s s'.
+Proof.
+  intros s l cond src dest c' s' x i S D G. intros.
+  cbv [GOTO] in G. destruct orb eqn:e in G; try discriminate.
+  remember (_ - _ - _)%Z as offset. unfold Z2, Z_8388608, Z8388607 in *.
+  assert (src * 4 ⊕ 8 ⊕ scast 26 32 (Z.to_N (offset mod 16777216) << 2) .& 4294967292 = dest * 4).
+  {
+    change 2 with (Z.to_N 2) at 2. rewrite <- Z2N_inj_shiftl, Z.shiftl_mul_pow2, <- Zmult_mod_distr_r by lia.
+    change (Z.to_N _) with (ofZ 26 (offset * 4)).
+    unfold scast. rewrite toZ_ofZ by (unfold signed_range; cbn; lia). unfold ofZ.
+    rewrite <- (N2Z.id ((_ + 8) mod _)), <- Z2N.inj_add, N2Z.inj_mod, <- (N2Z.id (_ ^ _)), <- Z2N.inj_mod, <- Zplus_mod by lia.
+    replace (_ + _ * 4)%Z with (Z.of_N (dest * 4)) by lia.
+    rewrite Z2N.inj_mod, 2 N2Z.id, N_land_mod_pow2_move by lia.
+    change (_ mod _) with (N.lnot (2 * (2 * 0 + 1) + 1) 32).
+    rewrite <- N.ldiff_land_low, 2 N.ldiff_odd_r, N.ldiff_0_r. lia.
+    destruct (dest * 4) eqn:E; now try solve [apply N.log2_lt_pow2; lia].
+  }
+  destruct (Z.eq_dec cond 14). subst cond.
+  destruct l; inversion G; subst; cbv [arm2il arm_bl_il arm_b_il] in H; rewrite N.mod_small in H by lia;
+    remember (scast _ _ _) as dsta; remember (src * 4) as srca;
+    step_stmt H; destruct H as [H _];
+    step_stmt H; destruct H as [[? ?] _]; (split; [left; now rewrite H1, H0| repeat split; now erewrite <-reset_temps_not_temp, H, update_frame by discriminate]).
+  destruct l; inversion G; subst; cbv [arm2il arm_bl_il arm_b_il] in H; rewrite N.mod_small in H by lia;
+    remember (scast _ _ _) as dsta; remember (src * 4) as srca; apply forget_cond in H;
+    step_stmt H; destruct H as [H _]; destruct (_ mod _) in H;
+    step_stmt H; destruct H as [[? H] _]; (split; [(now right) || left; now rewrite H, H0|repeat split; now erewrite <-reset_temps_not_temp, H1, update_frame by discriminate]).
+Qed.
+Lemma exec_GOTOz:
+  forall s l cond src dest c' s' x z,
+    src < 2^30 ->
+    dest < 2^30 ->
+    GOTOz l cond (Z.of_N src) (Z.of_N dest) = Some z ->
+    exec_stmt armc s (arm2il (src * 4) (arm_decode z)) c' s' x ->
+    (x = Some (Addr (dest * 4)) \/ (x = None /\ cond <> 14%Z)) /\ same_flags s s'.
+Proof.
+  intros. unfold GOTOz in H1. destruct GOTO eqn:e in H1; try discriminate. apply arm_assemble_eq in H1. rewrite H1 in H2.
+  now apply (exec_GOTO s l cond src dest c' s' x a).
+Qed.
 
+(* returns the old code segment index that the jth instruction of the new code segment belongs to *)
 Fixpoint blockindex (irms: list (list Z)) j :=
   match irms with
   | irm::tail =>
@@ -555,6 +678,7 @@ Fixpoint blockindex (irms: list (list Z)) j :=
       else blockindex tail (j - N_len irm) + 1
   | _ => 0
   end.
+(* is address a the first instruction of an irm? *)
 Fixpoint startsblock (irms: list (list Z)) i' a :=
   match irms with
   | irm::tail =>
@@ -563,11 +687,13 @@ Fixpoint startsblock (irms: list (list Z)) i' a :=
       else startsblock tail (i' + N_len irm) a
   | _ => false
   end.
+(* is address a outside of the new code segment? *)
 Definition outofbounds (irms: list (list Z)) i' a :=
   (a <? i' * 4) || ((i' + N_len_cat irms) * 4 <=? a).
+
 Lemma startsblock_index:
   forall irms i' a,
-    startsblock irms i' a = true -> 
+    startsblock irms i' a = true ->
     exists n,
       lt n (length irms) /\
       (i' + N_len_cat_first n irms) * 4 = a.
@@ -629,71 +755,6 @@ Proof.
     intros. destruct N.eqb eqn:e; unfold outofbounds in *; rewrite !orb_false_iff, concat_cons, length_app in *.
       inversion H. lia.
       apply IHirms in H0. lia. now inversion H.
-Qed.
-
-Lemma exec_GOTO:
-  forall s l cond src dest c' s' x i,
-    src < 2^30 ->
-    dest < 2^30 ->
-    GOTO l cond (Z.of_N src) (Z.of_N dest) = Some i ->
-    exec_stmt armc s (arm2il (src * 4) i) c' s' x ->
-    (x = Some (Addr (dest * 4)) \/ (x = None /\ cond <> 14%Z)) /\ same_flags s s'.
-Proof.
-  intros s l cond src dest c' s' x i S D G. intros.
-  cbv [GOTO] in G. destruct orb eqn:e in G; try discriminate.
-  remember (_ - _ - _)%Z as offset. unfold Z2, Z_8388608, Z8388607 in *.
-  assert (src * 4 ⊕ 8 ⊕ scast 26 32 (Z.to_N (offset mod 16777216) << 2) .& 4294967292 = dest * 4).
-  {
-    change 2 with (Z.to_N 2) at 2. rewrite <- Z2N_inj_shiftl, Z.shiftl_mul_pow2, <- Zmult_mod_distr_r by lia.
-    change (Z.to_N _) with (ofZ 26 (offset * 4)).
-    unfold scast. rewrite toZ_ofZ by (unfold signed_range; cbn; lia). unfold ofZ.
-    rewrite <- (N2Z.id ((_ + 8) mod _)), <- Z2N.inj_add, N2Z.inj_mod, <- (N2Z.id (_ ^ _)), <- Z2N.inj_mod, <- Zplus_mod by lia.
-    replace (_ + _ * 4)%Z with (Z.of_N (dest * 4)) by lia.
-    rewrite Z2N.inj_mod, 2 N2Z.id, N_land_mod_pow2_move by lia.
-    change (_ mod _) with (N.lnot (2 * (2 * 0 + 1) + 1) 32).
-    rewrite <- N.ldiff_land_low, 2 N.ldiff_odd_r, N.ldiff_0_r. lia.
-    destruct (dest * 4) eqn:E; now try solve [apply N.log2_lt_pow2; lia].
-  }
-  destruct (Z.eq_dec cond 14). subst cond.
-  destruct l; inversion G; subst; cbv [arm2il arm_bl_il arm_b_il] in H; rewrite N.mod_small in H by lia;
-    remember (scast _ _ _) as dsta; remember (src * 4) as srca;
-    step_stmt H; destruct H as [H _];
-    step_stmt H; destruct H as [[? ?] _]; (split; [left; now rewrite H1, H0| repeat split; now erewrite <-reset_temps_not_temp, H, update_frame by discriminate]).
-  destruct l; inversion G; subst; cbv [arm2il arm_bl_il arm_b_il] in H; rewrite N.mod_small in H by lia;
-    remember (scast _ _ _) as dsta; remember (src * 4) as srca; apply forget_cond in H;
-    step_stmt H; destruct H as [H _]; destruct (_ mod _) in H;
-    step_stmt H; destruct H as [[? H] _]; (split; [(now right) || left; now rewrite H, H0|repeat split; now erewrite <-reset_temps_not_temp, H1, update_frame by discriminate]).
-Qed.
-Lemma exec_GOTOz:
-  forall s l cond src dest c' s' x z,
-    src < 2^30 ->
-    dest < 2^30 ->
-    GOTOz l cond (Z.of_N src) (Z.of_N dest) = Some z ->
-    exec_stmt armc s (arm2il (src * 4) (arm_decode z)) c' s' x ->
-    (x = Some (Addr (dest * 4)) \/ (x = None /\ cond <> 14%Z)) /\ same_flags s s'.
-Proof.
-  intros. unfold GOTOz in H1. destruct GOTO eqn:e in H1; try discriminate. apply arm_assemble_eq in H1. rewrite H1 in H2.
-  now apply (exec_GOTO s l cond src dest c' s' x a).
-Qed.
-Lemma fix_make_i:
-  forall z's i', make_i's z's i' = _make_i's z's i'.
-Proof.
-  induction z's. easy.
-  intros. cbn. rewrite <-IHz's. unfold make_i's. cbn. rewrite <-rev_unit. apply rev_inj. rewrite !rev_involutive, Z.add_0_r.
-  replace (_, i'::nil) with ((Z.of_nat (length a) + 0)%Z, i'::nil) by now rewrite Z.add_0_r.
-  rewrite <-(app_nil_l (i'::nil)) at 1. remember nil. rewrite Heql at 2. rewrite Heql at 3. generalize l, 0%Z.
-  clear IHz's.
-  induction z's. easy. simpl. simpl. intros. rewrite <-IHz's. now rewrite !Z.add_assoc.
-Qed.
-Lemma make_i's_len:
-  forall z's i', length (make_i's z's i') = length z's.
-Proof.
-  setoid_rewrite fix_make_i. induction z's. easy. intro. simpl. now rewrite IHz's.
-Qed.
-Lemma make_i's_first:
-  forall z's i' d, lt O (length z's) -> nth O (make_i's z's i') d = i'.
-Proof.
-  intros. destruct z's. easy. now rewrite fix_make_i.
 Qed.
 Lemma rewrite_w_table_irm:
   forall irm tc dis i2i' cond i ti ai irm' table tc'
@@ -793,35 +854,6 @@ Proof.
       now specialize (L O nil).
       apply IHl. apply (fun n => L (S n)).
 Qed.
-Lemma make_i_nth:
-  forall {z's i' n d}
-    (N: lt n (length z's)),
-    nth n (make_i's z's (Z.of_N i')) d = Z.of_N (i' + N_len_cat_first n z's).
-Proof.
-  setoid_rewrite fix_make_i. induction z's; intros; subst.
-    easy.
-    destruct n; simpl.
-      lia.
-      rewrite <-nat_N_Z, <-N2Z.inj_add, IHz's, length_app. lia.
-      simpl in N; lia.
-Qed.
-Lemma make_i_samelens:
-  forall {z1 z2 i'}
-    (SL: SameLens z1 z2),
-  make_i's z1 i' = make_i's z2 i'.
-Proof.
-  setoid_rewrite fix_make_i. induction z1.
-    intros. pose proof (samelens_len SL). symmetry in H. apply (length_zero_iff_nil) in H. now subst.
-    intros. destruct z2. pose proof (samelens_len SL). simpl in H. lia.
-      simpl. setoid_rewrite (SL O nil). erewrite IHz1. easy. unfold SameLens. apply (fun n => SL (S n)).
-Qed.
-Lemma make_i2i_samelens:
-  forall {z1 z2 i i' ai}
-    (SL: SameLens z1 z2),
-  make_i2i' i i' ai z1 = make_i2i' i i' ai z2.
-Proof.
-  intros. cbv[make_i2i']. now rewrite !(make_i_samelens SL), !(len_cat_eq _ _ _ SL), (samelens_len SL).
-Qed.
 Lemma nlencatfirst_lt:
   forall A n (l: list (list A))
     (LT: lt n (length l))
@@ -859,6 +891,66 @@ Proof.
 Qed.
 Lemma ZNNat: forall n1 n2, (Z.of_N n1 + Z.of_nat n2)%Z = Z.of_N (n1 + N.of_nat n2). Proof. lia. Qed.
 
+Lemma Forall_skipn{A}:
+  forall n m (LE: le n m) P (l:list A) (F: Forall P (skipn n l)),
+    Forall P (skipn m l).
+Proof.
+  setoid_rewrite Forall_forall.
+  intros. apply F.
+  destruct (Nat.le_exists_sub _ _ LE) as [k [M _]]; subst.
+  rewrite <-skipn_skipn in H. rewrite <-(firstn_skipn k).
+  apply in_or_app. now right.
+Qed.
+
+Lemma fix_make_i's:
+  forall z's i', make_i's z's i' = _make_i's z's i'.
+Proof.
+  induction z's. easy.
+  intros. cbn. rewrite <-IHz's. unfold make_i's. cbn. rewrite <-rev_unit. apply rev_inj. rewrite !rev_involutive, Z.add_0_r.
+  replace (_, i'::nil) with ((Z.of_nat (length a) + 0)%Z, i'::nil) by now rewrite Z.add_0_r.
+  rewrite <-(app_nil_l (i'::nil)) at 1. remember nil. rewrite Heql at 2. rewrite Heql at 3. generalize l, 0%Z.
+  clear IHz's.
+  induction z's. easy. simpl. simpl. intros. rewrite <-IHz's. now rewrite !Z.add_assoc.
+Qed.
+Lemma make_i's_len:
+  forall z's i', length (make_i's z's i') = length z's.
+Proof.
+  setoid_rewrite fix_make_i's. induction z's. easy. intro. simpl. now rewrite IHz's.
+Qed.
+Lemma make_i's_first:
+  forall z's i' d, lt O (length z's) -> nth O (make_i's z's i') d = i'.
+Proof.
+  intros. destruct z's. easy. now rewrite fix_make_i's.
+Qed.
+Lemma make_i's_nth:
+  forall {z's i' n d}
+    (N: lt n (length z's)),
+    nth n (make_i's z's (Z.of_N i')) d = Z.of_N (i' + N_len_cat_first n z's).
+Proof.
+  setoid_rewrite fix_make_i's. induction z's; intros; subst.
+    easy.
+    destruct n; simpl.
+      lia.
+      rewrite <-nat_N_Z, <-N2Z.inj_add, IHz's, length_app. lia.
+      simpl in N; lia.
+Qed.
+Lemma make_i's_samelens:
+  forall {z1 z2 i'}
+    (SL: SameLens z1 z2),
+  make_i's z1 i' = make_i's z2 i'.
+Proof.
+  setoid_rewrite fix_make_i's. induction z1.
+    intros. pose proof (samelens_len SL). symmetry in H. apply (length_zero_iff_nil) in H. now subst.
+    intros. destruct z2. pose proof (samelens_len SL). simpl in H. lia.
+      simpl. setoid_rewrite (SL O nil). erewrite IHz1. easy. unfold SameLens. apply (fun n => SL (S n)).
+Qed.
+Lemma make_i2i_samelens:
+  forall {z1 z2 i i' ai}
+    (SL: SameLens z1 z2),
+  make_i2i' i i' ai z1 = make_i2i' i i' ai z2.
+Proof.
+  intros. cbv[make_i2i']. now rewrite !(make_i's_samelens SL), !(len_cat_eq _ _ _ SL), (samelens_len SL).
+Qed.
 Lemma i2i'_first :
   forall irms bi bi' ai
     (IRM: lt O (length irms)),
@@ -866,7 +958,7 @@ Lemma i2i'_first :
 Proof.
   intros. cbv[make_i2i' get of_list].
   replace (orb _ _) with false by lia.
-  rewrite make_i_nth. now rewrite Z.sub_diag, firstn_O, N.add_0_r.
+  rewrite make_i's_nth. now rewrite Z.sub_diag, firstn_O, N.add_0_r.
   lia.
 Qed.
 Lemma i2i'_nth :
@@ -874,8 +966,8 @@ Lemma i2i'_nth :
     (LT: lt n (length irms)),
     make_i2i' (Z.of_N bi) (Z.of_N bi') ai irms (Z.of_N (bi + N.of_nat n)) = Z.of_N (bi' + N_len_cat_first n irms).
 Proof.
-  intros. cbv[make_i2i' get of_list]. rewrite fix_make_i.
-  replace (orb _ _) with false by lia. rewrite <-fix_make_i, make_i_nth. repeat f_equal. lia. lia.
+  intros. cbv[make_i2i' get of_list]. rewrite fix_make_i's.
+  replace (orb _ _) with false by lia. rewrite <-fix_make_i's, make_i's_nth. repeat f_equal. lia. lia.
 Qed.
 
 Lemma rewrite_no_table_overflow:
@@ -908,16 +1000,6 @@ Proof.
       inversion R. subst.
       apply IHcode0 with (i':=(i'0+N_len l0)) in e3. rewrite concat_cons, length_app. lia. specialize (H0 1%nat ltac:(simpl;lia)). simpl in H0. now rewrite app_nil_r in H0. intros. specialize (H0 (S n) ltac:(simpl in *;lia)). rewrite firstn_cons, concat_cons, length_app, <-Nat.add_1_l, Nat2N.inj_add, N.add_assoc in H0. simpl in H0. rewrite H0. lia.
 Qed.
-Lemma Forall_skipn{A}:
-  forall n m (LE: le n m) P (l:list A) (F: Forall P (skipn n l)),
-    Forall P (skipn m l).
-Proof.
-  setoid_rewrite Forall_forall.
-  intros. apply F.
-  destruct (Nat.le_exists_sub _ _ LE) as [k [M _]]; subst.
-  rewrite <-skipn_skipn in H. rewrite <-(firstn_skipn k).
-  apply in_or_app. now right.
-Qed.
 
 Section CFI.
 
@@ -928,6 +1010,7 @@ Variable irms tables : list (list Z).
 Variable CFI_RW : cfi_rw pol code !bi !bi' !tbi !ai = Some (irms, tables).
 
 Definition i2i' := make_i2i' !bi !bi' !ai irms.
+
 Lemma RW : _rewrite code (fun _=>None) pol i2i' !bi !tbi !ai !bi code = Some (irms, tables).
 Proof.
   unfold cfi_rw in CFI_RW. destruct_match_in CFI_RW; try easy.
@@ -944,23 +1027,20 @@ Proof.
   rewrite orb_true_iff.
   destruct orb eqn:e.
     destruct orb eqn:e1 in |- *; left; cbv[outofbounds] in *; lia.
-    cbv[get of_list]. rewrite make_i_nth, N2Z.id, startsblock_firstn by lia. now right.
+    cbv[get of_list]. rewrite make_i's_nth, N2Z.id, startsblock_firstn by lia. now right.
 Qed.
-Lemma i2i'_nonneg :
-  forall i,
-    (0 <= i)%Z <->
-    (0 <= i2i' i)%Z.
+Lemma i2i'_nonneg: forall i, (0 <= i)%Z <-> (0 <= i2i' i)%Z.
 Proof.
   intros. cbv[i2i' make_i2i' get of_list]. destruct orb eqn:E. destruct orb eqn:R in |-*. lia. lia.
   split; [|lia].
   edestruct Nat.lt_ge_cases as [LT|GE].
-    apply Forall_nth;[|apply LT]. clear. rewrite fix_make_i. generalize bi'. induction irms.
+    apply Forall_nth;[|apply LT]. clear. rewrite fix_make_i's. generalize bi'. induction irms.
       easy.
       simpl. constructor. lia. rewrite ZNNat. apply IHl.
     now rewrite (nth_overflow _ _ GE).
 Qed.
 
-Lemma no_irm_overflow: bi' + N_len_cat irms < 2 ^ 30. 
+Lemma no_irm_overflow: bi' + N_len_cat irms < 2 ^ 30.
 Proof.
   cbv[cfi_rw] in *; destruct_match_in CFI_RW; try easy.
   eapply rewrite_no_irm_overflow.
@@ -979,16 +1059,15 @@ Definition i'2i i :=
 
 Definition permitted_step '((x', _, (x, _)) : exit * store * (exit * store)) :=
   match x, x' with
-  | Addr a, Addr a' =>
-      exists i i',
-        (* addresses must be aligned *)
-        a = i * 4 /\
-        a' = i' * 4 /\
-        (
-          i' = ai \/ (* destination is the abort *)
-          i'2i i = i'2i i' \/ (* step within the same block *)
-          In !(i'2i i') (pol !(i'2i i)) (* policy permitted step *)
-        )
+  | Addr a, Addr a' => (* a step between two addresses is permitted if *)
+      exists i i'
+        (* the addresses are aligned and *)
+        (I: a = i * 4) (I': a' = i' * 4),
+
+        i' = ai \/                    (*    1) the destination is the abort        *)
+        i'2i i = i'2i i' \/           (*    2) both address belong to the same irm *)
+        In !(i'2i i') (pol !(i'2i i)) (* or 3) the policy permits the step         *)
+
   | _, _ => True (* raising an exception is always allowed *)
   end.
 
@@ -997,7 +1076,6 @@ Definition permitted_step '((x', _, (x, _)) : exit * store * (exit * store)) :=
 Definition mem_has s l i e :=
   forall j n, ith l j = Some n ->
   !(s V_MEM32 [e | (i + N.of_nat j) * 4]) = n.
-(* we call a store 's' valid if: *)
 Definition flag_invs s :=
   (* s is in arm mode *)
   s R_T = 0 /\
@@ -1021,7 +1099,6 @@ Definition hdP P (t:trace) :=
   | (_, s)::_ => P s
   | _ => False
   end.
-(* a trace is valid if the store of its head is valid *)
 Remark hdPconj: forall P Q t, hdP (fun t => P t /\ Q t) t <-> hdP P t /\ hdP Q t.
 Proof. destruct t. easy. now destruct p. Qed.
 Remark vs_vs': forall s, store_invs s -> mem_invs s. Proof. intros. now destruct H. Qed.
@@ -1032,7 +1109,11 @@ Remark vs_rt{s s'}: store_invs s' -> store_invs (reset_temps s s').
 Proof. cbv[store_invs flag_invs mem_invs mem_has]. rewrite !reset_temps_not_temp by easy.
 repeat split; try easy. now apply reset_temps_models. Qed.
 Hint Resolve vs_rt : cfi.
-(* if a prefix of the trace was valid, we only need to prove that the T, J, and E flags were unchanged *)
+
+(* memory invariants are preserved no matter what instructions were executed
+
+   note that this proof implicitly assumes that permission bits are immutable,
+   since the lifter never produces IL that changes A_WRITE *)
 Lemma mem_invs_step:
   forall t0 x s
     (XP: exec_prog arm_prog ((x,s)::t0))
@@ -1074,10 +1155,13 @@ Definition cfi_inv_point (t:trace) :=
    end.
 (* the invariants for a rewritten program:
    1) all steps so far are permitted
-   2) the store of the head of the trace is valid *)
+   2) we are still in arm mode and the original endianness
+   3) the new code and tables are in memory at the correct locations *)
 Definition cfi_inv t := Forall permitted_step (stepsof t) /\ hdP store_invs t.
 Definition cfi_invs t := if cfi_inv_point t then Some (cfi_inv t) else None.
 
+(* if the program leaves the new code segment, we can no longer guarantee safety
+   (but the only way this happens is if we go to the abort address or if the policy explicitly permitted leaving the code segment) *)
 Definition cfi_exits (t:trace) :=
   match t with
   | (Addr a,_)::_ => outofbounds irms bi' a
@@ -1128,9 +1212,11 @@ Proof.
   intros. intro.
   apply cfi_clear_trace'; auto. apply NI. rewrite app_comm_cons in H. now apply exec_prog_split in H.
 Qed.
-(* since we can clear trace prefixes, we only ever need to deal with nextinv with single length traces*)
+(* since we can clear trace prefixes, we only ever need to deal with nextinv with single length traces *)
 Definition cfi_nib b x s := nextinv arm_prog cfi_invs cfi_exits b ((x,s)::nil).
 Definition cfi_ni := cfi_nib true.
+
+(* a specialization of NIHere *)
 Lemma CFIHere:
   forall x s
     (I: match x with
@@ -1161,23 +1247,25 @@ Proof.
   subst. apply ith_Some. now rewrite ITH.
 Qed.
 
-Definition SafeE si a :=
-  (!ai * 4 = a \/ exists di (D: (i2i' !di) * 4 = a), In !di (pol si))%Z.
-Definition SafeP si t sr :=
+(* e is a value that is allowed to appear in the table for index j *)
+Definition ValidTableEntry j e :=
+  (!ai * 4 = e \/ exists di (D: (i2i' !di) * 4 = e), In !di (pol j))%Z.
+(* t and sr are table parameters that describe a table that is valid for index j *)
+Definition ValidTable si t sr :=
   (0 <= sr < 32)%Z /\
   (0 <= t)%Z /\
   (Z.to_N t + 2 ^ (32 - Z.to_N sr) < 2 ^ 30) /\
   forall s n
     (VS: mem_invs s)
     (IB: Z.to_N t <= n < Z.to_N t + 2 ^ (32 - Z.to_N sr)),
-  SafeE !si !(s V_MEM32 [ en | n*4 ]).
+  ValidTableEntry !si !(s V_MEM32 [ en | n*4 ]).
 Lemma mjtm:
   forall j d sl sr x
     (D: (0 <= d)%Z)
     (M: d = make_jump_table_map (pol !j) (map i2i' (pol !j)) sl sr (fun _=>(!ai * 4)%Z) x),
-  SafeE !j d.
+  ValidTableEntry !j d.
 Proof.
-  intros. cbv[SafeE].
+  intros. cbv[ValidTableEntry].
   induction (pol !j); simpl in M.
     now left.
     destruct orb.
@@ -1192,7 +1280,8 @@ Lemma wo_table_tc':
 Proof.
   intros. cbv[wo_table] in WT. destruct z'; now inversion WT.
 Qed.
-Definition SafeT (tc:TableCache) := forall j t sl sr (TC: tc (pol !j) = Some (t, sl, sr)), SafeP j t sr.
+(* tc never returns table parameters that are invalid for an index *)
+Definition ValidTableCache (tc:TableCache) := forall j t sl sr (TC: tc (pol !j) = Some (t, sl, sr)), ValidTable j t sr.
 Lemma list_eqb_eq:
   forall a b, list_eqb a b = true <-> a = b.
 Proof.
@@ -1233,12 +1322,13 @@ Proof.
   intros. rewrite map2list_fix in I. induction Z.to_nat. easy.
   destruct I. eexists. apply H. now apply IHn0.
 Qed.
-Lemma rewrite_w_table_st:
+(* rewrite_w_table does not invalidate a table cache*)
+Lemma rewrite_w_table_tc:
   forall irm tc j cond i irm' table tc' p
     (ITH: ith tables j = Some table)
     (RWT: rewrite_w_table irm tc (pol !(i+N.of_nat j)) i2i' cond !p !(tbi + N_len_cat_first j tables) !ai = Some (irm', table, tc'))
-    (ST: SafeT tc),
-    SafeT tc'.
+    (ST: ValidTableCache tc),
+    ValidTableCache tc'.
 Proof.
   intros. cbv[rewrite_w_table] in RWT. destruct_match_in RWT; try discriminate. inversion RWT; now subst.
   intros k t sl sr K. remember (Z.shiftl _ _). inversion RWT. subst tc'. clear RWT.
@@ -1266,9 +1356,10 @@ Proof.
   subst table. cbv[make_jump_table] in H5. apply in_rev, inmap2list in H5.
   destruct H5. eapply mjtm. easy. symmetry. rewrite q. apply H1.
 Qed.
+(* we can skip the first n instructions of the rewriting process and still have a valid table cache *)
 Lemma skip_rewrite:
   forall n (N: le n (length code)),
-  exists tc (ST: SafeT tc),
+  exists tc (ST: ValidTableCache tc),
     _rewrite (skipn n code) tc pol i2i' !(bi+N.of_nat n) !(tbi+N_len_cat_first n tables) !ai !bi code
       = Some (skipn n irms, skipn n tables).
 Proof.
@@ -1287,30 +1378,38 @@ Proof.
   inversion R. assert (ith tables n = Some l3) as ITH. now rewrite ith_skipn_hd, <-H1.
   clear -e0 ST ITH CFI_RW. rename e0 into RI.
   cbv[rewrite_inst goto_abort rewrite_b rewrite_bl rewrite_b_bl] in RI. destruct_match_in RI; try discriminate;
-  (apply rewrite_w_table_st in RI || apply wo_table_tc' in RI || idtac); auto; inversion RI; try now subst.
+  (apply rewrite_w_table_tc in RI || apply wo_table_tc' in RI || idtac); auto; inversion RI; try now subst.
 Qed.
 
 Section CFICases.
+(* first, we consider the nth irm in the rewritten program *)
 Variable tc tc' : TableCache.
 Variable n : nat.
 Variable z_orig : Z.
 Variable irm table : list Z.
 
+(* the old code index that this irm is for *)
 Definition i := bi + N.of_nat n.
+(* the next available table index when this irm was created (the actual table index used could have been a cached table) *)
 Definition ti := tbi + N_len_cat_first n tables.
+(* the new code index that this irm is located at *)
 Definition i' := bi' + N_len_cat_first n irms.
+(* the next new code index after this irm *)
 Definition ni' := bi' + N_len_cat_first (S n) irms.
 
 Variable RI : rewrite_inst tc i2i' z_orig (pol !i) !i !ti !ai !bi code = Some (irm, table, tc').
-Variable ST: SafeT tc.
+Variable ST: ValidTableCache tc.
 Variable IRM : ith irms n = Some irm.
 Variable TABLE : ith tables n = Some table.
+(* we can assume that there is another irm after this one,
+   since we add a jump to the abort at the end (we remove this assumption for proving the goto abort case) *)
 Variable SN : (S n < length irms)%nat.
 
 Variable AI : ai < 2^30.
 Variable AIB: outofbounds irms bi' (ai*4) = true.
 
-
+Notation fa_vs P := (forall (s:store) (VS: store_invs s), P s) (only parsing).
+Notation Goal := (fa_vs (cfi_nib false (Addr ((i'+0)*4)))) (only parsing).
 
 Remark i'ni': ni' = i' + N_len irm.
 Proof. cbv[i']. now rewrite <-N.add_assoc, <-nlencatfirst_s. Qed.
@@ -1342,6 +1441,8 @@ Proof. cbv[i']. lia: no_irm_overflow firstnlt. Qed.
 Remark ni'lt: ni' < 2 ^ 30.
 Proof. cbv[ni']. lia: no_irm_overflow firstsnlt. Qed.
 Hint Resolve AIB sbi sbni sb_not_oob nonemptyirms nlencatfirst_s firstnlt i'lt ni'lt : cfi.
+
+(* a specialization of NIStep *)
 Lemma CFIStep:
   forall b j s q
     (VS: store_invs s)
@@ -1373,10 +1474,7 @@ Proof.
     + eapply mem_invs_step. apply exec_prog_step. apply exec_prog_none.
       econstructor. apply IL. apply XS. now destruct VS.
 Qed.
-Definition cnd n cond := n + N.of_nat (Nat.b2n (cond <? 14))%Z.
 
-Notation fa_vs P := (forall (s:store) (VS: store_invs s), P s) (only parsing).
-Notation Goal := (fa_vs (cfi_nib false (Addr ((i'+0)*4)))) (only parsing). 
 Lemma blockindex_inirm:
   forall j,
     lt j (length irm) ->
@@ -1401,10 +1499,8 @@ Proof.
   replace (_ + _ - _) with (N_len_cat_first n irms + k) by lia.
   now rewrite <-(N2Nat.id j), <-(N2Nat.id k), !blockindex_inirm by lia.
 Qed.
-Definition i'0 := eq_sym (N.add_0_r i').
 Lemma i2i'2i :
   forall j,
-    
   let k := i'2i (Z.to_N (i2i' !j)) in
   k = j \/ k = ai /\ Z.to_N (i2i' !j) = ai /\ outofbounds irms bi' (j*4) = false.
 Proof.
@@ -1412,7 +1508,7 @@ Proof.
     destruct orb eqn:e1 in |-*; cbv[i'2i outofbounds] in *; replace (orb _ _) with true by lia.
       left; lia.
       right; lia.
-    cbv[i'2i outofbounds] in *. rewrite make_i_nth by lia. 
+    cbv[i'2i outofbounds] in *. rewrite make_i's_nth by lia. 
     remember (Z.to_nat _).
     replace (_||_) with false by lia: (nlencatfirst_lt _ n0 irms ltac:(lia) nonemptyirms).
     rewrite N2Z.id, N_add_simpl_l, blockindex_firstn by (pose nonemptyirms; now try lia). left; lia.
@@ -1436,7 +1532,7 @@ Qed.
 Lemma permitted_safe:
   forall j a s s'
     (J: j < N_len irm)
-    (SE: SafeE !i !a),
+    (SE: ValidTableEntry !i !a),
   permitted_step (Addr a, s', (Addr ((i' + j) *4), s)).
 Proof.
   intros. destruct SE. replace a with (ai*4) by lia. repeat esplit. now left.
@@ -1494,8 +1590,9 @@ Proof.
   unfold Z1. lia.
 Qed.
 
-
-
+(* for a conditional irm, there will be an extra branch instruction at the start that can skip the entire irm *)
+Definition cnd n cond := n + N.of_nat (Nat.b2n (cond <? 14))%Z.
+(* we don't need to prove the case where there is a branch at the start, just the case where there isn't *)
 Lemma Cond:
   forall l cond
     (COND: arm_assemble_all_cond l cond = Some irm)
@@ -1532,6 +1629,7 @@ Proof.
       apply CFIHere; cbn; aauto. rewrite H in *; aauto.
   now apply PRE.
 Qed.
+(* we don't need to execute a safe instruction, we can just immediately go to the next instruction *)
 Lemma safeinststep:
   forall inst j s b
     (VS: store_invs s)
@@ -1554,27 +1652,28 @@ Proof.
       * apply permitted_inirm. lia. lia.
       * apply NI. aauto.
 Qed.
+(* if we are at the jth instruction of the irm, and we only have safe instructions left to execute, then we are done *)
 Lemma OnlyFallthru:
-  forall m b
-    (M: (m < length irm)%nat)
-    (AS: Forall (fun z => SafeInst (arm_decode z)) (skipn m irm)),
-  fa_vs (cfi_nib b (Addr ((i'+N.of_nat m)*4))).
+  forall j b
+    (J: (j < length irm)%nat)
+    (AS: Forall (fun z => SafeInst (arm_decode z)) (skipn j irm)),
+  fa_vs (cfi_nib b (Addr ((i'+N.of_nat j)*4))).
 Proof.
-  intros m b M.
-  remember (length irm - m)%nat.
-  replace m with (length irm - n0)%nat by lia.
+  intros j b J.
+  remember (length irm - j)%nat.
+  replace j with (length irm - n0)%nat by lia.
   assert (0 < n0 <= length irm)%nat by lia.
-  clear Heqn0 M m; revert n0 b H.
-  induction n0 as [|m]. easy.
-  intros b M SI s VS.
+  clear Heqn0 J j; revert n0 b H.
+  induction n0 as [|j]. easy.
+  intros b J SI s VS.
   eapply safeinststep; auto.
     apply ith_nth' with (d:=arm_decode 0). rewrite length_map. lia.
     rewrite <-(Nat.add_0_r _), map_nth, Nat2N.id, <-nth_skipn.
       rewrite Forall_forall in SI. apply SI, nth_In. rewrite length_skipn. lia.
-  intros. destruct m.
+  intros. destruct j.
     replace (i' + _) with ni' by (rewrite i'ni';lia). apply CFIHere; cbn; aauto.
     rewrite <-Nat2N.inj_succ, <-Nat.sub_pred_r, Nat.pred_succ by lia.
-      apply IHm; aauto. eapply Forall_skipn; [| apply SI]; lia.
+      apply IHj; aauto. eapply Forall_skipn; [| apply SI]; lia.
 Qed.
 Lemma SingleFallthru:
   forall z (SI: SafeInst (arm_decode z)) (IRM: irm = z::nil), Goal.
@@ -1612,34 +1711,6 @@ Proof.
   rewrite <-Forall_map, <-skipn_map, <-H0, (skip_b2n_cond e).
   now repeat (constructor; [aauto|]).
 Qed.
-Lemma mov_safe:
-  forall rd rm
-  (RT: (rd <> 15%Z)),
-  SafeInst (MOV rd rm).
-Proof.
-  intros. apply safe;
-  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
-  repeat constructor; auto with cfi; easy.
-Qed.
-Hint Resolve mov_safe: cfi.
-Lemma ldm_safe:
-  forall op cond W Rn register_list
-    (R: N.testbit (Z.to_N register_list) 15 = false),
-  SafeInst (ARM_lsm op cond W Rn register_list).
-Proof.
-  intros. apply safe; destruct op; repeat constructor; try discriminate;
-  rewrite R; repeat (constructor || discriminate || lia || destruct_match_eqn || auto with cfi);
-  apply for_noassign || apply for_0_14_noje; intros; repeat constructor; try discriminate; auto with cfi.
-Qed.
-Lemma stm_safe:
-  forall op cond W Rn register_list
-    (OP: match op with | ARM_STMDA | ARM_STMDB | ARM_STMIA | ARM_STMIB => True | _ => False end),
-  SafeInst (ARM_lsm op cond W Rn register_list).
-Proof.
-  intros. apply safe; destruct op; repeat constructor; try discriminate;
-  repeat (constructor || discriminate || lia || destruct_match_eqn || auto with cfi);
-  apply for_noassign || apply for_0_14_noje; intros; repeat constructor; try discriminate; auto with cfi.
-Qed.
 Lemma rewrite_pc_sp_no_jump_safe:
   forall {si cond reg reg2}
     (R: rewrite_pc_sp_no_jump si cond !i reg reg2 tc = Some (irm, table, tc'))
@@ -1657,16 +1728,18 @@ Proof.
   now rewrite Z2N_inj_lor, !Z2N_inj_shiftl, N.lor_spec, !N.shiftl_mul_pow2, !N.mul_1_l, !N.pow2_bits_false by (unZ; try apply Z.shiftl_nonneg; lia).
 Qed.
 
+(* all dynamic jumps rewriters use rewrite_w_table to create the table if necessary *)
+(* it doesn't matter if we made a new table or used a cached one, we just need to know that we were given valid table parameters *)
 Lemma rewrite_w_table_safe:
   forall {irmf cond}
     (R: rewrite_w_table irmf tc (pol !i) i2i' cond !i !ti !ai = Some (irm, table, tc'))
     (I: forall t sl sr
       (IRMF: irmf cond !i t sl sr = Some irm)
-      (SF: SafeP i t sr),
+      (SF: ValidTable i t sr),
       Goal),
     Goal.
 Proof.
-  intros. apply rewrite_w_table_st in R as ST2; auto. cbv[rewrite_w_table] in R. destruct_match_in R; try discriminate; subst.
+  intros. apply rewrite_w_table_tc in R as ST2; auto. cbv[rewrite_w_table] in R. destruct_match_in R; try discriminate; subst.
   eapply I;auto. inversion R; subst. apply e2. eapply ST. apply e.
   remember (make_jump_table _ _ _ _ _ _). inversion R. subst l. 
   eapply I; auto. apply e2. subst tc'. eapply (ST2 _). epose proof (proj2 (list_eqb_eq _ _) eq_refl). now rewrite H.
@@ -1705,6 +1778,8 @@ Qed.
 Ltac vs H := match type of H with
              | mem_invs ?x => let VS := fresh "VS" in assert (store_invs x) as VS; [| clear H; rename VS into H]
              end.
+
+(* execute the code snippet that adds an arbitrary constant to a register *)
 Lemma add4:
   forall b j s reg v after
     (VS: store_invs s)
@@ -1795,6 +1870,7 @@ Proof.
   eqapply A. lia. easy. split. aauto. rewrite <-H. aauto.
 Qed.
 
+(* execute the code snippet that performs a table lookup *)
 Lemma tablelookup:
   forall b j s t_ sl sr reg after
   (VS: store_invs s)
@@ -1846,23 +1922,18 @@ Proof.
   lia: (N.Div0.mod_le t (2^(32-2))). etransitivity. 2: apply TB. lia: (N.Div0.mod_le t (2^(32-2))). 
   now rewrite <- H0.
 Qed.
-Lemma reset_temps_armv:
-  forall s s' n, reset_temps s s' (arm_varid n) = s' (arm_varid n).
-Proof.
-  intros. unfold arm_varid. now destruct_match_eqn.
-Qed.
 Tactic Notation "forget" uconstr(x) := (let n := fresh "n" in set (n:=x) in *; clearbody n).
-Lemma at_safe:
+Lemma at_table_entry:
   forall si a s
    (VS: store_invs s)
-   (SE: SafeE si !a),
+   (SE: ValidTableEntry si !a),
   cfi_ni (Addr a) s.
 Proof.
   intros. apply CFIHere. inversion SE. replace a with (ai*4) by lia. now rewrite AIB.
   destruct H as [? [? ?]]. replace a with (Z.to_N (i2i' !x) * 4) by lia. apply (i2i'_oob_sb); aauto. easy.
 Qed.
-Lemma safe_div4:
-  forall si a (SE: SafeE si !a),
+Lemma tableentry_div4:
+  forall si a (SE: ValidTableEntry si !a),
   (4 | a).
 Proof.
   intros. inversion SE. exists ai. lia. destruct H as [? [? ?]]. exists (Z.to_N (i2i' !x)). lia.
@@ -1932,11 +2003,11 @@ Proof.
   eapply CFIStep; auto. now rewrite ITH.
   intros. rewrite cnds. simpl N.succ.
   simpl arm_varid in *. rewrite 2(update_swap _ _ R_PC), 4(update_swap _ _ (arm_varid _)), !update_cancel in S3 by aauto.
-  eenough (SafeE !i _).
+  eenough (ValidTableEntry !i _).
   apply exec_ldrpc in XS as [X S4]; [..|rewrite S3, update_frame, update_updated by discriminate; now eexists].
    subst x1. split. apply permitted_safe. cbv[cnd];lia. apply H2.
-   apply (at_safe !i);auto. rewrite S4 in *; aauto.
-   apply (safe_div4 !i);auto.
+   apply (at_table_entry !i);auto. rewrite S4 in *; aauto.
+   apply (tableentry_div4 !i);auto.
   replace (n6 R_E) with en in * by now destruct VS2 as [[? [? ?]] ?]. rewrite S3. rewrite update_updated, update_frame, update_updated, getmem_setmem, Heqn4 by discriminate.
   rewrite N.mod_small by apply typesafe_getmem. apply SF; aauto.
 Qed.
@@ -1997,15 +2068,16 @@ Proof.
 
   eapply CFIStep; auto. now rewrite ITH.
   intros. rewrite cnds. simpl N.succ.
-  assert(SafeE !i !(n0 V_MEM32 [n0 R_E | n0 (arm_varid reg2) ⊖ 4 ])).
+  eenough (ValidTableEntry !i _).
+  apply exec_ldmdb3 in XS; [|lia || apply (tableentry_div4 !i _ H2)..].
+  destruct XS as [[X S]|[X S]]. subst x1.
+  split. apply permitted_safe; auto; cbv[cnd]; lia.
+  apply (at_table_entry !i); aauto. subst x1.
+  split. easy. apply CFIHere; cbn; aauto.
+
   replace (n0 R_E) with en by now destruct VS0 as [[? [? ?]] ?].
   rewrite S1, update_updated, !update_frame, getmem_setmem by (aauto;lia). subst n2.
   rewrite N.mod_small by apply typesafe_getmem. apply SF; aauto.
-  apply exec_ldmdb3 in XS; [|lia || now apply (safe_div4 !i)..].
-  destruct XS as [[X S]|[X S]]. subst x1.
-  split. apply permitted_safe; auto; cbv[cnd]; lia.
-  apply (at_safe !i); aauto. subst x1.
-  split. easy. apply CFIHere; cbn; aauto.
 Qed.
 Lemma rewrite_bx_blx_safe:
   forall {l reg cond}
@@ -2029,13 +2101,13 @@ Proof.
   eapply CFIStep; auto. now rewrite ITH.
   intros. rewrite cnds. simpl N.succ.
   
-  enough (SafeE !i !(s' (arm_varid (Z.to_N reg)))).
+  enough (ValidTableEntry !i !(s' (arm_varid (Z.to_N reg)))).
   enough (x1 = Some (Addr (s' (arm_varid (Z.to_N reg)))) /\ same_flags s' s2).
   destruct H2. subst x1.
   split. apply permitted_safe; auto; cbv[cnd]; lia.
-  apply (at_safe !i); aauto.
-  destruct l; !reg in XS. apply exec_blx in XS; aauto. lia. now apply (safe_div4 !i).
-  apply exec_bx in XS; aauto. lia. now apply (safe_div4 !i).
+  apply (at_table_entry !i); aauto.
+  destruct l; !reg in XS. apply exec_blx in XS; aauto. lia. now apply (tableentry_div4 !i).
+  apply exec_bx in XS; aauto. lia. now apply (tableentry_div4 !i).
   subst s'. rewrite update_updated. apply SF; aauto.
 Qed.
 Lemma i2i'_max :
@@ -2044,7 +2116,7 @@ Lemma i2i'_max :
 Proof.
   intros. cbv[i2i' make_i2i' get of_list]. destruct orb. destruct orb; lia.
   edestruct Nat.lt_ge_cases as [LT|GE]; [|rewrite (nth_overflow _ _ GE)].
-  rewrite make_i's_len in LT. rewrite make_i_nth by easy. pose proof (nlencatfirst_le (Z.to_nat (i0 - Z.of_N bi)) irms). lia. lia.
+  rewrite make_i's_len in LT. rewrite make_i's_nth by easy. pose proof (nlencatfirst_le (Z.to_nat (i0 - Z.of_N bi)) irms). lia. lia.
 Qed.
 Lemma rewrite_b_bl_safe:
   forall {l cond imm24}
@@ -2054,12 +2126,12 @@ Proof.
   intros. cbv[rewrite_b_bl] in R.
   case_eq irm. intro.
   destruct_match_in R; inversion R; now subst.
-  intros. eapply CFIStep; auto. now rewrite H. intros. enough ((x1 = None \/ x1 = Some (Addr (ai*4)) \/ exists e, x1 = Some (Addr e) /\ SafeE !i !e) /\ same_flags s s1 /\ N_len irm = 1).
+  intros. eapply CFIStep; auto. now rewrite H. intros. enough ((x1 = None \/ x1 = Some (Addr (ai*4)) \/ exists e, x1 = Some (Addr e) /\ ValidTableEntry !i !e) /\ same_flags s s1 /\ N_len irm = 1).
   destruct H0 as [[?|[?|?]] [? ?]].
   subst x1. replace (_ + _) with ni' by (rewrite i'ni'; now rewrite H2). split. apply permitted_pol. lia. apply ni_in_pol.
   apply CFIHere. simpl. now rewrite sbni, orb_true_r. aauto.
   subst x1. split. apply permitted_abort. apply CFIHere; cbn; aauto.
-  destruct H0. destruct H0. subst x1. split. apply permitted_safe; auto; lia. apply (at_safe !i); aauto.
+  destruct H0. destruct H0. subst x1. split. apply permitted_safe; auto; lia. apply (at_table_entry !i); aauto.
   destruct_match_in R; try discriminate.
   destruct contains eqn:c. apply In_contains in c.
   simpl Z.shiftl in *.
@@ -2138,9 +2210,9 @@ Proof.
   eapply CFIStep; auto. now rewrite ITH.
   intros. rewrite cnds. simpl N.succ.
   apply exec_ldm in XS; auto. cbv zeta in XS.
-  eenough (SafeE !i _).
-  destruct XS as [?|[[? ?]|[? ?]]]. epose proof (safe_div4 !i _ H1). apply a in H2 as [? ?]. subst x1.
-  split. apply permitted_safe; auto; cbv[cnd]; lia. apply (at_safe !i); aauto.
+  eenough (ValidTableEntry !i _).
+  destruct XS as [?|[[? ?]|[? ?]]]. epose proof (tableentry_div4 !i _ H1). apply a in H2 as [? ?]. subst x1.
+  split. apply permitted_safe; auto; cbv[cnd]; lia. apply (at_table_entry !i); aauto.
   replace (_ + _) with ni' by (rewrite i'ni';cbv[cnd];lia). subst x1.
   split. apply permitted_pol. cbv[cnd];lia. apply ni_in_pol. apply CFIHere; cbn; aauto.
   subst x1. split. easy. apply CFIHere; cbn; aauto.
@@ -2160,24 +2232,24 @@ Proof.
   now repeat (constructor; [aauto|]).
 Qed.
 
-Lemma _unused_reg_bound:
+Remark _unused_reg_bound:
   forall base r0 r1 r2, (base <= _unused_reg base r0 r1 r2 < base+4)%Z.
 Proof.
-  intros. unfold _unused_reg, Z1, Z2, Z3. destruct_match_eqn; lia.
+  intros. unfold _unused_reg, Z1, Z2, Z3. destruct_match; lia.
 Qed.
-Lemma unused_reg_lt: forall r0 r1 r2, (0 <= unused_reg r0 r1 r2 < 13)%Z.
+Remark unused_reg_lt: forall r0 r1 r2, (0 <= unused_reg r0 r1 r2 < 13)%Z.
 Proof. intros. cbv[unused_reg]. lia: (_unused_reg_bound 0 r0 r1 r2). Qed.
-Lemma unused_reg_notpc: forall r0 r1 r2, (unused_reg r0 r1 r2 <> 15)%Z.
+Remark unused_reg_notpc: forall r0 r1 r2, (unused_reg r0 r1 r2 <> 15)%Z.
 Proof. intros. lia: (unused_reg_lt r0 r1 r2). Qed.
-Lemma unused_reg_high_lt: forall r0 r1 r2, (0 <= unused_reg_high r0 r1 r2 < 13)%Z.
+Remark unused_reg_high_lt: forall r0 r1 r2, (0 <= unused_reg_high r0 r1 r2 < 13)%Z.
 Proof. intros. cbv[unused_reg_high Z4]. lia: (_unused_reg_bound 4 r0 r1 r2). Qed.
-Lemma unused_reg_high_notpc: forall r0 r1 r2, (unused_reg_high r0 r1 r2 <> 15)%Z.
+Remark unused_reg_high_notpc: forall r0 r1 r2, (unused_reg_high r0 r1 r2 <> 15)%Z.
 Proof. intros. lia: (unused_reg_high_lt r0 r1 r2). Qed.
-Lemma unused_reg_lt': forall r0 r1 r2, (0 <= unused_reg r0 r1 r2 < 15)%Z.
+Remark unused_reg_lt': forall r0 r1 r2, (0 <= unused_reg r0 r1 r2 < 15)%Z.
 Proof. intros. lia: (unused_reg_lt r0 r1 r2). Qed.
-Lemma unused_reg_high_lt': forall r0 r1 r2, (0 <= unused_reg_high r0 r1 r2 < 15)%Z.
+Remark unused_reg_high_lt': forall r0 r1 r2, (0 <= unused_reg_high r0 r1 r2 < 15)%Z.
 Proof. intros. lia: (unused_reg_high_lt r0 r1 r2). Qed.
-Lemma unused_reg_lt_high: forall r0 r1 r2 r3 r4 r5, (0 <= unused_reg r0 r1 r2 < unused_reg_high r3 r4 r5)%Z.
+Remark unused_reg_lt_high: forall r0 r1 r2 r3 r4 r5, (0 <= unused_reg r0 r1 r2 < unused_reg_high r3 r4 r5)%Z.
 Proof. intros. cbv[unused_reg unused_reg_high Z4]. lia: (_unused_reg_bound 0 r0 r1 r2) (_unused_reg_bound 4 r3 r4 r5). Qed.
 Hint Resolve unused_reg_lt unused_reg_high_lt unused_reg_lt' unused_reg_high_lt' unused_reg_lt_high unused_reg_notpc unused_reg_high_notpc : cfi.
 Set Implicit Arguments.
@@ -2185,53 +2257,6 @@ Lemma bitb_not0:
   forall z b, (bitb z b =? 0 = false -> Z_xbits z b (b+1) = 1)%Z.
 Proof.
   intros. unfold bitb in *. rewrite zxbits_eq in *. unfold Z_xbits, Z1 in *. replace (2 ^ _)%Z with (2)%Z in * by (replace (Z.max _ _) with 1%Z by lia; lia). lia.
-Qed.
-Lemma datar_safe:
-  forall op cond S Rn Rd imm5 type Rm
-    (RD: Rd <> 15%Z),
-  SafeInst (ARM_data_r op cond S Rn Rd imm5 type Rm).
-Proof.
-  intros. apply safe; cbv[arm2il arm_data_r_il arm_data_op_il arm_data_r_shiftc arm_data_r_addwcarry];
-  destruct_match_eqn;
-  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
-  destruct_match_eqn;
-  repeat constructor; try discriminate; aauto.
-Qed.
-Lemma datarsr_safe:
-  forall op cond S Rn Rd Rs type Rm
-    (RD: Rd <> 15%Z),
-  SafeInst (ARM_data_rsr op cond S Rn Rd Rs type Rm).
-Proof.
-  intros. apply safe; cbv[arm2il arm_data_rsr_il arm_data_op_il arm_data_rsr_shiftc arm_data_rsr_addwcarry];
-  destruct_match_eqn;
-  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
-  destruct_match_eqn;
-  repeat constructor; try discriminate; aauto.
-Qed.
-Lemma datai_safe:
-  forall op cond S Rn Rd imm12
-    (RD: Rd <> 15%Z),
-  SafeInst (ARM_data_i op cond S Rn Rd imm12).
-Proof.
-  intros. apply safe; cbv[arm2il arm_data_i_il arm_data_op_il arm_data_i_shiftc arm_data_i_addwcarry];
-  destruct_match_eqn;
-  repeat constructor; try discriminate; replace (_ =? _) with false by lia;
-  destruct_match_eqn;
-  repeat constructor; try discriminate; aauto.
-Qed.
-Lemma lsi_safe:
-  forall op cond P U W Rn Rt imm12
-    (R: match op with | ARM_LDR => Rt <> 15%Z | _ => True end),
-  SafeInst (ARM_ls_i op cond P U W Rn Rt imm12).
-Proof.
-  intros. apply safe; cbv[arm2il arm_ls_i_il arm_ls_op_il arm_ls_il]; destruct_match_eqn; try lia; repeat constructor; try discriminate; auto; aauto.
-Qed.
-Lemma lsr_safe:
-  forall op cond P U W Rn Rt imm5 type Rm
-    (R: match op with | ARM_LDR => Rt <> 15%Z | _ => True end),
-  SafeInst (ARM_ls_r op cond P U W Rn Rt imm5 type Rm).
-Proof.
-  intros. apply safe; cbv[arm2il arm_ls_r_il arm_ls_op_il arm_ls_il]; destruct_match_eqn; try lia; repeat constructor; try discriminate; auto; aauto.
 Qed.
 Theorem cfi_inst_safety: Goal.
 Proof.
@@ -2260,12 +2285,13 @@ Proof.
   Unshelve.
   all: try rewrite e.
   all: try solve [first [ apply datar_safe | apply datarsr_safe |apply datai_safe | apply lsr_safe |apply lsi_safe] ;lia || auto with cfi].
-  all: try solve [apply safe; repeat (constructor || discriminate || destruct_match_eqn || lia || auto with cfi)].
+  all: try solve [apply SafeInstNoassign; repeat (constructor || discriminate || destruct_match || lia || auto with cfi)].
   apply orb_true_iff in e1 as [?|?]. apply ldm_safe. unfold bitb in H. rewrite zxbits_eq in H. apply Z.eqb_eq in H. simpl in H.
   rewrite testbit_xbits, xbits_Z2N by lia. cbn. now rewrite H.
   apply stm_safe. now destruct op.
 Qed.
 End CFICases.
+
 Theorem cfi_safety:
   forall a0 s0 t x s
     (* the designated abort address is a valid address not in the new code section *)
@@ -2283,19 +2309,28 @@ Proof.
   - cbn. setoid_rewrite ENTRY. apply NIHere. cbv [effinv cfi_invs cfi_inv_point]. now rewrite SB, orb_true_r.
   - intros. cbv[get_precondition] in PRE. destruct cfi_exits eqn:IB in PRE. easy.
 
+    (* we must be at the start of an irm in the new code segment *)
     cbv[true_inv cfi_invs cfi_inv_point] in PRE. clear SB; destruct orb eqn:SB; try easy.
     cbn in IB. rewrite IB, orb_false_l in SB. destruct PRE as [PS VT].
 
+    (* all steps so far were permitted so we can clear the trace *)
     rewrite cons1; apply cfi_clear_trace; auto.
     simpl in VT. clear -VT SB AI AIB CFI_RW IB.
 
+    (* let n be the index of the irm we are at *)
     apply startsblock_index in SB as [n [LEN A1]].
     assert (S (length code) = length irms)%nat.
       unfold cfi_rw in CFI_RW. destruct_match_in CFI_RW; try discriminate. now apply rewrite_len in CFI_RW.
+
+    (* skip the n instructions that we rewrote before this one *)
     destruct (skip_rewrite n) as [tc [ST CFI]]. lia.
-    destruct skipn as [|z_or] eqn:s; cbn in CFI; destruct_match_in CFI; try discriminate; inversion CFI; subst; rewrite <-(N.add_0_r (_+_)).
+
+    (* handle the case where we are at the extra jump to abort added at the end of the new code segment *)
+    destruct skipn eqn:s; cbn in CFI; destruct_match_in CFI; try discriminate; inversion CFI; subst; rewrite <-(N.add_0_r (_+_)).
       eapply gotoz_ai_safe; auto. now rewrite ith_skipn_hd, <-H1. apply e0.
-    eapply (cfi_inst_safety _  e0); auto. Unshelve. all: auto.
+
+    (* now we can apply the theorem from CFICases *)
+    eapply (cfi_inst_safety _ e0); auto.
       now rewrite ith_skipn_hd, <-H1.
       now rewrite ith_skipn_hd, <-H2.
       edestruct le_lt_dec as [LE|LT]; [|apply LT].
@@ -2303,4 +2338,3 @@ Proof.
 Qed.
 End CFI.
 Print Assumptions cfi_safety.
-
