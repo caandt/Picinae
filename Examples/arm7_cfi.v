@@ -9,7 +9,7 @@ Import ListNotations.
 Open Scope Z.
 Require Extraction.
 Extraction Language OCaml.
-Set Extraction Output Directory "arm_cfi_extraction".
+Set Extraction Output Directory "arm_cfi/src/extraction".
 
 Definition Z_4 := -4.
 Definition Z_8 := -8.
@@ -136,10 +136,10 @@ Definition STR rt rn offset :=
 Definition LDR rt rn offset :=
   let U := if offset <? Z0 then Z0 else Z1 in
   ARM_ls_i ARM_LDR Z14 Z1 U Z0 rn rt (Z.abs offset).
-Definition MOVW rd imm :=
-  ARM_MOV_WT true Z14 ((imm >> Z12) & Z15) rd (imm & Z4095).
-Definition MOVT rd imm :=
-  ARM_MOV_WT false Z14 ((imm >> Z12) & Z15) rd (imm & Z4095).
+Definition MOVW c rd imm :=
+  ARM_MOV_WT true c ((imm >> Z12) & Z15) rd (imm & Z4095).
+Definition MOVT c rd imm :=
+  ARM_MOV_WT false c ((imm >> Z12) & Z15) rd (imm & Z4095).
 Definition MOV rd rm :=
   ARM_data_r ARM_MOV Z14 Z0 Z0 rd 0 Z0 rm.
 Definition LSL rd rm imm :=
@@ -156,20 +156,12 @@ Definition LDMDB3 rn r0 r1 r2 :=
   ARM_lsm ARM_LDMDB Z14 Z0 rn ((Z1 << r0) .| (Z1 << r1) .| (Z1 << r2)).
 Definition UBFX rd rn sl sr :=
   ARM_bfx false Z14 (Z31-sr) rd (sr-sl) rn.
-Definition GOTO (l: bool) (cond src dest: Z) :=
+Definition GOTO (cond src dest: Z) :=
   let offset := dest - src - Z2 in
-  if (offset <? Z_8388608) || (offset >? Z8388607) then None
-  else
-    let imm := Z.land offset (Z.ones Z24) in
-    Some ((if l then ARM_BL else ARM_B) cond imm).
+  let imm := Z.land offset (Z.ones Z24) in
+  ARM_B cond imm.
 Definition Z0xe1200070 := 0xe1200070.
 Extract Inlined Constant Z0xe1200070 => "0xe1200070".
-Definition GOTOz l cond src dest :=
-  match GOTO l cond src dest with
-  | Some a => arm_assemble a
-  | None => Some (Z0xe1200070)
-  end.
-
 
 Definition arm_add (reg imm: Z) : list arm_inst :=
   let a := ARM_data_i ARM_ADD Z14 Z0 reg reg in
@@ -179,12 +171,6 @@ Definition arm_add (reg imm: Z) : list arm_inst :=
     a (zxbits imm Z0 Z8)::nil.
 (* reg = table[H(reg)] *)
 Definition arm_table_lookup ti sl sr reg :=
-  [ UBFX reg reg (sl-Z2) sr;
-    LSL reg reg Z2          (* lsl reg, reg, #2 *)
-  ]++arm_add reg (Z4*ti)++[ (* add reg, reg, #4*ti *)
-    LDR reg reg Z0          (* ldr reg, [reg] *)
-  ].
-Definition arm_table_lookup2 ti sl sr reg reg2 :=
   [ UBFX reg reg (sl-Z2) sr;
     LSL reg reg Z2          (* lsl reg, reg, #2 *)
   ]++arm_add reg (Z4*ti)++[ (* add reg, reg, #4*ti *)
@@ -257,15 +243,25 @@ Definition rewrite_w_table
       end
   end.
 
-Definition bx_blx_irm (l: bool) reg : IRM :=
+Definition MOVWT c reg a :=
+  [
+      MOVW c reg (a & Z0xffff);           (* movw reg, #a[16:0] *)
+      MOVT c reg ((a >> Z16) & Z0xffff)  (* movt reg, #a[32:16] *)
+  ].
+
+Definition cd cond := if (cond <? Z14) then Z1 else Z0.
+Definition bx_blx_irm (l: bool) lr reg : IRM :=
   fun cond i ti sl sr =>
     arm_assemble_all_cond (
-      arm_table_lookup ti sl sr reg++  (* reg = table[H(reg)] *)
-      (if l then ARM_BLX_r else ARM_BX) Z14 reg::nil              (* bx reg *)
+      (if l then MOVWT Z14 LR lr else [])++
+      arm_table_lookup ti sl sr reg++
+      ARM_BX Z14 reg::nil
     ) cond.
-Definition rewrite_bx_blx l reg := rewrite_w_table (bx_blx_irm l reg).
-Definition rewrite_bx reg := rewrite_bx_blx false reg.
-Definition rewrite_blx reg := rewrite_bx_blx true reg.
+Definition rewrite_bx_blx l lr reg := rewrite_w_table (bx_blx_irm l lr reg).
+Definition rewrite_bx reg := rewrite_bx_blx false 0 reg.
+Definition rwl_bx c := cd c + Z8.
+Definition rewrite_blx lr reg := rewrite_bx_blx true lr reg.
+Definition rwl_blx c := cd c + Z10.
 Definition ldm_pc_irm op Rn register_list reg orig_inst : IRM :=
   fun cond i ti sl sr =>
     let bc := Z4 * Z_popcount (Z.land register_list (Z.ones Z16)) in
@@ -279,6 +275,7 @@ Definition ldm_pc_irm op Rn register_list reg orig_inst : IRM :=
       orig_inst                           (* original inst *)
     ]) cond.
 Definition rewrite_ldm_pc op Rn register_list reg orig_inst := rewrite_w_table (ldm_pc_irm op Rn register_list reg orig_inst).
+Definition rwl_ldm c := cd c + Z12.
 
 (* irm for instructions that use pc as a destination register, but do not modify sp *)
 Definition pc_irm sanitized_inst reg : IRM :=
@@ -286,15 +283,13 @@ Definition pc_irm sanitized_inst reg : IRM :=
     let a := Z4 * i + Z8 in
     arm_assemble_all_cond ([
       STR   reg SP Z_4;                  (* str reg, [sp, #-4] *)
-      MOVW  reg (a & Z0xffff);           (* movw reg, #a[16:0] *)
-      MOVT  reg ((a >> Z16) & Z0xffff);  (* movt reg, #a[32:16] *)
+      MOVW Z14 reg (a & Z0xffff);           (* movw reg, #a[16:0] *)
+      MOVT Z14 reg ((a >> Z16) & Z0xffff);  (* movt reg, #a[32:16] *)
       sanitized_inst                     (* sanitized_inst *)
     ]++arm_table_lookup ti sl sr reg++[  (* reg = table[H(reg)] *)
       ALIGN SP;
       STR   reg SP Z_8;                  (* str reg, [sp, #-8] *)
       LDR   reg SP Z_4;                  (* ldr reg, [sp, #-4] *)
-      MOVT Z3 Z23;
-      MOVW Z3 Z23;
       LDR   PC  SP Z_8                   (* ldr pc, [sp, #-8] *)
     ]) cond.
 (* irm for instructions that use pc as a destination register, and do modify sp *)
@@ -304,8 +299,8 @@ Definition pc_sp_irm sanitized_inst reg reg2 : IRM :=
     arm_assemble_all_cond ([
       STMDB3 SP reg reg2 PC;
       MOV   reg2 SP;
-      MOVW  reg (a & Z0xffff);                (* movw reg, #a[16:0] *)
-      MOVT  reg ((a >> Z16) & Z0xffff);       (* movt reg, #a[32:16] *)
+      MOVW Z14 reg (a & Z0xffff);                (* movw reg, #a[16:0] *)
+      MOVT Z14 reg ((a >> Z16) & Z0xffff);       (* movt reg, #a[32:16] *)
       sanitized_inst                          (* sanitized_inst *)
     ]++arm_table_lookup ti sl sr reg++[       (* reg = table[H(reg)] *)
       STR   reg reg2 (Z_4);                   (* str reg, [sp, #-8 - stack offset] *)
@@ -317,8 +312,8 @@ Definition rewrite_pc_no_jump sanitized_inst cond i reg tc : NewInst :=
   let a := Z4 * i + Z8 in
   wo_table (arm_assemble_all_cond ([
     STR reg SP Z_4;                    (* str reg, [sp, #-4] *)
-    MOVW reg (a & Z0xffff);            (* movw reg, #a[16:0] *)
-    MOVT reg ((a >> Z16) & Z0xffff);   (* movt reg, #a[32:16] *)
+    MOVW Z14 reg (a & Z0xffff);            (* movw reg, #a[16:0] *)
+    MOVT Z14 reg ((a >> Z16) & Z0xffff);   (* movt reg, #a[32:16] *)
     sanitized_inst;                    (* santitized_inst *)
     LDR reg SP Z_4                     (* ldr reg, [sp, #-4] *)
   ]) cond) tc.
@@ -327,25 +322,32 @@ Definition rewrite_pc_sp_no_jump sanitized_inst cond i reg reg2 tc : NewInst :=
   wo_table (arm_assemble_all_cond ([
     STMDB2 SP reg reg2;                (* stmdb sp, {reg, reg2} *)
     MOV reg2 SP;                       (* mov reg2, sp *)
-    MOVW reg (a & Z0xffff);            (* movw reg, #a[16:0] *)
-    MOVT reg ((a >> Z16) & Z0xffff);   (* movt reg, #a[32:16] *)
+    MOVW Z14 reg (a & Z0xffff);            (* movw reg, #a[16:0] *)
+    MOVT Z14 reg ((a >> Z16) & Z0xffff);   (* movt reg, #a[32:16] *)
     sanitized_inst;                    (* santitized_inst *)
     LDMDB2 reg2 reg reg2               (* ldmdb reg2, {reg, reg2} *)
   ]) cond) tc.
-
+Definition rwl_pc c := cd c + Z15.
+Definition rwl_pc_sp c := cd c + Z14.
+Definition rwl_pc_nj c := cd c + Z5.
+Definition rwl_pc_sp_nj c := cd c + Z6.
 Definition canonical_z w z := (Z.land (z + (Z1 << (w-Z1))) (Z.ones w)) - (Z1 << (w-Z1)).
-Definition rewrite_b_bl (l: bool) (cond imm24: Z) i dis i2i' ai tc : NewInst :=
+Definition rewrite_b_bl (l: bool) lr (cond imm24: Z) i dis i2i' ai tc : NewInst :=
   let j := Z.land (i + Z2 + (canonical_z Z24 imm24)) (Z.ones Z30) in
+  let src := if l then i2i' i + Z2 else i2i' i in
   let dst := if (contains j dis) then (i2i' j) else ai in
-  match GOTOz l cond (i2i' i) dst with
-  | Some z => Some ([z], nil, tc)
-  | None => match GOTOz true cond (i2i' i) ai with
-            | Some z => Some ([z], nil, tc)
-            | None => None
+  let m := if l then MOVWT cond LR lr else [] in
+  match wo_table (arm_assemble_all (m ++ [GOTO cond src dst])) tc with
+  | Some z => Some z
+  | None => match wo_table (arm_assemble_all (m ++ [GOTO cond src ai])) tc with
+            | Some z => Some z
+            | None => Some (if l then [Z0xe1200070; Z0xe1200070;Z0xe1200070] else [Z0xe1200070], nil, tc)
             end
   end.
-Definition rewrite_b := rewrite_b_bl false.
+Definition rewrite_b := rewrite_b_bl false 0.
 Definition rewrite_bl := rewrite_b_bl true.
+Definition rwl_b (c :Z) := 1.
+Definition rwl_bl (c :Z) := 3.
 
 (* "mov lr, pc" should use new pc, not old pc
 it's possible that the old pc should be used, if lr is later used as a data memory address,
@@ -355,10 +357,10 @@ although any rewritten jump would be able to handle the old pc value correctly, 
 is sometimes used when calling a kernel user helper function, which we cannot rewrite *)
 Definition rewrite_mov_lr_pc cond i i2i' tc : NewInst :=
   let pc' := Z4 * i2i' (i+Z2) in
-  wo_table (arm_assemble_all_cond ([
-    MOVW  LR (pc' & Z0xffff);
-    MOVT  LR ((pc' >> Z16) & Z0xffff)
-  ]) cond) tc.
+  wo_table (arm_assemble_all ([
+    MOVW cond LR (pc' & Z0xffff);
+    MOVT cond LR ((pc' >> Z16) & Z0xffff)
+  ])) tc.
 
 Definition _unused_reg (base r0 r1 r2: Z) :=
   if (r0 =? base) || (r1 =? base) || (r2 =? base) then
@@ -370,46 +372,35 @@ Definition _unused_reg (base r0 r1 r2: Z) :=
 Definition unused_reg := _unused_reg Z0.
 Definition unused_reg_high := _unused_reg Z4.
 Definition goto_abort i' ai tc : NewInst :=
-  match GOTOz true Z14 i' ai with
+  match arm_assemble (GOTO Z14 i' ai) with
   | Some z => Some ([z], nil, tc)
-  | None => None
+  | None => Some ([Z0xe1200070], nil, tc)
   end.
-Definition cd cond := if (cond <? Z14) then Z1 else Z0.
-Definition rwl_pc c := cd c + Z17.
-Definition rwl_pc_sp c := cd c + Z14.
-Extraction Inline rwl_pc.
-Extraction Inline rwl_pc_sp.
-Set Extraction AutoInline.
-Definition rewrite_inst_len (i bi: Z) (txt: list Z) (z: Z) : Z :=
+Definition rewrite_inst_len (i bi txtlen z: Z) : Z :=
   let decoded := arm_decode z in
   match decoded with
   (* branching *)
   | ARM_BX cond reg =>
       if (reg <? 0) || (reg >=? PC) then Z1
-      else cd cond + Z8
+      else rwl_bx cond
   | ARM_BLX_r cond reg =>
       if (reg <? 0) || (reg >=? PC) then Z1
-      else cd cond + Z8
+      else rwl_blx cond
   | ARM_B cond imm24 => Z1
-  | ARM_BL cond imm24 => Z1
+  | ARM_BL cond imm24 => Z3
   (* data processing *)
   | ARM_data_r op cond s Rn Rd imm5 type Rm =>
       if (Rd =? PC) then rwl_pc cond
       else if (Rn =? PC) || (Rm =? PC) then
-        if (match op with ARM_MOV => Rd =? LR | _ => false end) then
-          cd cond + Z2
-        else if (Rd =? SP) then
-          cd cond + Z6
-        else
-          cd cond + Z5
+        if (match op with ARM_MOV => Rd =? LR | _ => false end) then Z2
+        else if (Rd =? SP) then rwl_pc_sp_nj cond
+        else rwl_pc_nj cond
       else Z1
   | ARM_data_i op cond s Rn Rd imm12 =>
       if (Rd =? PC) then rwl_pc cond
       else if (Rn =? PC) then
-        if (Rd =? SP) then
-          cd cond + Z6
-        else
-          cd cond + Z5
+        if (Rd =? SP) then rwl_pc_sp_nj cond
+        else rwl_pc_nj cond
       else Z1
   (* load/store *)
   | ARM_ls_i ARM_LDR cond P U W Rn Rt imm12 =>
@@ -419,11 +410,11 @@ Definition rewrite_inst_len (i bi: Z) (txt: list Z) (z: Z) : Z :=
       else if (Rn =? PC) then
         let loadedi := (Z.land (if (U =? Z1) then i + Z2 + (imm12>>Z2) else i + Z2 - (imm12>>Z2)) (Z.ones Z30)) in
         let listi := loadedi-bi in
-        match Z.land Z3 imm12 =? Z0, listi >=? Z0, nth_error txt (Z.to_nat (listi)) with
-        | true, true, Some lv => cd cond + Z2
+        match Z.land Z3 imm12 =? Z0, listi >=? Z0, listi <? txtlen with
+        | true, true, true => Z2
         | _, _, _ =>
-            if (Rt =? SP) then cd cond + Z6
-            else cd cond + Z5
+            if (Rt =? SP) then rwl_pc_sp_nj cond
+            else rwl_pc_nj cond
         end
       else Z1
   | ARM_ls_r ARM_LDR cond P U W Rn Rt imm5 type Rm =>
@@ -431,18 +422,16 @@ Definition rewrite_inst_len (i bi: Z) (txt: list Z) (z: Z) : Z :=
         if ((Rn =? SP) && ((P =? Z0) || (W =? Z1))) then rwl_pc_sp cond
         else rwl_pc cond
       else if (Rn =? PC) || (Rm =? PC) then
-        if (Rt =? SP) then cd cond + Z6
-        else cd cond + Z5
+        if (Rt =? SP) then rwl_pc_sp_nj cond
+        else rwl_pc_nj cond
       else Z1
   | ARM_lsm op cond W Rn register_list =>
       if (register_list <? Z0) || (Rn <? Z0) || (Rn >=? Z15) then Z1
       else if (bitb register_list Z15 =? Z0) (* pc is not in reg list *)
       || (match op with | ARM_STMDA | ARM_STMDB | ARM_STMIA | ARM_STMIB => true | _ => false end) then Z1
-      else
-        cd cond + Z12
+      else rwl_ldm cond
   | ARM_vls is_load is_single cond U D Rn Vd imm8 =>
-      if (Rn =? PC) then
-        cd cond + Z5
+      if (Rn =? PC) then rwl_pc_nj cond
       else Z1
   (* | ARM_sync_s ARM_sync_word cond Rn Rd Rt => *)
   (*    match arm_assemble_all_cond [ STR Rt Rn 0; MOVW Rd 0 ] cond with *)
@@ -452,22 +441,21 @@ Definition rewrite_inst_len (i bi: Z) (txt: list Z) (z: Z) : Z :=
   (* unchanged *)
   | ARM_extra_ls_i op cond P U W Rn Rt imm4H imm4L =>
       if (Rn =? PC) then
-        if (match op with ARM_STRH | ARM_STRD => false | _ => Rt =? SP end) then
-          cd cond + Z6
-        else cd cond + Z5
+        if (match op with ARM_STRH | ARM_STRD => false | _ => Rt =? SP end) then rwl_pc_sp_nj cond
+        else rwl_pc_nj cond
       else Z1
   | ARM_extra_ls_r op cond P U W Rn Rt Rm =>
       if (Rn =? PC) then
-        if (match op with ARM_STRH | ARM_STRD => false | _ => Rt =? SP end) then
-          cd cond + Z6
-        else cd cond + Z5
+        if (match op with ARM_STRH | ARM_STRD => false | _ => Rt =? SP end) then rwl_pc_sp_nj cond
+        else rwl_pc_nj cond
       else Z1
   | _ => Z1
   end.
-Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i ti ai bi: Z) (txt: list Z) : NewInst :=
+Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i ti ai bi: Z) (txt: list Z) (use_lr' : Z -> bool) : NewInst :=
   let unchanged := Some ([z], nil, tc) in
   let abort := goto_abort (i2i' i) ai tc in
   let decoded := arm_decode z in
+  let lr := if use_lr' i then Z4 * (i2i' (i+Z1)) else Z4 * (i+Z1) in
   if (negb (contains (i+Z1) dis)) then None else
   match decoded with
   (* branching *)
@@ -476,9 +464,9 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
       else rewrite_bx reg tc dis i2i' cond i ti ai
   | ARM_BLX_r cond reg =>
       if (reg <? 0) || (reg >=? PC) then abort (* this can't happen (unpredictable), but it's easier to just do this than write a proof about the decoder *)
-      else rewrite_blx reg tc dis i2i' cond i ti ai
+      else rewrite_blx lr reg tc dis i2i' cond i ti ai
   | ARM_B cond imm24 => rewrite_b cond imm24 i dis i2i' ai tc
-  | ARM_BL cond imm24 => rewrite_bl cond imm24 i dis i2i' ai tc
+  | ARM_BL cond imm24 => rewrite_bl lr cond imm24 i dis i2i' ai tc
   (* data processing *)
   | ARM_data_r op cond s Rn Rd imm5 type Rm =>
       let reg := unused_reg Rn Rd Rm in
@@ -527,10 +515,10 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
         let listi := loadedi-bi in
         match Z.land Z3 imm12 =? Z0, listi >=? Z0, nth_error txt (Z.to_nat (listi)) with
         | true, true, Some lv =>
-             wo_table (arm_assemble_all_cond [
-               MOVW  Rt (lv & Z0xffff);
-               MOVT  Rt ((lv >> Z16) & Z0xffff)
-             ] cond) tc
+             wo_table (arm_assemble_all [
+               MOVW cond Rt (lv & Z0xffff);
+               MOVT cond Rt ((lv >> Z16) & Z0xffff)
+             ]) tc
         | _, _, _ =>
             if (Rt =? SP) then rewrite_pc_sp_no_jump sanitized_inst cond i reg reg2 tc
             else rewrite_pc_no_jump sanitized_inst cond i reg tc
@@ -619,6 +607,57 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
 
   | _ => abort
   end.
+(* Lemma rewrite_w_table_irm: *)
+(*   forall irm tc dis i2i' cond i ti ai irm' table tc' *)
+(*     (RWT: rewrite_w_table irm tc dis i2i' cond i ti ai = Some (irm', table, tc')), *)
+(*   exists ti sl sr, irm cond i ti sl sr = Some irm'. *)
+(* Proof. *)
+(*   intros. unfold rewrite_w_table in RWT. destruct_match_in RWT; try discriminate; inversion RWT; subst. *)
+(*     now exists z0, z1, z. *)
+(*     now exists ti, z, z0. *)
+(* Qed. *)
+(* Lemma wo_table_irm: *)
+(*   forall z' tc irm table tc' *)
+(*     (WT: wo_table z' tc = Some (irm, table, tc')), *)
+(*     z' = Some irm. *)
+(* Proof. intros; destruct z'; now inversion WT. Qed. *)
+(* Lemma arm_assemble_all_len: *)
+(*   forall a b, arm_assemble_all a = Some b -> length a = length b. *)
+(* Proof. *)
+(*   intros. apply arm_assemble_all_eq in H. now rewrite <- H, length_map. *)
+(* Qed. *)
+(* Lemma arm_assemble_all_cond_len: *)
+(*   forall a cond b, arm_assemble_all_cond a cond = Some b -> (length b = (Nat.b2n (cond <? 14)%Z + length a))%nat. *)
+(* Proof. *)
+(*   intros. unfold arm_assemble_all_cond in H. destruct Z.ltb. apply arm_assemble_all_len in H. rewrite <- H. simpl. lia. apply arm_assemble_all_eq in H. rewrite <- H, length_map. simpl. lia. *)
+(* Qed. *)
+(* Lemma rw_inst_len: *)
+(*   forall tc i2i' z dis i ti ai bi txt z' t tc' *)
+(*     (RI: rewrite_inst tc i2i' z dis i ti ai bi txt = Some (z', t, tc')), *)
+(*     Z.of_nat (length z') = rewrite_inst_len i bi (Z.of_nat (length txt)) z. *)
+(* Proof. *)
+(*   unfold rewrite_inst, rewrite_inst_len, goto_abort, rewrite_b, rewrite_bl, rewrite_b_bl, rwl_pc, rwl_pc_sp, rwl_pc_nj, rwl_pc_sp_nj, rwl_bx, rwl_b, rwl_blx, rwl_bx, rwl_ldm, cd, Nat.b2n, Z15, Z14, Z6, Z1, Z2, Z5, Z8, Z12. intros. *)
+(*   destruct (arm_decode z); destruct_match_in RI; *)
+(*     ( (apply rewrite_w_table_irm in RI; inversion RI as [? [? [? IRM]]]) || *)
+(*       (apply wo_table_irm in RI; rename RI into IRM); *)
+(*       apply arm_assemble_all_cond_len in IRM; simpl in IRM; destruct (cond <? _)%Z; simpl in IRM; try lia ) *)
+(*     || (destruct_match_in RI; inversion RI; subst; try easy). *)
+(*     apply wo_table_irm in RI. apply arm_assemble_all_len in RI. simpl in RI. lia. *)
+(*     apply wo_table_irm in e1. apply arm_assemble_all_len in e1. simpl in e1. lia. *)
+(*     apply wo_table_irm in e2. apply arm_assemble_all_len in e2. simpl in e2. lia. *)
+(*     cbv[Z10] in *. lia. *)
+(*     cbv[Z10] in *. lia. *)
+(*     shelve. remember (if U =? 1 then _ else _). apply nth_error_None in e5. replace (_ <? _) with false by lia. lia. *)
+(*     remember (if U =? 1 then _ else _). apply nth_error_None in e5. replace (_ <? _) with false by lia. lia. *)
+(*     remember (if U =? 1 then _ else _). apply nth_error_None in e5. replace (_ <? _) with false by lia. lia. *)
+(*     remember (if U =? 1 then _ else _). apply nth_error_None in e5. replace (_ <? _) with false by lia. lia. *)
+(*     apply wo_table_irm in e0. apply arm_assemble_all_len in e0. simpl in e0. lia. *)
+(*     apply wo_table_irm in e1. apply arm_assemble_all_len in e1. simpl in e1. lia. *)
+(*     apply wo_table_irm in e0. apply arm_assemble_all_len in e0. simpl in e0. cbv[Z3]. lia. *)
+(*     apply wo_table_irm in e1. apply arm_assemble_all_len in e1. simpl in e1. cbv[Z3]. lia. *)
+(*     Unshelve. *)
+(*     remember (if U =? 1 then _ else _). epose proof (proj1 (nth_error_Some txt (Z.to_nat (y & Z.ones Z30 -bi))%Z)). rewrite e5 in H. specialize (H ltac:(discriminate)). replace (_<?_) with true by lia. apply wo_table_irm in RI. apply arm_assemble_all_len in RI. simpl in RI. lia. *)
+(* Qed. *)
 
 (*
    pol - maps indexes to lists of valid destination indexes
@@ -630,24 +669,20 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
    bi - base index
    txt - same as zs but doesn't change when recursing
 *)
-Fixpoint _rewrite (zs: list Z) (tc: TableCache) (pol: Z -> list Z) (i2i': Z -> Z) (i ti ai bi: Z) (txt: list Z) : option (list (list Z) * list (list Z)) :=
+Fixpoint _rewrite (zs: list Z) (tc: TableCache) (pol: Z -> list Z) (i2i': Z -> Z) (i ti ai bi: Z) (txt: list Z) use_lr' : option (list (list Z) * list (list Z)) :=
   if (i >=? Z1 << Z30) || (i2i' i >=? Z1 << Z30 - Z1) || (ti >=? Z1 << Z30) then None else
   match zs with
   | z::zs =>
-      match rewrite_inst tc i2i' z (pol i) i ti ai bi txt with
+      match rewrite_inst tc i2i' z (pol i) i ti ai bi txt use_lr' with
       | None => None
       | Some (z', table, tc') =>
           let ti' := ti + Z.of_nat (length table) in
-          match _rewrite zs tc' pol i2i' (i+Z1) ti' ai bi txt with
+          match _rewrite zs tc' pol i2i' (i+Z1) ti' ai bi txt use_lr' with
           | None => None
           | Some (z_t, table_t) => Some (z'::z_t, table::table_t)
           end
       end
-  | nil =>
-      match GOTOz true Z14 (i2i' i) ai with
-      | Some z => Some ([[z]], nil)
-      | None => None
-      end
+  | nil => Some ([[Z0xe1200070]], nil)
   end.
 
 Fixpoint _make_i's (z's: list (list Z)) i' :=
@@ -674,11 +709,11 @@ Fixpoint _mapi A B i f (l: list A) : list B :=
 Definition mapi {A B} := _mapi A B 0.
 Extract Inlined Constant mapi => "List.mapi".
 
-Definition cfi_rw (pol: Z -> list Z) (code: list Z) (bi bi' ti ai: Z) :=
+Definition cfi_rw (pol: Z -> list Z) (code: list Z) (bi bi' ti ai: Z) use_lr' :=
   let tc := fun _ => None in
-  let irm_lens := mapi (fun i => rewrite_inst_len (bi+i) bi (of_list code)) code in
+  let irm_lens := mapi (fun i => rewrite_inst_len (bi+i) bi (Z.of_nat (length code))) code in
   let i2i' := make_i2i' bi bi' ai irm_lens in
-  _rewrite code tc pol i2i' bi ti ai bi (of_list code).
+  _rewrite code tc pol i2i' bi ti ai bi (of_list code) use_lr'.
 
 Extract Inductive Z => int [ "0" "" "(~-)" ].
 Extract Inductive nat => int [ "0" "" ].
