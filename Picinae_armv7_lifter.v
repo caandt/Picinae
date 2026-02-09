@@ -217,11 +217,11 @@ Variant arm_inst :=
   | ARM_PLD_i (U R Rn imm12: Z)
   | ARM_PLD_r (U R Rn imm5 type Rm: Z)
       .
-Definition zxbits z i j := Z.shiftr z i mod Z.shiftl Z1 (Z.max Z0 (j - i)).
+Definition zxbits z i j := Z.land (Z.shiftr z i) (Z.ones (Z.max Z0 (j - i))).
 Lemma zxbits_eq:
   forall z i j, zxbits z i j = Z_xbits z i j.
 Proof.
-  intros. unfold zxbits, Z_xbits. rewrite Z.shiftl_1_l. reflexivity.
+  intros. unfold zxbits, Z_xbits. now rewrite Z.land_ones by lia.
 Qed.
 Definition bitb z b := zxbits z b (b + Z1).
 Notation "x !=? y" := (negb (Z.eqb x y)) (at level 25, left associativity).

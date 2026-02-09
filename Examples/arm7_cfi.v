@@ -7,6 +7,9 @@ From Coq Require Recdef.
 Require Import Lia.
 Import ListNotations.
 Open Scope Z.
+Require Extraction.
+Extraction Language OCaml.
+Set Extraction Output Directory "arm_cfi_extraction".
 
 Definition Z_4 := -4.
 Definition Z_8 := -8.
@@ -28,35 +31,39 @@ Definition Z_popcount z :=
   | _ => Z0
   end.
 
+(* H(x) = (x << sl) >> sr *)
+Definition apply_hash sl sr z :=
+  Z.shiftr (Z.land (Z.shiftl z sl) (Z.ones Z32)) sr.
+
 (* checks if l contains z *)
 Definition contains z l :=
   match find (Z.eqb z) l with
   | Some _ => true
   | None => false
   end.
-
-(* checks if all elements in the two lists are unique,
-   but allows the two elements at the same index in l and l' to be the same *)
-Fixpoint unique_except_pairs l l' :=
-  match l, l' with
-  | a::t, a'::t' => if contains a (t++t') || contains a' (t++t') then false
-                   else unique_except_pairs t t'
-  | _, _ => true
-  end.
-
-(* H(x) = (x << sl) >> sr *)
-Definition apply_hash sl sr z :=
-  Z.shiftr ((Z.shiftl z sl) mod (Z4294967296)) sr.
-
+(* horrible jank to extract this to ocaml that uses a hash table instead *)
+Definition tbl_contains := contains.
+Extract Constant tbl_contains => "(fun a b -> Hashtbl.mem b a)".
+Definition tbl_add (tbl:list Z) (hi hi':Z) := hi::hi'::tbl.
+Extract Constant tbl_add => "(fun tbl a b -> (Hashtbl.add tbl a (); if a <> b then Hashtbl.add tbl b () else (); tbl))".
 (* checks if the hash produces no unacceptable collisions
    dis dis' - list of old/new destination indexes
    sl sr - hash parameters *)
-Definition valid_hash dis dis' sl sr :=
-  unique_except_pairs (map (apply_hash sl sr) dis) (map (apply_hash sl sr) dis').
+Fixpoint validhash tbl dis dis' sl sr :=
+  match dis, dis' with
+  | a::t, a'::t' =>
+      let ha := apply_hash sl sr a in
+      let ha' := apply_hash sl sr a' in
+      if tbl_contains ha tbl || tbl_contains ha' tbl then false
+      else validhash (tbl_add tbl ha ha') t t' sl sr
+  | _, _ => true
+  end.
+Definition w_nil (f:list Z -> list Z -> list Z -> Z -> Z -> bool) := f nil.
+Extract Inlined Constant w_nil => "(fun f dis -> let seen = Hashtbl.create (List.length dis) in f seen dis)".
 
 Function find_sr dis dis' sl sr {measure Z.to_nat sr} :=
   if sr <=? Z0 then None
-  else if valid_hash dis dis' sl sr then Some sr else find_sr dis dis' sl (sr-Z1).
+  else if w_nil validhash dis dis' sl sr then Some sr else find_sr dis dis' sl (sr-Z1).
 Proof. unfold Z1 in *. lia. Qed.
 
 Function find_hash dis dis' sl {measure Z.to_nat sl} :=
@@ -66,6 +73,9 @@ Function find_hash dis dis' sl {measure Z.to_nat sl} :=
        | None => find_hash dis dis' (sl-Z1)
        end.
 Proof. unfold Z1, Z2 in *. lia. Qed.
+
+Definition map_add (f:Z->Z) j k d := fun x => if (x =? j) || (x =? k) then d else f x.
+Extract Inlined Constant map_add => "(fun tbl j k d -> Hashtbl.add tbl j d; Hashtbl.add tbl k d; tbl)".
 
 (* make a function that maps table index to the value in the table at that index
    dis dis' - list of old/new destination indexes
@@ -77,7 +87,7 @@ Fixpoint make_jump_table_map dis dis' sl sr f :=
       let j := apply_hash sl sr di in
       let k := apply_hash sl sr di' in
       let f' := make_jump_table_map t t' sl sr f in
-      fun x => if (x =? j) || (x =? k) then di' * Z4 else f' x
+      map_add f' j k (di'*Z4)
   | _, _ => f
   end.
 
@@ -107,10 +117,13 @@ Proof.
     now rewrite map2list_equation.
 Qed.
 
-Definition make_jump_table dis dis' ai sl sr n :=
-  let m := make_jump_table_map dis dis' sl sr (fun _ => ai * Z4) in
+Definition make_jump_table (mjtm:list Z -> list Z -> Z -> Z -> (Z -> Z) -> Z -> Z) dis dis' ai sl sr n :=
+  let m := mjtm dis dis' sl sr (fun _ => ai * Z4) in
   rev (map2list m n).
-
+Extract Inlined Constant make_jump_table => "(fun mjtm dis dis' ai sl sr n ->
+  let m = mjtm dis dis' sl sr (Hashtbl.create (2*n)) in
+  List.init n (fun x -> match Hashtbl.find_opt m x with | Some y -> y | _ -> ai * 4)
+)".
 
 Definition PC := Z15.
 Definition LR := Z14.
@@ -147,12 +160,14 @@ Definition GOTO (l: bool) (cond src dest: Z) :=
   let offset := dest - src - Z2 in
   if (offset <? Z_8388608) || (offset >? Z8388607) then None
   else
-    let imm := offset mod (Z.shiftl Z1 Z24) in
+    let imm := Z.land offset (Z.ones Z24) in
     Some ((if l then ARM_BL else ARM_B) cond imm).
+Definition Z0xe1200070 := 0xe1200070.
+Extract Inlined Constant Z0xe1200070 => "0xe1200070".
 Definition GOTOz l cond src dest :=
   match GOTO l cond src dest with
   | Some a => arm_assemble a
-  | None => None
+  | None => Some (Z0xe1200070)
   end.
 
 
@@ -164,6 +179,12 @@ Definition arm_add (reg imm: Z) : list arm_inst :=
     a (zxbits imm Z0 Z8)::nil.
 (* reg = table[H(reg)] *)
 Definition arm_table_lookup ti sl sr reg :=
+  [ UBFX reg reg (sl-Z2) sr;
+    LSL reg reg Z2          (* lsl reg, reg, #2 *)
+  ]++arm_add reg (Z4*ti)++[ (* add reg, reg, #4*ti *)
+    LDR reg reg Z0          (* ldr reg, [reg] *)
+  ].
+Definition arm_table_lookup2 ti sl sr reg reg2 :=
   [ UBFX reg reg (sl-Z2) sr;
     LSL reg reg Z2          (* lsl reg, reg, #2 *)
   ]++arm_add reg (Z4*ti)++[ (* add reg, reg, #4*ti *)
@@ -223,7 +244,7 @@ Definition rewrite_w_table
           match irm cond i ti sl sr with
           | None => None
           | Some irm =>
-              let table := make_jump_table dis dis' ai sl sr (Z1 << (Z32 - sr)) in
+              let table := make_jump_table make_jump_table_map dis dis' ai sl sr (Z1 << (Z32 - sr)) in
               let tc' := fun x => if (list_eqb x dis) then Some (ti, sl, sr) else tc x in
               if (ti + Z.of_nat (length table) >=? (Z1 << Z30)) then None else
               Some (irm, table, tc')
@@ -247,7 +268,7 @@ Definition rewrite_bx reg := rewrite_bx_blx false reg.
 Definition rewrite_blx reg := rewrite_bx_blx true reg.
 Definition ldm_pc_irm op Rn register_list reg orig_inst : IRM :=
   fun cond i ti sl sr =>
-    let bc := Z4 * Z_popcount (register_list mod (Z1 << Z16)) in
+    let bc := Z4 * Z_popcount (Z.land register_list (Z.ones Z16)) in
     let offset := arm_lsm_op_start op bc + bc - Z4 in
     arm_assemble_all_cond ([
       STR reg SP Z_4;                     (* str reg, [sp, #-4] *)
@@ -272,6 +293,8 @@ Definition pc_irm sanitized_inst reg : IRM :=
       ALIGN SP;
       STR   reg SP Z_8;                  (* str reg, [sp, #-8] *)
       LDR   reg SP Z_4;                  (* ldr reg, [sp, #-4] *)
+      MOVT Z3 Z23;
+      MOVW Z3 Z23;
       LDR   PC  SP Z_8                   (* ldr pc, [sp, #-8] *)
     ]) cond.
 (* irm for instructions that use pc as a destination register, and do modify sp *)
@@ -310,9 +333,9 @@ Definition rewrite_pc_sp_no_jump sanitized_inst cond i reg reg2 tc : NewInst :=
     LDMDB2 reg2 reg reg2               (* ldmdb reg2, {reg, reg2} *)
   ]) cond) tc.
 
-Definition canonical_z w z := (z + (Z1 << (w-Z1))) mod (Z1 << w) - (Z1 << (w-Z1)).
+Definition canonical_z w z := (Z.land (z + (Z1 << (w-Z1))) (Z.ones w)) - (Z1 << (w-Z1)).
 Definition rewrite_b_bl (l: bool) (cond imm24: Z) i dis i2i' ai tc : NewInst :=
-  let j := (i + Z2 + (canonical_z Z24 imm24)) mod (Z1 << Z30) in
+  let j := Z.land (i + Z2 + (canonical_z Z24 imm24)) (Z.ones Z30) in
   let dst := if (contains j dis) then (i2i' j) else ai in
   match GOTOz l cond (i2i' i) dst with
   | Some z => Some ([z], nil, tc)
@@ -351,6 +374,96 @@ Definition goto_abort i' ai tc : NewInst :=
   | Some z => Some ([z], nil, tc)
   | None => None
   end.
+Definition cd cond := if (cond <? Z14) then Z1 else Z0.
+Definition rwl_pc c := cd c + Z17.
+Definition rwl_pc_sp c := cd c + Z14.
+Extraction Inline rwl_pc.
+Extraction Inline rwl_pc_sp.
+Set Extraction AutoInline.
+Definition rewrite_inst_len (i bi: Z) (txt: list Z) (z: Z) : Z :=
+  let decoded := arm_decode z in
+  match decoded with
+  (* branching *)
+  | ARM_BX cond reg =>
+      if (reg <? 0) || (reg >=? PC) then Z1
+      else cd cond + Z8
+  | ARM_BLX_r cond reg =>
+      if (reg <? 0) || (reg >=? PC) then Z1
+      else cd cond + Z8
+  | ARM_B cond imm24 => Z1
+  | ARM_BL cond imm24 => Z1
+  (* data processing *)
+  | ARM_data_r op cond s Rn Rd imm5 type Rm =>
+      if (Rd =? PC) then rwl_pc cond
+      else if (Rn =? PC) || (Rm =? PC) then
+        if (match op with ARM_MOV => Rd =? LR | _ => false end) then
+          cd cond + Z2
+        else if (Rd =? SP) then
+          cd cond + Z6
+        else
+          cd cond + Z5
+      else Z1
+  | ARM_data_i op cond s Rn Rd imm12 =>
+      if (Rd =? PC) then rwl_pc cond
+      else if (Rn =? PC) then
+        if (Rd =? SP) then
+          cd cond + Z6
+        else
+          cd cond + Z5
+      else Z1
+  (* load/store *)
+  | ARM_ls_i ARM_LDR cond P U W Rn Rt imm12 =>
+      if (Rt =? PC) then
+        if ((Rn =? SP) && ((P =? Z0) || (W =? Z1))) then rwl_pc_sp cond
+        else rwl_pc cond
+      else if (Rn =? PC) then
+        let loadedi := (Z.land (if (U =? Z1) then i + Z2 + (imm12>>Z2) else i + Z2 - (imm12>>Z2)) (Z.ones Z30)) in
+        let listi := loadedi-bi in
+        match Z.land Z3 imm12 =? Z0, listi >=? Z0, nth_error txt (Z.to_nat (listi)) with
+        | true, true, Some lv => cd cond + Z2
+        | _, _, _ =>
+            if (Rt =? SP) then cd cond + Z6
+            else cd cond + Z5
+        end
+      else Z1
+  | ARM_ls_r ARM_LDR cond P U W Rn Rt imm5 type Rm =>
+      if (Rt =? PC) then
+        if ((Rn =? SP) && ((P =? Z0) || (W =? Z1))) then rwl_pc_sp cond
+        else rwl_pc cond
+      else if (Rn =? PC) || (Rm =? PC) then
+        if (Rt =? SP) then cd cond + Z6
+        else cd cond + Z5
+      else Z1
+  | ARM_lsm op cond W Rn register_list =>
+      if (register_list <? Z0) || (Rn <? Z0) || (Rn >=? Z15) then Z1
+      else if (bitb register_list Z15 =? Z0) (* pc is not in reg list *)
+      || (match op with | ARM_STMDA | ARM_STMDB | ARM_STMIA | ARM_STMIB => true | _ => false end) then Z1
+      else
+        cd cond + Z12
+  | ARM_vls is_load is_single cond U D Rn Vd imm8 =>
+      if (Rn =? PC) then
+        cd cond + Z5
+      else Z1
+  (* | ARM_sync_s ARM_sync_word cond Rn Rd Rt => *)
+  (*    match arm_assemble_all_cond [ STR Rt Rn 0; MOVW Rd 0 ] cond with *)
+  (*    | Some z => Some (z, nil) *)
+  (*    | None => None *)
+  (*    end *)
+  (* unchanged *)
+  | ARM_extra_ls_i op cond P U W Rn Rt imm4H imm4L =>
+      if (Rn =? PC) then
+        if (match op with ARM_STRH | ARM_STRD => false | _ => Rt =? SP end) then
+          cd cond + Z6
+        else cd cond + Z5
+      else Z1
+  | ARM_extra_ls_r op cond P U W Rn Rt Rm =>
+      if (Rn =? PC) then
+        if (match op with ARM_STRH | ARM_STRD => false | _ => Rt =? SP end) then
+          cd cond + Z6
+        else cd cond + Z5
+      else Z1
+  | _ => Z1
+  end.
 Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i ti ai bi: Z) (txt: list Z) : NewInst :=
   let unchanged := Some ([z], nil, tc) in
   let abort := goto_abort (i2i' i) ai tc in
@@ -384,6 +497,7 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
         else
           rewrite_pc_no_jump sanitized_inst cond i reg tc
       else unchanged
+  | ARM_data_rsr _ _ _ _ _ _ _ _ => unchanged
   | ARM_data_i op cond s Rn Rd imm12 =>
       let reg := unused_reg Rn Rd Z0 in
       let reg2 := unused_reg_high Rn Rd Z0 in
@@ -409,14 +523,15 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
         if ((Rn =? SP) && ((P =? Z0) || (W =? Z1))) then rewrite_pc_sp sanitized_inst reg reg2 tc dis i2i' cond i ti ai
         else rewrite_pc sanitized_inst reg tc dis i2i' cond i ti ai
       else if (Rn =? PC) then
-        let li := bi-((if (U =? Z1) then i + Z2 + imm12 else i + Z2 - imm12) mod (Z1 << Z32)) in
-        match li >? Z0, nth_error txt (Z.to_nat (bi-li)) with
-        | true, Some lv =>
+        let loadedi := (Z.land (if (U =? Z1) then i + Z2 + (imm12>>Z2) else i + Z2 - (imm12>>Z2)) (Z.ones Z30)) in
+        let listi := loadedi-bi in
+        match Z.land Z3 imm12 =? Z0, listi >=? Z0, nth_error txt (Z.to_nat (listi)) with
+        | true, true, Some lv =>
              wo_table (arm_assemble_all_cond [
                MOVW  Rt (lv & Z0xffff);
                MOVT  Rt ((lv >> Z16) & Z0xffff)
              ] cond) tc
-        | _, _ =>
+        | _, _, _ =>
             if (Rt =? SP) then rewrite_pc_sp_no_jump sanitized_inst cond i reg reg2 tc
             else rewrite_pc_no_jump sanitized_inst cond i reg tc
         end
@@ -499,6 +614,7 @@ Definition rewrite_inst (tc: TableCache) (i2i': Z -> Z) (z: Z) (dis: list Z) (i 
   | ARM_VCVT_fpi _ _ _ _ _ _ _ _
   | ARM_VCVT_fpf _ _ _ _ _ _ _ _ _
   | ARM_vfp_other _ _ _ _ _ _ _
+  | idk
       => unchanged
 
   | _ => abort
@@ -539,30 +655,31 @@ Fixpoint _make_i's (z's: list (list Z)) i' :=
   | z'::tail => i'::_make_i's tail (i' + Z.of_nat (length z'))
   | nil => nil
   end.
-Definition make_i's (z's: list (list Z)) i' :=
-  let lens := map (fun x => Z.of_nat (length x)) z's in
+Definition make_i's lens i' :=
   rev (snd (fold_left (fun a b => let sum := fst a + b in (sum, i' + fst a :: snd a)) lens (0, nil))).
 Definition get l n := nth (Z.to_nat n) l 0.
 Definition of_list (x: list Z) := x.
-Definition make_i2i' bi bi' ai z's :=
-  let i's := make_i's z's bi' in
-  let ie := bi + Z.of_nat (length z's) in
-  let ie' := bi' + Z.of_nat (length (concat z's)) in
+Definition make_i2i' bi bi' ai lens :=
+  let i's := make_i's lens bi' in
+  let ie := bi + Z.of_nat (length lens) in
+  let ie' := bi' + (fold_left Z.add lens Z0) in
   let arr := of_list i's in
   fun x => if (x <? bi) || (x >=? ie) then if (x <? bi') || (x >=? ie') then x else ai else get arr (x-bi).
 
+Fixpoint _mapi A B i f (l: list A) : list B :=
+  match l with
+  | a::t => f i a::_mapi A B (i+1) f t
+  | nil => nil
+  end.
+Definition mapi {A B} := _mapi A B 0.
+Extract Inlined Constant mapi => "List.mapi".
+
 Definition cfi_rw (pol: Z -> list Z) (code: list Z) (bi bi' ti ai: Z) :=
   let tc := fun _ => None in
-  match _rewrite code tc pol id bi ti ai bi code with
-  | Some (z's, _) =>
-      let i2i' := make_i2i' bi bi' ai z's in
-      _rewrite code tc pol i2i' bi ti ai bi code
-  | None => None
-  end.
+  let irm_lens := mapi (fun i => rewrite_inst_len (bi+i) bi (of_list code)) code in
+  let i2i' := make_i2i' bi bi' ai irm_lens in
+  _rewrite code tc pol i2i' bi ti ai bi (of_list code).
 
-Require Extraction.
-Extraction Language OCaml.
-Set Extraction Output Directory "arm_cfi_extraction".
 Extract Inductive Z => int [ "0" "" "(~-)" ].
 Extract Inductive nat => int [ "0" "" ].
 Extract Inductive bool => "bool" [ "true" "false" ].
@@ -619,7 +736,7 @@ Extract Inlined Constant Z8388607 => "8388607".
 Extract Inlined Constant Z.opp => "(~-)".
 Extract Inlined Constant Z.ltb => "(<)".
 (* maybe use library that has popcount instrinsic? *)
-Extract Inlined Constant Z_popcount => "(fun z -> bitb z 0 + bitb z 1 + bitb z 2 + bitb z 3 + bitb z 4 + bitb z 5 + bitb z 6 + bitb z 7 + bitb z 8 + bitb z 9 + bitb z 10 + bitb z 11 + bitb z 12 + bitb z 13 + bitb z 14 + bitb z 15 + bitb z 16 + bitb z 17 + bitb z 18 + bitb z 19 + bitb z 20 + bitb z 21 + bitb z 22 + bitb z 23 + bitb z 24 + bitb z 25 + bitb z 26 + bitb z 27 + bitb z 28 + bitb z 29 + bitb z 30 + bitb z 31)".
+Extract Constant Z_popcount => "(fun z -> bitb z 0 + bitb z 1 + bitb z 2 + bitb z 3 + bitb z 4 + bitb z 5 + bitb z 6 + bitb z 7 + bitb z 8 + bitb z 9 + bitb z 10 + bitb z 11 + bitb z 12 + bitb z 13 + bitb z 14 + bitb z 15 + bitb z 16 + bitb z 17 + bitb z 18 + bitb z 19 + bitb z 20 + bitb z 21 + bitb z 22 + bitb z 23 + bitb z 24 + bitb z 25 + bitb z 26 + bitb z 27 + bitb z 28 + bitb z 29 + bitb z 30 + bitb z 31)".
 Extract Inlined Constant Z.abs => "(abs)".
 Extract Inlined Constant internal_Z_beq => "(=)".
 Extract Inlined Constant Z.gtb => "(>)".
@@ -631,6 +748,7 @@ Extract Inlined Constant Nat.sub => "(-)".
 Extract Inlined Constant Z.mul => "( * )".
 Extract Inlined Constant Z.modulo => "(fun x y -> ((x mod y) + y) mod y)".
 Extract Inlined Constant Z.shiftl => "(lsl)".
+Extract Inlined Constant Z.ones => "(fun x -> ((lsl) 1 x)-1)".
 Extract Inlined Constant Z.shiftr => "(lsr)".
 Extract Inlined Constant Z.land => "(land)".
 Extract Inlined Constant Z.lor => "(lor)".
@@ -639,9 +757,9 @@ Extract Inlined Constant Z.lxor => "(lxor)".
 Extract Inlined Constant Z.eqb => "(=)".
 Extract Inlined Constant length => "List.length".
 Extract Inlined Constant concat => "List.flatten".
-Extract Inlined Constant contains => "(List.mem)".
+Extract Inlined Constant contains => "(fun _ _ -> true)".
 Extract Inlined Constant negb => "(not)".
-Extract Inlined Constant nth_error => "(List.nth_opt)".
+Extract Inlined Constant nth_error => "(fun a i -> if i < Array.length a then Some (Array.get a i) else None)".
 Extract Inlined Constant app => "List.append".
 Extract Inlined Constant map => "List.map".
 Extract Inlined Constant combine => "List.combine".
