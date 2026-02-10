@@ -1,0 +1,8 @@
+src/extraction/*
+!src/extraction/Picinae_armv7_lifter.ml
+!src/extraction/arm7_cfi.ml
+src/rw
+*.cmi
+*.cmx
+*.elf
+/cfitmp/
