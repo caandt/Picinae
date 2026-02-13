@@ -1,8 +1,18 @@
 # ARMv7 CFI Binary Rewriter
 
-Currently only uses a trivial policy (every address can go to every other address)
+Currently, it only uses a trivial policy (every address can go to every other address)
 
 ## Requirements
+
+### Hardware / OS requirements
+
+XXXX
+
+### Software Package
+
+#### nix-shell
+
+First, you need to install [nix]().
 
 - OCaml
     - Domainslib
