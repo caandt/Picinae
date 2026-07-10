@@ -1,3 +1,8 @@
+(*
+   Armv8-A A64 lifter based on issue E.a
+   https://developer.arm.com/documentation/ddi0487/ea/
+ *)
+
 Require Import Picinae_armv8_pcode.
 Require Import List String Ascii NArith Bool.
 Import ListNotations.
@@ -417,8 +422,8 @@ Section Decoder.
     let op2 := n.[2,5] in
     let LL := n.[0,2] in
     match[bits] opc, op2, LL with
-      [ "-    001  - " => UDF (* Unallocated. *)
-      ; "-    01x  - " => UDF (* Unallocated. *)
+      [ "-    xx1  - " => UDF (* Unallocated. *)
+      ; "-    x1x  - " => UDF (* Unallocated. *)
       ; "-    1xx  - " => UDF (* Unallocated. *)
       ; "000  000  00" => UDF (* Unallocated. *)
       ; "000  000  01" => ARM_SVC (* SVC *)
@@ -432,14 +437,16 @@ Section Decoder.
       ; "010  000  1x" => UDF (* Unallocated. *)
       ; "011  000  01" => UDF (* Unallocated. *)
       ; "011  000  1x" => UDF (* Unallocated. *)
-      ; "100  000  - " => UDF (* Unallocated. *)
+      ; "100  000  00" => UDF (* Unallocated. *)
       ; "101  000  00" => UDF (* Unallocated. *)
       ; "101  000  01" => ARM_DCPS1 (* DCPS1 *)
       ; "101  000  10" => ARM_DCPS2 (* DCPS2 *)
       ; "101  000  11" => ARM_DCPS3 (* DCPS3 *)
       ; "110  000  - " => UDF (* Unallocated. *)
-      ; "111  000  - " => UDF (* Unallocated. *)
+      ; "111  000  01" => UDF (* Unallocated. *)
+      ; "111  000  1x" => UDF (* Unallocated. *)
       ] else UDF end.
+
   Definition hints :=
     let CRm := n.[8,12] in
     let op2 := n.[5,8] in
@@ -451,25 +458,24 @@ Section Decoder.
       ; "0000  011" => ARM_WFI (* WFI - *)
       ; "0000  100" => ARM_SEV (* SEV - *)
       ; "0000  101" => UDF (* SEVL - *)
-      ; "0000  110" => UDF (* DGH FEAT_DGH *)
-      ; "0000  111" => UDF (* XPACD, XPACI, XPACLRI FEAT_PAuth *)
-      ; "0001  000" => UDF (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIA1716 variant FEAT_PAuth *)
-      ; "0001  010" => UDF (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIB1716 variant FEAT_PAuth *)
-      ; "0001  100" => UDF (* AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA - AUTIA1716 variant FEAT_PAuth *)
-      ; "0001  110" => UDF (* AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB - AUTIB1716 variant FEAT_PAuth *)
-      ; "0010  000" => UDF (* ESB FEAT_RAS *)
-      ; "0010  001" => UDF (* PSB CSYNC FEAT_SPE *)
-      ; "0010  010" => UDF (* TSB CSYNC FEAT_TRF *)
+      ; "0000  111" => UDF (* XPACD, XPACI, XPACLRI Armv8.3 *)
+      ; "0001  000" => UDF (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIA1716 variant on page C6-1133 Armv8.3 *)
+      ; "0001  010" => UDF (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIB1716 variant on page C6-1135 Armv8.3 *)
+      ; "0001  100" => UDF (* AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA - AUTIA1716 variant on page C6-794 Armv8.3 *)
+      ; "0001  110" => UDF (* AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB - AUTIB1716 variant on page C6-796 Armv8.3 *)
+      ; "0010  000" => UDF (* ESB Armv8.2 *)
+      ; "0010  001" => UDF (* PSB CSYNC Armv8.2 *)
+      ; "0010  010" => UDF (* TSB CSYNC Armv8.4 *)
       ; "0010  100" => UDF (* CSDB - *)
-      ; "0011  000" => UDF (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIAZ variant FEAT_PAuth *)
-      ; "0011  001" => UDF (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIASP variant FEAT_PAuth *)
-      ; "0011  010" => UDF (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIBZ variant FEAT_PAuth *)
-      ; "0011  011" => UDF (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIBSP variant FEAT_PAuth *)
-      ; "0011  100" => UDF (* AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA - AUTIAZ variant FEAT_PAuth *)
-      ; "0011  101" => UDF (* AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA - AUTIASP variant FEAT_PAuth *)
-      ; "0011  110" => UDF (* AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB - AUTIBZ variant FEAT_PAuth *)
-      ; "0011  111" => UDF (* AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB - AUTIBSP variant FEAT_PAuth *)
-      ; "0100  xx0" => UDF (* BTI FEAT_BTI *)
+      ; "0011  000" => UDF (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIAZ variant on page C6-1133 Armv8.3 *)
+      ; "0011  001" => UDF (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIASP variant on page C6-1133 Armv8.3 *)
+      ; "0011  010" => UDF (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIBZ variant on page C6-1135 Armv8.3 *)
+      ; "0011  011" => UDF (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIBSP variant on page C6-1135 Armv8.3 *)
+      ; "0011  100" => UDF (* AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA - AUTIAZ variant on page C6-794 Armv8.3 *)
+      ; "0011  101" => UDF (* AUTIA, AUTIA1716, AUTIASP, AUTIAZ, AUTIZA - AUTIASP variant on page C6-794 Armv8.3 *)
+      ; "0011  110" => UDF (* AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB - AUTIBZ variant on page C6-796 Armv8.3 *)
+      ; "0011  111" => UDF (* AUTIB, AUTIB1716, AUTIBSP, AUTIBZ, AUTIZB - AUTIBSP variant on page C6-796 Armv8.3 *)
+      ; "0100  xx0" => UDF (* BTI Armv8.5 *)
       ] else UDF end.
   Definition barriers :=
     let CRm := n.[8,12] in
@@ -477,7 +483,7 @@ Section Decoder.
     let Rt := n.[0,5] in
     match[bits] CRm, op2, Rt with
       [ "-       000  -      " => UDF (* Unallocated. *)
-      ; "-       001  !=11111" => UDF (* Unallocated. *)
+      ; "-       001  -      " => UDF (* Unallocated. *)
       ; "-       010  11111  " => UDF (* CLREX *)
       ; "-       101  11111  " => UDF (* DMB *)
       ; "-       110  11111  " => UDF (* ISB *)
@@ -489,7 +495,7 @@ Section Decoder.
       ; "001x    011  -      " => UDF (* Unallocated. *)
       ; "01xx    011  -      " => UDF (* Unallocated. *)
       ; "0100    100  11111  " => UDF (* PSSBB *)
-      ; "1xxx    011  -      " => UDF (* Unallocated *)
+      ; "1xxx    011  -      " => UDF (* Unallocated. *)
       ] else UDF end.
   Definition pstate :=
     let op1 := n.[16,19] in
@@ -498,9 +504,9 @@ Section Decoder.
     match[bits] op1, op2, Rt with
       [ "-    -    !=11111" => UDF (* Unallocated. - *)
       ; "-    -    11111  " => UDF (* MSR (immediate) - *)
-      ; "000  000  11111  " => UDF (* CFINV FEAT_FlagM *)
-      ; "000  001  11111  " => UDF (* XAFLAG FEAT_FlagM2 *)
-      ; "000  010  11111  " => UDF (* AXFLAG FEAT_FlagM2 *)
+      ; "000  000  11111  " => UDF (* CFINV Armv8.4 *)
+      ; "000  001  11111  " => UDF (* XAFLAG Armv8.5 *)
+      ; "000  010  11111  " => UDF (* AXFLAG Armv8.5 *)
       ] else UDF end.
   Definition sys_inst :=
     let L := n.[21] in
@@ -526,9 +532,9 @@ Section Decoder.
       ; "0000  11111    000000    -        00000  " => UDF (* BR - *)
       ; "0000  11111    000001    -        -      " => UDF (* Unallocated. - *)
       ; "0000  11111    000010    -        !=11111" => UDF (* Unallocated. - *)
-      ; "0000  11111    000010    -        11111  " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key A, zero modifier variant FEAT_PAuth *)
+      ; "0000  11111    000010    -        11111  " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key A, zero modifier variant on page C6-817 Armv8.3 *)
       ; "0000  11111    000011    -        !=11111" => UDF (* Unallocated. - *)
-      ; "0000  11111    000011    -        11111  " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key B, zero modifier variant FEAT_PAuth *)
+      ; "0000  11111    000011    -        11111  " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key B, zero modifier variant on page C6-817 Armv8.3 *)
       ; "0000  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
       ; "0000  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
       ; "0000  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
@@ -537,9 +543,9 @@ Section Decoder.
       ; "0001  11111    000000    -        00000  " => UDF (* BLR - *)
       ; "0001  11111    000001    -        -      " => UDF (* Unallocated. - *)
       ; "0001  11111    000010    -        !=11111" => UDF (* Unallocated. - *)
-      ; "0001  11111    000010    -        11111  " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, zero modifier variant FEAT_PAuth *)
+      ; "0001  11111    000010    -        11111  " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, zero modifier variant on page C6-814 Armv8.3 *)
       ; "0001  11111    000011    -        !=11111" => UDF (* Unallocated. - *)
-      ; "0001  11111    000011    -        11111  " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, zero modifier variant FEAT_PAuth *)
+      ; "0001  11111    000011    -        11111  " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, zero modifier variant on page C6-814 Armv8.3 *)
       ; "0001  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
       ; "0001  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
       ; "0001  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
@@ -548,9 +554,9 @@ Section Decoder.
       ; "0010  11111    000000    -        00000  " => UDF (* RET - *)
       ; "0010  11111    000001    -        -      " => UDF (* Unallocated. - *)
       ; "0010  11111    000010    !=11111  !=11111" => UDF (* Unallocated. - *)
-      ; "0010  11111    000010    11111    11111  " => UDF (* RETAA, RETAB - RETAA variant FEAT_PAuth *)
+      ; "0010  11111    000010    11111    11111  " => UDF (* RETAA, RETAB - RETAA variant on page C6-1148 Armv8.3 *)
       ; "0010  11111    000011    !=11111  !=11111" => UDF (* Unallocated. - *)
-      ; "0010  11111    000011    11111    11111  " => UDF (* RETAA, RETAB - RETAB variant FEAT_PAuth *)
+      ; "0010  11111    000011    11111    11111  " => UDF (* RETAA, RETAB - RETAB variant on page C6-1148 Armv8.3 *)
       ; "0010  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
       ; "0010  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
       ; "0010  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
@@ -564,11 +570,11 @@ Section Decoder.
       ; "0100  11111    000010    !=11111  !=11111" => UDF (* Unallocated. - *)
       ; "0100  11111    000010    !=11111  11111  " => UDF (* Unallocated. - *)
       ; "0100  11111    000010    11111    !=11111" => UDF (* Unallocated. - *)
-      ; "0100  11111    000010    11111    11111  " => UDF (* ERETAA, ERETAB - ERETAA variant FEAT_PAuth *)
+      ; "0100  11111    000010    11111    11111  " => UDF (* ERETAA, ERETAB - ERETAA variant on page C6-901 Armv8.3 *)
       ; "0100  11111    000011    !=11111  !=11111" => UDF (* Unallocated. - *)
       ; "0100  11111    000011    !=11111  11111  " => UDF (* Unallocated. - *)
       ; "0100  11111    000011    11111    !=11111" => UDF (* Unallocated. - *)
-      ; "0100  11111    000011    11111    11111  " => UDF (* ERETAA, ERETAB - ERETAB variant FEAT_PAuth *)
+      ; "0100  11111    000011    11111    11111  " => UDF (* ERETAA, ERETAB - ERETAB variant on page C6-901 Armv8.3 *)
       ; "0100  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
       ; "0100  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
       ; "0100  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
@@ -580,15 +586,15 @@ Section Decoder.
       ; "0101  11111    000000    11111    00000  " => UDF (* DRPS - *)
       ; "011x  11111    -         -        -      " => UDF (* Unallocated. - *)
       ; "1000  11111    00000x    -        -      " => UDF (* Unallocated. - *)
-      ; "1000  11111    000010    -        -      " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key A, register modifier variant FEAT_PAuth *)
-      ; "1000  11111    000011    -        -      " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key B, register modifier variant FEAT_PAuth *)
+      ; "1000  11111    000010    -        -      " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key A, register modifier variant on page C6-817 Armv8.3 *)
+      ; "1000  11111    000011    -        -      " => UDF (* BRAA, BRAAZ, BRAB, BRABZ - Key B, register modifier variant on page C6-817 Armv8.3 *)
       ; "1000  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
       ; "1000  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
       ; "1000  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
       ; "1000  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
       ; "1001  11111    00000x    -        -      " => UDF (* Unallocated. - *)
-      ; "1001  11111    000010    -        -      " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, register modifier variant FEAT_PAuth *)
-      ; "1001  11111    000011    -        -      " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, register modifier variant FEAT_PAuth *)
+      ; "1001  11111    000010    -        -      " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, register modifier variant on page C6-814 Armv8.3 *)
+      ; "1001  11111    000011    -        -      " => UDF (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, register modifier variant on page C6-814 Armv8.3 *)
       ; "1001  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
       ; "1001  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
       ; "1001  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
@@ -623,16 +629,16 @@ Section Decoder.
     let op2 := n.[0,5] in
     match[bits] op0, op1, op2 with
       [ "010  0xxxxxxxxxxxxx  -    " => cond_branch (* Conditional branch (immediate) *)
-      ; "110  00xxxxxxxxxxxx  -    " => exc_gen (* Exception generation on page C4-272 *)
-      ; "110  01000000110010  11111" => hints (* Hints on page C4-272 *)
-      ; "110  01000000110011  -    " => barriers (* Barriers on page C4-274 *)
-      ; "110  0100000xxx0100  -    " => pstate (* PSTATE on page C4-274 *)
-      ; "110  0100x01xxxxxxx  -    " => sys_inst (* System instructions on page C4-275 *)
-      ; "110  0100x1xxxxxxxx  -    " => sys_reg_move (* System register move on page C4-275 *)
-      ; "110  1xxxxxxxxxxxxx  -    " => uncond_b_reg (* Unconditional branch (register) on page C4-275 *)
-      ; "x00  -               -    " => uncond_b_imm (* Unconditional branch (immediate) on page C4-278 *)
-      ; "x01  0xxxxxxxxxxxxx  -    " => comp_and_b (* Compare and branch (immediate) on page C4-279 *)
-      ; "x01  1xxxxxxxxxxxxx  -    " => test_and_b (* Test and branch (immediate) on page C4-279 *)
+      ; "110  00xxxxxxxxxxxx  -    " => exc_gen (* Exception generation on page C4-258 *)
+      ; "110  01000000110010  11111" => hints (* Hints on page C4-258 *)
+      ; "110  01000000110011  -    " => barriers (* Barriers on page C4-260 *)
+      ; "110  0100000xxx0100  -    " => pstate (* PSTATE on page C4-260 *)
+      ; "110  0100x01xxxxxxx  -    " => sys_inst (* System instructions on page C4-261 *)
+      ; "110  0100x1xxxxxxxx  -    " => sys_reg_move (* System register move on page C4-261 *)
+      ; "110  1xxxxxxxxxxxxx  -    " => uncond_b_reg (* Unconditional branch (register) on page C4-262 *)
+      ; "x00  -               -    " => uncond_b_imm (* Unconditional branch (immediate) on page C4-264 *)
+      ; "x01  0xxxxxxxxxxxxx  -    " => comp_and_b (* Compare and branch (immediate) on page C4-265 *)
+      ; "x01  1xxxxxxxxxxxxx  -    " => test_and_b (* Test and branch (immediate) on page C4-265 *)
       ] else UDF end.
 
   Definition load_store := UDF.
@@ -644,12 +650,12 @@ Section Decoder.
     match[bits] op0 with
       [ "0000" => UDF (* Reserved *)
       ; "0001" => UDF (* Unallocated. *)
-      ; "0010" => UDF (* SVE Instructions. See The Scalable Vector Extension (SVE) on page A2-99. *)
+      ; "0010" => UDF (* SVE Instructions. See SVE on page A2-92 *)
       ; "0011" => UDF (* Unallocated. *)
       ; "100x" => dp_imm (* Data Processing -- Immediate *)
-      ; "101x" => branch_exc (* Branches, Exception Generating and System instructions on page C4-271 *)
-      ; "x1x0" => load_store (* Loads and Stores on page C4-279 *)
-      ; "x101" => dp_reg (* Data Processing -- Register on page C4-310 *)
-      ; "x111" => dp_fp_simd (* Data Processing -- Scalar Floating-Point and Advanced SIMD on page C4-320 *)
+      ; "101x" => branch_exc (* Branches, Exception Generating and System instructions on page C4-257 *)
+      ; "x1x0" => load_store (* Loads and Stores on page C4-266 *)
+      ; "x101" => dp_reg (* Data Processing -- Register on page C4-299 *)
+      ; "x111" => dp_fp_simd (* Data Processing -- Scalar Floating-Point and Advanced SIMD on page C4-309 *)
       ] else UDF end.
 End Decoder.
