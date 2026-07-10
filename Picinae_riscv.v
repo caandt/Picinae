@@ -1,6 +1,6 @@
 (* Picinae: Platform In Coq for INstruction Analysis of Executables       ZZM7DZ
                                                                           $MNDM7
-   Copyright (c) 2025 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
+   Copyright (c) 2026 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
    The University of Texas at Dallas         =:$ZZ$+ZZI                  7MMZMZ7
    Computer Science Department             Z$$ZM++O++                    7MMZZN+
                                           ZZ$7Z.ZM~?                     7MZDNO$
@@ -514,7 +514,7 @@ Notation "m Ⓦ[ a  ]" := (getmem 32 LittleE 2 m a) (at level 30) : r5_scope. (*
 Notation "m Ⓓ[ a  ]" := (getmem 32 LittleE 4 m a) (at level 30) : r5_scope. (* read dword from memory *)
 Notation "m [Ⓑ a := v  ]" := (setmem 32 LittleE 1 m a v) (at level 50, left associativity) : r5_scope. (* write byte to memory *)
 Notation "m [Ⓦ a := v  ]" := (setmem 32 LittleE 2 m a v) (at level 50, left associativity) : r5_scope. (* write word to memory *)
-Notation "m [Ⓓ a := v  ]" := (setmem 23 LittleE 4 m a v) (at level 50, left associativity) : r5_scope. (* write dword to memory *)
+Notation "m [Ⓓ a := v  ]" := (setmem 32 LittleE 4 m a v) (at level 50, left associativity) : r5_scope. (* write dword to memory *)
 Notation "x ⊕ y" := ((x+y) mod 2^32) (at level 50, left associativity). (* modular addition *)
 Notation "x ⊖ y" := (msub 32 x y) (at level 50, left associativity). (* modular subtraction *)
 Notation "x ⊗ y" := ((x*y) mod 2^32) (at level 40, left associativity). (* modular multiplication *)
@@ -526,3 +526,13 @@ Notation "x .^ y" := (N.lxor x y) (at level 57, left associativity). (* logical 
 Notation "x .| y" := (N.lor x y) (at level 58, left associativity). (* logical or *)
 
 End RISCVNotations.
+
+Definition lift_riscv (f : addr -> N) (s : store) (a : addr) :=
+    Some (4, rv2il a (rv_decode (f a))).
+
+Theorem lift_riscv_welltyped:
+    forall p, welltyped_prog rvtypctx (lift_riscv p).
+Proof.
+    intros s a a0. unfold lift_riscv.
+    exists rvtypctx. apply welltyped_rv2il.
+Qed.
