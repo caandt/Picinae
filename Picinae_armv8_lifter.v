@@ -76,8 +76,323 @@ Module Notation.
 End Notation.
 Import Notation.
 
+(*DP imm*)
+Variant arm_data_imm :=
+  | ARM_ADD_IMM
+  | ARM_ADDS_IMM
+  | ARM_SUB_IMM
+  | ARM_SUBS_IMM
+  (*TODO: do these two need to be control flow/branch specific?*)
+  | ARM_CMP_IMM
+  | ARM_CMN_IMM
+  (*logical imm*)
+  | ARM_AND_IMM
+  | ARM_ANDS_IMM
+  | ARM_EOR_IMM
+  | ARM_ORR_IMM
+  | ARM_TST_IMM 
+  (*move wide*)
+  | ARM_MOVZ_IMM
+  | ARM_MOVN_IMM
+  | ARM_MOVK_IMM
+  | ARM_MOV_IMM (*bitmask imm/wide imm/inverted wide imm*)
+  (*PC relative addr*)
+  | ARM_ADRP_IMM
+  | ARM_ADR_IMM
+  (*bitfield move*)
+  | ARM_BFM_IMM
+  | ARM_SBFM_IMM
+  | ARM_UBFM_IMM
+  (*bitfield insert extract*)
+  | ARM_BFC_IMM
+  | ARM_BFI_IMM
+  | ARM_BFXIL_IMM
+  | ARM_SBFIZ_IMM
+  | ARM_SBFX_IMM
+  | ARM_UBFX_IMM
+  | ARM_UBFIZ_IMM
+  (*extract*)
+  | ARM_EXTR_IMM
+  (*shift imm*)
+  | ARM_ASR_IMM
+  | ARM_LSL_IMM
+  | ARM_LSR_IMM
+  | ARM_ROR_IMM
+  (*sign-extend zero-extend*)
+  | ARM_SXTB_IMM
+  | ARM_SXTH_IMM
+  | ARM_SXTW_IMM
+  | ARM_UXTB_IMM
+  | ARM_UXTH_IMM
+  (*conditional comparison*)
+  | ARM_CCMN_IMM
+  | ARM_CCMP_IMM.
+
+(*DP reg*)
+Variant arm_data_reg :=
+  | ARM_ADD_REG
+  | ARM_ADDS_REG
+  | ARM_SUB_REG
+  | ARM_SUBS_REG
+  | ARM_CMN_REG
+  | ARM_CMP_REG
+  | ARM_NEG_REG
+  | ARM_NEGS_REG
+  (*arith extended*)
+  | ARM_ADD_EXT_REG
+  | ARM_ADDS_EXT_REG
+  | ARM_SUB_EXT_REG
+  | ARM_SUBS_EXT_REG
+  | ARM_CMN_EXT_REG
+  | ARM_CMP_EXT_REG
+  (*w carry*)
+  | ARM_ADC_REG
+  | ARM_ADCS_REG
+  | ARM_SBC_REG
+  | ARM_SBCS_REG
+  | ARM_NGC_REG
+  | ARM_NGCS_REG
+  (*logical - bitwise ops*)
+  | ARM_AND_LOG_REG
+  | ARM_ANDS_LOG_REG
+  | ARM_BIC_LOG_REG
+  | ARM_BICS_LOG_REG
+  | ARM_EON_LOG_REG
+  | ARM_EOR_LOG_REG
+  | ARM_ORR_LOG_REG
+  | ARM_MVN_LOG_REG
+  | ARM_ORN_LOG_REG
+  | ARM_TST_LOG_REG
+  | ARM_MOV_LOG_REG (*mov register/mov register SP <-> reg*)
+  (*shift register*)
+  | ARM_ASRV_REG
+  | ARM_LSLV_REG
+  | ARM_LSRV_REG
+  | ARM_RORV_REG
+  (*conditional select*)
+  | ARM_CSEL
+  | ARM_CSINC  
+  | ARM_CSINV  
+  | ARM_CSNEG  
+  | ARM_CSET  
+  | ARM_CSETM  
+  | ARM_CINC  
+  | ARM_CINV  
+  | ARM_CNEG
+  (*conditional comparison*)
+  | ARM_CCMN_REG  
+  | ARM_CCMP_REG  
+  | ARM_CSINC.  
+Variant mul_div_reg :=
+  | ARM_MADD
+  | ARM_MSUB
+  | ARM_MNEG
+  | ARM_MUL
+  | ARM_SMADDL
+  | ARM_SMSUBL
+  | ARM_SMNEGL
+  | ARM_SMULL
+  | ARM_SMULH
+  | ARM_UMADDL
+  | ARM_UMSUBL
+  | ARM_UMNEGL
+  | ARM_UMULL
+  | ARM_UMULH
+  | ARM_SDIV
+  | ARM_UDIV.
+Variant CRC32 :=
+  | ARM_CRC32B
+  | ARM_CRC32H
+  | ARM_CRC32W
+  | ARM_CRC32X
+  | ARM_CRC32CB
+  | ARM_CRC32CH
+  | ARM_CRC32CW
+  | ARM_CRC32CX.
+Variant bit_ops :=
+  | ARM_CLS
+  | ARM_CLZ
+  | ARM_RBIT
+  | ARM_REV
+  | ARM_REV16
+  | ARM_REV32
+  | ARM_REV64.
+
+(*Branches*)
 Variant inst :=
-  | UDF .
+  (* decoding not implemented yet, treat as unpredictable *)
+  | idk
+  | ARM_UNPREDICTABLE
+  | ARM_UNDEFINED
+  (*conditional branch (imm)*)
+  | ARM_B_COND
+  (*exception generation*)
+  | ARM_SVC
+  | ARM_HVC
+  | ARM_SMC
+  | ARM_BRK
+  | ARM_HLT
+  | ARM_DCPS1
+  | ARM_DCPS2
+  | ARM_DCPS3
+  (*system*)
+  | ARM_MSR
+  | ARM_NOP
+  | ARM_YIELD
+  | ARM_WFE
+  | ARM_WFI
+  | ARM_SEV
+  | ARM_SEVL
+  | ARM_ESB
+  | ARM_PSB_CSYNC
+  | ARM_CLREX
+  | ARM_DSB
+  | ARM_DMB
+  | ARM_ISB
+  | ARM_SYS
+  | ARM_MSR
+  | ARM_SYSL
+  | ARM_MRS
+  (*unconditional branch(register)*)
+  | ARM_BR
+  | ARM_BLR
+  | ARM_RET
+  | ARM_ERET
+  | ARM_DRPS
+  (*unconditional branch(imm)*)
+  | ARM_B
+  | ARM_BL
+  (*compare and branch(imm)*)
+  | ARM_CBZ
+  | ARM_CBNZ
+  (*test and branch(imm)*)
+  | ARM_TBZ
+  | ARM_TBNZ
+
+(*Loads and Stores*)
+  (*exclusive/others*)
+  | ARM_STXRB
+  | ARM_STLXRB
+  | ARM_LDXRB
+  | ARM_LDXRH
+  | ARM_LDAXRH
+  | ARM_LDAXRB
+  | ARM_STLLRB
+  | ARM_STLLRH
+  | ARM_STLRH
+  | ARM_STLRB
+  | ARM_STXRH
+  | ARM_STLXRH
+  | ARM_LDLARB
+  | ARM_LDARB
+  | ARM_LDARH
+  | ARM_LDLARH
+  | ARM_STXR
+  | ARM_STLXR
+  | ARM_STXP
+  | ARM_LDXR
+  | ARM_LDAXR
+  | ARM_LDXP
+  | ARM_LDAXP
+  | ARM_STLLR
+  | ARM_STLR
+  | ARM_LDLAR
+  | ARM_LDAR
+  (*bunch of variants for these, refer to page C4-230*)
+  | ARM_CASP
+  | ARM_CASPA
+  | ARM_CASPAL
+  | ARM_CASPL
+  | ARM_CASB
+  | ARM_CASAB
+  | ARM_CASALB
+  | ARM_CASLB
+  | ARM_CASH
+  | ARM_CASAH
+  | ARM_CASALH
+  | ARM_CASLH
+  | ARM_CAS
+  | ARM_CASA
+  | ARM_CASAL
+  | ARM_CASL
+  (*load register (literal)*)
+  | ARM_LDR_LIT
+  | ARM_LDRSW_LIT
+  | ARM_PRFM_LIT
+  (*load/store no-allocate pair (offset)*)
+  | ARM_STNP
+  | ARM_LDNP
+  (*load/store register pair (post-indexed, pre-indexed, offset)*)
+  | ARM_STP_POST
+  | ARM_LDP
+  | ARM_LDPSW
+  (*load/store register (unscaled immediate)*)
+  | ARM_STURB
+  | ARM_LDURB
+  | ARM_LDURSB
+  | ARM_STURH
+  | ARM_LDURH
+  | ARM_LDURSH
+  | ARM_STUR
+  | ARM_LDUR
+  | ARM_LDURSW
+  | ARM_LDURSW
+  | ARM_PFRM
+  (*imm pre/post-indexed*)
+  | ARM_STRB_IMM
+  | ARM_LDRB_IMM
+  | ARM_LDRSB_IMM
+  | ARM_STR_IMM
+  | ARM_LDR_IMM
+  | ARM_STRH_IMM
+  | ARM_LDRH_IMM
+  | ARM_LDRSH_IMM
+  | ARM_STR_IMM
+  | ARM_LDR_IMM
+  | ARM_LDRSW_IMM
+  (*register unprivileged*)
+  | ARM_STTRB
+  | ARM_LDTRB
+  | ARM_LDTRSB
+  | ARM_STTRH
+  | ARM_LDTRH
+  | ARM_LDTRSH
+  | ARM_STTR
+  | ARM_LDTR
+  | ARM_LDTRSW
+  (*atomic memory ops*)
+  | ARM_LDADDB
+  | ARM_LDADDAB
+  | ARM_LDADDALB
+  | ARM_LDADDLB
+  | ARM_STADDB
+  | ARM_STADDLB
+  | ARM_STCLRB
+  | ARM_STCLRLB
+  | ARM_STEORB
+  | ARM_STEORLB
+  | ARM_LDCLRB
+  | ARM_LDCLRAB
+  | ARM_LDCLRALB
+  | ARM_LDCLRLB 
+  | ARM_LDEORB
+  | ARM_LDEORAB
+  | ARM_LDEORALB
+  | ARM_LDEORLB
+  (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
+  (*load/store register*)
+  | ARM_STRB_REG
+  | ARM_LDRB_REG
+  | ARM_LDRSB_REG
+  | ARM_STR_REG
+  | ARM_LDR_REG
+  | ARM_STRH_REG
+  | ARM_LDRH_REG
+  | ARM_LDRSH_REG
+  | ARM_STR_REG
+  | ARM_LDR_REG
+  | ARM_LDRSW_REG
+  | ARM_PRFM_REG.
 
 Section Decoder.
   Variable n : N.
@@ -106,22 +421,22 @@ Section Decoder.
       ; "-    01x  - " => UDF (* Unallocated. *)
       ; "-    1xx  - " => UDF (* Unallocated. *)
       ; "000  000  00" => UDF (* Unallocated. *)
-      ; "000  000  01" => UDF (* SVC *)
-      ; "000  000  10" => UDF (* HVC *)
-      ; "000  000  11" => UDF (* SMC *)
+      ; "000  000  01" => ARM_SVC (* SVC *)
+      ; "000  000  10" => ARM_HVC (* HVC *)
+      ; "000  000  11" => ARM_SMC (* SMC *)
       ; "001  000  x1" => UDF (* Unallocated. *)
-      ; "001  000  00" => UDF (* BRK *)
+      ; "001  000  00" => ARM_BRK (* BRK *)
       ; "001  000  1x" => UDF (* Unallocated. *)
       ; "010  000  x1" => UDF (* Unallocated. *)
-      ; "010  000  00" => UDF (* HLT *)
+      ; "010  000  00" => ARM_HLT (* HLT *)
       ; "010  000  1x" => UDF (* Unallocated. *)
       ; "011  000  01" => UDF (* Unallocated. *)
       ; "011  000  1x" => UDF (* Unallocated. *)
       ; "100  000  - " => UDF (* Unallocated. *)
       ; "101  000  00" => UDF (* Unallocated. *)
-      ; "101  000  01" => UDF (* DCPS1 *)
-      ; "101  000  10" => UDF (* DCPS2 *)
-      ; "101  000  11" => UDF (* DCPS3 *)
+      ; "101  000  01" => ARM_DCPS1 (* DCPS1 *)
+      ; "101  000  10" => ARM_DCPS2 (* DCPS2 *)
+      ; "101  000  11" => ARM_DCPS3 (* DCPS3 *)
       ; "110  000  - " => UDF (* Unallocated. *)
       ; "111  000  - " => UDF (* Unallocated. *)
       ] else UDF end.
@@ -130,11 +445,11 @@ Section Decoder.
     let op2 := n.[5,8] in
     match[bits] CRm, op2 with
       [ "-     -  " => UDF (* HINT - *)
-      ; "0000  000" => UDF (* NOP - *)
+      ; "0000  000" => ARM_NOP (* NOP - *)
       ; "0000  001" => UDF (* YIELD - *)
-      ; "0000  010" => UDF (* WFE - *)
-      ; "0000  011" => UDF (* WFI - *)
-      ; "0000  100" => UDF (* SEV - *)
+      ; "0000  010" => ARM_WFE (* WFE - *)
+      ; "0000  011" => ARM_WFI (* WFI - *)
+      ; "0000  100" => ARM_SEV (* SEV - *)
       ; "0000  101" => UDF (* SEVL - *)
       ; "0000  110" => UDF (* DGH FEAT_DGH *)
       ; "0000  111" => UDF (* XPACD, XPACI, XPACLRI FEAT_PAuth *)
