@@ -10,7 +10,6 @@ Module Notation.
     | N0 => if b then Npos xH else N0
     | Npos p => if b then Npos (xI p) else Npos (xO p)
     end.
-  Compute match "ae" with | "ab" => true | _ => false end.
   Definition parse_pattern pat :=
     let (s, e) := match pat with
                     | String "!" (String "=" s') => (s', false)
@@ -94,9 +93,9 @@ Section Decoder.
     let o0 := n.[4] in
     let cond := n.[0,4] in
     match[bits] o1, o0 with
-      [ "0  0" => B_cond
-      ; "0  1" => UDF
-      ; "1  -" => UDF
+      [ "0  0" => B_cond (* B.cond *)
+      ; "0  1" => UDF (* Unallocated. *)
+      ; "1  -" => UDF (* Unallocated. *)
       ] else UDF end.
   Definition exc_gen :=
     let opc := n.[21,24] in
@@ -194,7 +193,12 @@ Section Decoder.
       [ "0" => UDF (* SYS *)
       ; "1" => UDF (* SYSL *)
       ] else UDF end.
-  Definition sys_reg_move := UDF.
+  Definition sys_reg_move :=
+    let L := n.[21] in
+    match[bits] L with
+      [ "0" => UDF (* MSR (register) *)
+      ; "1" => UDF (* MRS *)
+      ] else UDF end.
   Definition uncond_b_reg :=
     let opc := n.[21,25] in
     let op2 := n.[16,21] in
@@ -303,18 +307,19 @@ Section Decoder.
     let op1 := n.[12,26] in
     let op2 := n.[0,5] in
     match[bits] op0, op1, op2 with
-      [ "010  0xxxxxxxxxxxxx  -    " => cond_branch
-      ; "110  00xxxxxxxxxxxx  -    " => exc_gen
-      ; "110  01000000110010  11111" => hints
-      ; "110  01000000110011  -    " => barriers
-      ; "110  0100000xxx0100  -    " => pstate
-      ; "110  0100x01xxxxxxx  -    " => sys_inst
-      ; "110  0100x1xxxxxxxx  -    " => sys_reg_move
-      ; "110  1xxxxxxxxxxxxx  -    " => uncond_b_reg
-      ; "x00  -               -    " => uncond_b_imm
-      ; "x01  0xxxxxxxxxxxxx  -    " => comp_and_b
-      ; "x01  1xxxxxxxxxxxxx  -    " => test_and_b
+      [ "010  0xxxxxxxxxxxxx  -    " => cond_branch (* Conditional branch (immediate) *)
+      ; "110  00xxxxxxxxxxxx  -    " => exc_gen (* Exception generation on page C4-272 *)
+      ; "110  01000000110010  11111" => hints (* Hints on page C4-272 *)
+      ; "110  01000000110011  -    " => barriers (* Barriers on page C4-274 *)
+      ; "110  0100000xxx0100  -    " => pstate (* PSTATE on page C4-274 *)
+      ; "110  0100x01xxxxxxx  -    " => sys_inst (* System instructions on page C4-275 *)
+      ; "110  0100x1xxxxxxxx  -    " => sys_reg_move (* System register move on page C4-275 *)
+      ; "110  1xxxxxxxxxxxxx  -    " => uncond_b_reg (* Unconditional branch (register) on page C4-275 *)
+      ; "x00  -               -    " => uncond_b_imm (* Unconditional branch (immediate) on page C4-278 *)
+      ; "x01  0xxxxxxxxxxxxx  -    " => comp_and_b (* Compare and branch (immediate) on page C4-279 *)
+      ; "x01  1xxxxxxxxxxxxx  -    " => test_and_b (* Test and branch (immediate) on page C4-279 *)
       ] else UDF end.
+
   Definition load_store := UDF.
   Definition dp_reg := UDF.
   Definition dp_fp_simd := UDF.
@@ -322,14 +327,14 @@ Section Decoder.
   Definition decode :=
     let op0 := n.[25,29] in
     match[bits] op0 with
-      [ "0000" => UDF
-      ; "0001" => UDF
-      ; "0010" => UDF
-      ; "0011" => UDF
-      ; "100x" => dp_imm
-      ; "101x" => branch_exc
-      ; "x1x0" => load_store
-      ; "x101" => dp_reg
-      ; "x111" => dp_fp_simd
+      [ "0000" => UDF (* Reserved *)
+      ; "0001" => UDF (* Unallocated. *)
+      ; "0010" => UDF (* SVE Instructions. See The Scalable Vector Extension (SVE) on page A2-99. *)
+      ; "0011" => UDF (* Unallocated. *)
+      ; "100x" => dp_imm (* Data Processing -- Immediate *)
+      ; "101x" => branch_exc (* Branches, Exception Generating and System instructions on page C4-271 *)
+      ; "x1x0" => load_store (* Loads and Stores on page C4-279 *)
+      ; "x101" => dp_reg (* Data Processing -- Register on page C4-310 *)
+      ; "x111" => dp_fp_simd (* Data Processing -- Scalar Floating-Point and Advanced SIMD on page C4-320 *)
       ] else UDF end.
 End Decoder.
