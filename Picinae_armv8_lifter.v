@@ -409,6 +409,7 @@ Variant inst :=
   | ARM_LDR_REG
   | ARM_LDRSW_REG
   | ARM_PRFM_REG.
+  (*TODO: There are way more load instructions than written out here, add to this section plz*)
 
 Section Decoder.
   Variable n : N.
