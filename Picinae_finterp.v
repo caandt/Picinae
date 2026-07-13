@@ -1,6 +1,6 @@
 (* Picinae: Platform In Coq for INstruction Analysis of Executables       ZZM7DZ
                                                                           $MNDM7
-   Copyright (c) 2025 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
+   Copyright (c) 2026 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
    The University of Texas at Dallas         =:$ZZ$+ZZI                  7MMZMZ7
    Computer Science Department             Z$$ZM++O++                    7MMZZN+
                                           ZZ$7Z.ZM~?                     7MZDNO$
@@ -408,7 +408,7 @@ Fixpoint updctx noec c l upd : typctx :=
     if orb (existsb (fun vv => if vvvar vv == v then true else false) t)
            (typeqb (c v) y)
     then updctx noec c t upd
-    else updctx (upd noec v y) (upd c v y) t upd
+    else updctx (upd noec v y) (update c v y) t upd
   end.
 
 Definition vupdate := @update var N VarEqDec.
@@ -485,6 +485,19 @@ Inductive finterp_cont := FIExit (x: option exit) | FIStmt (q: stmt).
 Inductive finterp_state :=
 | FIS (l: list varval) (xq: finterp_cont) (ma: list Prop).
 
+Fixpoint seq_append q1 q2 :=
+  match q2 with
+  | Nop => q1
+  | Seq q2a q2b => seq_append (Seq q1 q2a) q2b
+  | _ => Seq q1 q2
+  end.
+
+Fixpoint seq_rassoc q :=
+  match q with
+  | Seq q1 q2 => seq_append (seq_rassoc q1) (seq_rassoc q2)
+  | _ => q
+  end.
+
 Definition fexec_stmt (noe:forall op, noe_setop_typsig op) (noet:forall op, noe_typop_typsig op) c :=
   fix fexec_stmt' q s unk l := match q with
   | Nop => FIS l (FIExit None) nil
@@ -517,7 +530,7 @@ Definition list_union {A} (eqb: A -> A -> bool) (l1 l2: list A) :=
   List.fold_left (fun l x => if existsb (eqb x) l2 then l else (x::l)) l1 l2.
 
 Fixpoint vars_read_by_exp e :=
-  match e with 
+  match e with
   | Var v => v::nil
   | Word _ _ | Unknown _ => nil
   | UnOp _ e1 | Cast _ _ e1 | Extract _ _ e1 => vars_read_by_exp e1
@@ -643,7 +656,7 @@ Parameter fexec_stmt_hypn:
   exec_stmt c (updstr s (rev (VarVal v a None :: l)) vupdate) q c' s' x /\ eq1=eq2.
 
 Parameter fexec_stmt_fin:
-  forall a_s a_s' a_x c s l q c' s' x, 
+  forall a_s a_s' a_x c s l q c' s' x,
   exec_stmt c (updstr s l vupdate) q c' s' x /\ (a_s,a_s',a_x)=(s,s',x) ->
   exec_stmt c (updstr a_s l vupdate) q c' a_s' a_x.
 
@@ -675,7 +688,7 @@ Parameter reduce_stmt:
   forall noe noet noec c s l q c' s' x
          (XS: exec_stmt c (updstr s (rev l) vupdate) q c' s' x)
          (NOE: (noe, noet, noec) = (noe_setop, noe_typop, c)),
-  exists unk, match fexec_stmt noe noet c q s unk (feval_settyps c (rev l)) with
+  exists unk, match fexec_stmt noe noet c (seq_rassoc q) s unk (feval_settyps c (rev l)) with
               | FIS l' (FIExit x') ma =>
                   (noet NOE_RTMPS s s' = updstr s (feval_remove_temps l') (noet NOE_UPDS) /\ x = x') /\
                   conjallT ma
@@ -1206,7 +1219,7 @@ Lemma updctx_sound:
 Proof.
   induction l as [|[v n w] t]; intro.
     reflexivity.
-    rewrite rev_cons, updctx_last, IHt. apply feval_vartyp_update. 
+    rewrite rev_cons, updctx_last, IHt. apply feval_vartyp_update.
 Qed.
 
 Lemma feval_settyps_sound:
@@ -1246,11 +1259,37 @@ Proof.
           rewrite <- IHl. unfold reset_temps, reset_vars. rewrite CV0. reflexivity.
 Qed.
 
+Theorem seq_append_sound:
+  forall q2 c s q1 c' s' x (XS: exec_stmt c s (Seq q1 q2) c' s' x),
+  exec_stmt c s (seq_append q1 q2) c' s' x.
+Proof.
+  induction q2; intros; try assumption; simpl.
+    inversion XS; subst.
+      assumption.
+      inversion XS0; subst. assumption.
+    apply IHq2_2. inversion XS; subst.
+      apply XSeq1, XSeq1. assumption.
+      inversion XS0; subst.
+        eapply XSeq1, XSeq2; eassumption.
+        eapply XSeq2.
+          eapply XSeq2; eassumption.
+          assumption.
+Qed.
+
+Theorem seq_rassoc_sound:
+  forall q c s c' s' x (XS: exec_stmt c s q c' s' x),
+  exec_stmt c s (seq_rassoc q) c' s' x.
+Proof.
+  induction q; intros; try assumption.
+  simpl. apply seq_append_sound. inversion XS; subst; econstructor;
+  first [ apply IHq1 | apply IHq2 ]; eassumption.
+Qed.
+
 Corollary reduce_stmt:
   forall noe noet noec c s l q c' s' x
          (XS: exec_stmt c (updstr s (rev l) vupdate) q c' s' x)
          (NOE: (noe, noet, noec) = (noe_setop, noe_typop, c)),
-  exists unk, match fexec_stmt noe noet c q s unk (feval_settyps c (rev l)) with
+  exists unk, match fexec_stmt noe noet c (seq_rassoc q) s unk (feval_settyps c (rev l)) with
               | FIS l' (FIExit x') ma =>
                   (noet NOE_RTMPS s s' = updstr s (feval_remove_temps l') (noet NOE_UPDS) /\ x = x') /\
                   conjallT ma
@@ -1259,7 +1298,9 @@ Corollary reduce_stmt:
                   conjallT ma
               end.
 Proof.
-  intros. inversion NOE. clear NOE. subst noe noet noec. simpl.
+  intros.
+  apply seq_rassoc_sound in XS.
+  inversion NOE. clear NOE. subst noe noet noec. simpl.
   rewrite <- (feval_settyps_sound c (rev l)) in XS.
   rewrite <- updstr_feval_settyps with (c:=c) in XS.
   apply reduce_stmt' in XS. destruct XS as [unk XS].
@@ -1308,7 +1349,7 @@ Proof.
 Qed.
 
 Lemma fexec_stmt_fin:
-  forall a_s a_s' a_x c s l q c' s' x, 
+  forall a_s a_s' a_x c s l q c' s' x,
   exec_stmt c (updstr s l vupdate) q c' s' x /\ (a_s,a_s',a_x)=(s,s',x) ->
   exec_stmt c (updstr a_s l vupdate) q c' a_s' a_x.
 Proof.
