@@ -1485,7 +1485,7 @@ Section Decoder.
   ; "1  1  1  000000" => ARM_SBCS (* SBCS - 64-bit variant on page C6-817 *)
   ] else UDF end.
 
-  (*conditional compare(reg)*)
+  (*conditional compare*)
   Definition add_sub_carry  :=
 
 
