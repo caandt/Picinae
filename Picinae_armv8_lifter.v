@@ -250,7 +250,18 @@ Variant inst :=
   | idk
   | ARM_UNPREDICTABLE
   | UDF (*ARM_UNDEFINED*)
+  (*hints*)
   | ARM_HINT
+  | ARM_XPACD
+  | ARM_PACIA
+  | ARM_PACIB
+  | ARM_AUTIA
+  | ARM_AUTIB
+  | ARM_PSB_CSYNC
+  | ARM_TSB_CSYNC
+  | ARM_CSDB
+  | ARM_BTI
+  | ARM_SB
   (*conditional branch (imm)*)
   | ARM_B_COND
   (*exception generation*)
@@ -262,7 +273,7 @@ Variant inst :=
   | ARM_DCPS1
   | ARM_DCPS2
   | ARM_DCPS3
-  (*system*)
+  (*system, pstate*)
   | ARM_NOP
   | ARM_YIELD
   | ARM_WFE
@@ -270,21 +281,33 @@ Variant inst :=
   | ARM_SEV
   | ARM_SEVL
   | ARM_ESB
-  | ARM_PSB_CSYNC
   | ARM_CLREX
   | ARM_DSB
   | ARM_DMB
   | ARM_ISB
   | ARM_SYS
   | ARM_MSR
+  | ARM_MSR_IMM
+  | ARM_MSR_REG
+  | ARM_CFINV
   | ARM_SYSL
   | ARM_MRS
+  | ARM_SSBB
+  | ARM_PSSBB
+  | ARM_XAFLAG
+  | ARM_AXFLAG
   (*unconditional branch(register)*)
   | ARM_BR
   | ARM_BLR
   | ARM_RET
   | ARM_ERET
   | ARM_DRPS
+  | ARM_BRAAZ
+  | ARM_BRAA_REG
+  | ARM_BLRAA_REG
+  | ARM_BLRAAZ
+  | ARM_RETAA
+  | ARM_ERETAA
   (*unconditional branch(imm)*)
   | ARM_B
   | ARM_BL
@@ -316,6 +339,7 @@ Variant inst :=
   | ARM_STXR
   | ARM_STLXR
   | ARM_STXP
+  | ARM_STLXP
   | ARM_LDXR
   | ARM_LDAXR
   | ARM_LDXP
@@ -341,6 +365,35 @@ Variant inst :=
   | ARM_CASA
   | ARM_CASAL
   | ARM_CASL
+  (*LDAPR/STLR unscaled immediate*)
+  | ARM_STLURB
+  | ARM_LDAPURB
+  | ARM_LDAPURSB
+  | ARM_STLURH
+  | ARM_LDAPURH
+  | ARM_LDAPURSH
+  | ARM_LDAPUR
+  | ARM_LDAPURSW
+  | ARM_STLUR
+  | ARM_PRFM
+  | ARM_PRFM_IMM
+  (*load/store memory tags*)
+  | ARM_STG_POST
+  | ARM_STG_SIGN
+  | ARM_STG_PRE
+  | ARM_STZG_POST
+  | ARM_STZG_SIGN
+  | ARM_STZG_PRE
+  | ARM_STZGM
+  | ARM_LDG
+  | ARM_ST2G_POST
+  | ARM_ST2G_SIGN
+  | ARM_ST2G_PRE
+  | ARM_STGM
+  | ARM_STZ2G_POST
+  | ARM_STZ2G_SIGN
+  | ARM_STZ2G_PRE
+  | ARM_LDGM
   (*load register (literal)*)
   | ARM_LDR_LIT
   | ARM_LDRSW_LIT
@@ -403,7 +456,55 @@ Variant inst :=
   | ARM_LDEORAB
   | ARM_LDEORALB
   | ARM_LDEORLB
+  | ARM_LDSETB
+  | ARM_STSETB
+  | ARM_LDSMAXB
+  | ARM_STSMAXB
+  | ARM_LDSMINB
+  | ARM_STSMINB
+  | ARM_LDUMAXB
+  | ARM_STUMAXB
+  | ARM_LDUMINB
+  | ARM_STUMINB
+  | ARM_SWPB
+  | ARM_LDADDH
+  | ARM_STADDH
+  | ARM_LDCLRH
+  | ARM_STCLRH
+  | ARM_LDEORH
+  | ARM_STEORH
+  | ARM_LDSETH
+  | ARM_STSETH
+  | ARM_LDSMAXH
+  | ARM_STSMAXH
+  | ARM_LDSMINH
+  | ARM_STSMINH
+  | ARM_LDUMAXH
+  | ARM_STUMAXH
+  | ARM_LDUMINH
+  | ARM_STUMINH
+  | ARM_SWPH
+  | ARM_LDADD 
+  | ARM_STADD
+  | ARM_LDCLR
+  | ARM_STCLR
+  | ARM_LDEOR
+  | ARM_STEOR
+  | ARM_LDSET
+  | ARM_STSET
+  | ARM_LDSMAX
+  | ARM_STSMAX
+  | ARM_STSMIN
+  | ARM_LDSMIN
+  | ARM_LDUMAX
+  | ARM_LDUMIN
+  | ARM_STUMAX
+  | ARM_STUMIN
+  | ARM_SWP
   (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
+  (*pac*)
+  | ARM_LDRAA_OFFSET
+  | ARM_LDRAA_PRE
   (*load/store register*)
   | ARM_STRB_REG
   | ARM_LDRB_REG
@@ -414,9 +515,27 @@ Variant inst :=
   | ARM_STR_REG
   | ARM_LDR_REG
   | ARM_LDRSW_REG
-  | ARM_PRFM_REG.
+  | ARM_PRFM_REG
   (*TODO: There are way more load instructions than written out here, add to this section plz*)
-
+(*Data Processing*)
+  (*2 src*)
+  | ARM_LSLV  
+  | ARM_LSRV
+  | ARM_ASRV
+  | ARM_RORV
+  | ARM_SUBP
+  | ARM_IRG
+  | ARM_GMI
+  | ARM_PACGA
+  | ARM_SUBPS
+  (*1 src*)
+  | ARM_PACDA
+  | ARM_PACDB
+  | ARM_AUTDA
+  | ARM_AUTDB
+  (*evaluate*)
+  | ARM_SETF8 
+  .  
 Section Decoder.
   Variable n : N.
 
@@ -612,7 +731,7 @@ Section Decoder.
   Definition barriers :=
     let CRm := n.[8,12] in
     let op2 := n.[5,8] in
-    let Rt := n.[0,5] in
+    let rt := n.[0,5] in
     match[bits] CRm, op2, rt with
     | "-       000  -      " => UDF (* Unallocated. *)
     | "-       001  -      " => UDF (* Unallocated. *)
@@ -633,7 +752,7 @@ Section Decoder.
   Definition pstate :=
     let op1 := n.[16,19] in
     let op2 := n.[5,8] in
-    let Rt := n.[0,5] in
+    let rt := n.[0,5] in
     match[bits] op1, op2, rt with
     | "-    -    !=11111" => UDF (* Unallocated. - *)
     | "-    -    11111  " => ARM_MSR_IMM (* MSR (immediate) - *)
@@ -660,7 +779,7 @@ Section Decoder.
     let opc := n.[21,25] in
     let op2 := n.[16,21] in
     let op3 := n.[10,16] in
-    let Rn := n.[5,10] in
+    let rn := n.[5,10] in
     let op4 := n.[0,5] in
     match[bits] opc, op2, op3, rn, op4 with
   | "-     !=11111  -         -        -      " => UDF (* Unallocated. - *)
@@ -739,8 +858,6 @@ Section Decoder.
   | "11xx  11111    -         -        -      " => UDF (* Unallocated. - *)
   else UDF end.
 
-
-
   Definition uncond_b_imm :=
     let op := n.[31] in
     match[bits] op with
@@ -784,42 +901,6 @@ Section Decoder.
     else UDF end.
 
 (*Loads and Stores*)
-  Definition load_store :=
-    let op0 := n.[28,32] in
-    let op1 := n.[26] in
-    let op2 := n.[23,25] in
-    let op3 := n.[16,22] in
-    let op4 := n.[10,12] in
-    match[bits] op0, op1, op2, op3, op4 with
-  | "0x00  1  00  000000  - " => UDF (* Advanced SIMD load/store multiple structures on page C4-267 *)
-  | "0x00  1  01  0xxxxx  - " => UDF (* Advanced SIMD load/store multiple structures (post-indexed) on page C4-268 *)
-  | "0x00  1  0x  1xxxxx  - " => UDF (* Unallocated. *)
-  | "0x00  1  10  x00000  - " => UDF (* Advanced SIMD load/store single structure on page C4-269 *)
-  | "0x00  1  11  -       - " => UDF (* Advanced SIMD load/store single structure (post-indexed) on page C4-272 *)
-  | "0x00  1  x0  x1xxxx  - " => UDF (* Unallocated. *)
-  | "0x00  1  x0  xx1xxx  - " => UDF (* Unallocated. *)
-  | "0x00  1  x0  xxx1xx  - " => UDF (* Unallocated. *)
-  | "0x00  1  x0  xxxx1x  - " => UDF (* Unallocated. *)
-  | "0x00  1  x0  xxxxx1  - " => UDF (* Unallocated. *)
-  | "1101  0  1x  1xxxxx  - " => load_store_mem_tags (* Load/store memory tags on page C4-276 *)
-  | "1x00  1  -   -       - " => UDF (* Unallocated. *)
-  | "xx00  0  0x  -       - " => load_store_exclusive (* Load/store exclusive on page C4-276 *)
-  | "xx01  0  1x  0xxxxx  00" => ldapr_stlr_imm_u (* LDAPR/STLR (unscaled immediate) on page C4-279 *)
-  | "xx01  -  0x  -       - " => load_reg_literal (* Load register (literal) on page C4-280 *)
-  | "xx10  -  00  -       - " => load_store_no_alloc_pair  (* Load/store no-allocate pair (offset) on page C4-280 *)
-  | "xx10  -  01  -       - " => load_store_post_indx_pair (* Load/store register pair (post-indexed) on page C4-281 *)
-  | "xx10  -  10  -       - " => load_store_pair_offset (* Load/store register pair (offset) on page C4-282 *)
-  | "xx10  -  11  -       - " => load_store_pre_indx_pair (* Load/store register pair (pre-indexed) on page C4-282 *)
-  | "xx11  -  0x  0xxxxx  00" => load_store_reg_imm_u(* Load/store register (unscaled immediate) on page C4-283 *)
-  | "xx11  -  0x  0xxxxx  01" => load_store_reg_imm_poi (* Load/store register (immediate post-indexed) on page C4-284 *)
-  | "xx11  -  0x  0xxxxx  10" => load_store_reg_unpriv (* Load/store register (unprivileged) on page C4-286 *)
-  | "xx11  -  0x  0xxxxx  11" => load_store_reg_imm_pre  (* Load/store register (immediate pre-indexed) on page C4-286 *)
-  | "xx11  -  0x  1xxxxx  00" => atomic (* Atomic memory operations on page C4-288 *)
-  | "xx11  -  0x  1xxxxx  10" => load_store_reg_off (* Load/store register (register offset) on page C4-295 *)
-  | "xx11  -  0x  1xxxxx  x1" => load_store_reg_pac (* Load/store register (pac) on page C4-297 *)
-  | "xx11  -  1x  -       - " => load_store_reg_u_imm (* Load/store register (unsigned immediate) on page C4-297 *)
-  else UDF end.
-
   Definition load_store_mem_tags :=
     let opc := n.[22,24] in
     let imm9 := n.[12,21] in
@@ -853,7 +934,7 @@ Section Decoder.
     let o1 := n.[21] in
     let o0 := n.[15] in
     let rt2 := n.[10,15] in
-    match[bits] sf, o2, l_, o1, o0, rt2 with
+    match[bits] size, o2, l_, o1, o0, rt2 with
     | "-   1  -  1  -  !=11111" => UDF (* Unallocated. - *)
     | "0x  0  -  1  -  !=11111" => UDF (* Unallocated. - *)
     | "00  0  0  0  0  -      " => ARM_STXRB (* STXRB - *)
@@ -1510,28 +1591,43 @@ Section Decoder.
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1801 *)
     else UDF end.
 
-
-(** DP REG*)
-  Definition dp_reg :=
-    let op0 := n.[30] in
-    let op1 := n.[28] in
-    let op2 := n.[21,25] in
-    let op3 := n.[10,16] in
-    match[bits] op0, op1, op2, op3 with
-  | "0  1  0110  -     " => data_proc_2_src (* Data-processing (2 source) *)
-  | "1  1  0110  -     " => data_proc_1_src (* Data-processing (1 source) on page C4-301 *)
-  | "-  0  0xxx  -     " => data_proc_logical (* Logical (shifted register) on page C4-303 *)
-  | "-  0  1xx0  -     " => add_sub_shifted (* Add/subtract (shifted register) on page C4-303 *)
-  | "-  0  1xx1  -     " => add_sub_extended (* Add/subtract (extended register) on page C4-304 *)
-  | "-  1  0000  000000" => add_sub_carry (* Add/subtract (with carry) on page C4-305 *)
-  | "-  1  0000  x00001" => rotate (* Rotate right into flags on page C4-305 *)
-  | "-  1  0000  xx0010" => evaluate (* Evaluate into flags on page C4-306 *)
-  | "-  1  0010  xxxx0x" => cond_compare_reg (* Conditional compare (register) on page C4-306 *)
-  | "-  1  0010  xxxx1x" => cond_compare_imm (* Conditional compare (immediate) on page C4-307 *)
-  | "-  1  0100  -     " => cond_select (* Conditional select on page C4-307 *)
-  | "-  1  1xxx  -     " => data_proc_3_src (* Data-processing (3 source) on page C4-308 *)
+    Definition load_store :=
+    let op0 := n.[28,32] in
+    let op1 := n.[26] in
+    let op2 := n.[23,25] in
+    let op3 := n.[16,22] in
+    let op4 := n.[10,12] in
+    match[bits] op0, op1, op2, op3, op4 with
+  | "0x00  1  00  000000  - " => UDF (* Advanced SIMD load/store multiple structures on page C4-267 *)
+  | "0x00  1  01  0xxxxx  - " => UDF (* Advanced SIMD load/store multiple structures (post-indexed) on page C4-268 *)
+  | "0x00  1  0x  1xxxxx  - " => UDF (* Unallocated. *)
+  | "0x00  1  10  x00000  - " => UDF (* Advanced SIMD load/store single structure on page C4-269 *)
+  | "0x00  1  11  -       - " => UDF (* Advanced SIMD load/store single structure (post-indexed) on page C4-272 *)
+  | "0x00  1  x0  x1xxxx  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xx1xxx  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xxx1xx  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xxxx1x  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xxxxx1  - " => UDF (* Unallocated. *)
+  | "1101  0  1x  1xxxxx  - " => load_store_mem_tags (* Load/store memory tags on page C4-276 *)
+  | "1x00  1  -   -       - " => UDF (* Unallocated. *)
+  | "xx00  0  0x  -       - " => load_store_exclusive (* Load/store exclusive on page C4-276 *)
+  | "xx01  0  1x  0xxxxx  00" => ldapr_stlr_imm_u (* LDAPR/STLR (unscaled immediate) on page C4-279 *)
+  | "xx01  -  0x  -       - " => load_reg_literal (* Load register (literal) on page C4-280 *)
+  | "xx10  -  00  -       - " => load_store_no_alloc_pair  (* Load/store no-allocate pair (offset) on page C4-280 *)
+  | "xx10  -  01  -       - " => load_store_post_indx_pair (* Load/store register pair (post-indexed) on page C4-281 *)
+  | "xx10  -  10  -       - " => load_store_pair_offset (* Load/store register pair (offset) on page C4-282 *)
+  | "xx10  -  11  -       - " => load_store_pre_indx_pair (* Load/store register pair (pre-indexed) on page C4-282 *)
+  | "xx11  -  0x  0xxxxx  00" => load_store_reg_imm_u(* Load/store register (unscaled immediate) on page C4-283 *)
+  | "xx11  -  0x  0xxxxx  01" => load_store_reg_imm_poi (* Load/store register (immediate post-indexed) on page C4-284 *)
+  | "xx11  -  0x  0xxxxx  10" => load_store_reg_unpriv (* Load/store register (unprivileged) on page C4-286 *)
+  | "xx11  -  0x  0xxxxx  11" => load_store_reg_imm_pre  (* Load/store register (immediate pre-indexed) on page C4-286 *)
+  | "xx11  -  0x  1xxxxx  00" => atomic (* Atomic memory operations on page C4-288 *)
+  | "xx11  -  0x  1xxxxx  10" => load_store_reg_off (* Load/store register (register offset) on page C4-295 *)
+  | "xx11  -  0x  1xxxxx  x1" => load_store_reg_pac (* Load/store register (pac) on page C4-297 *)
+  | "xx11  -  1x  -       - " => load_store_reg_u_imm (* Load/store register (unsigned immediate) on page C4-297 *)
   else UDF end.
 
+(** DP REG*)
   (*2 source dp*)
   Definition data_proc_2_src  :=
     let sf := n.[31] in
@@ -1666,7 +1762,7 @@ Section Decoder.
   (*add/sub - shifted reg*)
   Definition add_sub_shifted  :=
     let sf := n.[31] in
-    let op := n.[30] in
+    let opc := n.[30] in
     let s_ := n.[29] in
     let shift := n.[22,24] in
     let imm6 := n.[10,16] in
@@ -1841,6 +1937,28 @@ Section Decoder.
     | "1  00  101  1" => ARM_UMSUBL (* UMSUBL *)
     | "1  00  110  0" => ARM_UMULH (* UMULH *)
     else UDF end.
+
+
+
+  Definition dp_reg :=
+    let op0 := n.[30] in
+    let op1 := n.[28] in
+    let op2 := n.[21,25] in
+    let op3 := n.[10,16] in
+    match[bits] op0, op1, op2, op3 with
+  | "0  1  0110  -     " => data_proc_2_src (* Data-processing (2 source) *)
+  | "1  1  0110  -     " => data_proc_1_src (* Data-processing (1 source) on page C4-301 *)
+  | "-  0  0xxx  -     " => data_proc_logical (* Logical (shifted register) on page C4-303 *)
+  | "-  0  1xx0  -     " => add_sub_shifted (* Add/subtract (shifted register) on page C4-303 *)
+  | "-  0  1xx1  -     " => add_sub_extended (* Add/subtract (extended register) on page C4-304 *)
+  | "-  1  0000  000000" => add_sub_carry (* Add/subtract (with carry) on page C4-305 *)
+  | "-  1  0000  x00001" => rotate (* Rotate right into flags on page C4-305 *)
+  | "-  1  0000  xx0010" => evaluate (* Evaluate into flags on page C4-306 *)
+  | "-  1  0010  xxxx0x" => cond_compare_reg (* Conditional compare (register) on page C4-306 *)
+  | "-  1  0010  xxxx1x" => cond_compare_imm (* Conditional compare (immediate) on page C4-307 *)
+  | "-  1  0100  -     " => cond_select (* Conditional select on page C4-307 *)
+  | "-  1  1xxx  -     " => data_proc_3_src (* Data-processing (3 source) on page C4-308 *)
+  else UDF end.
 
   Definition dp_fp_simd := UDF.
 
