@@ -82,8 +82,9 @@ Module Notation.
 End Notation.
 Import Notation.
 
+
+Variant inst :=
 (*DP imm*)
-Variant arm_data_imm :=
   | ARM_ADD_IMM
   | ARM_ADDS_IMM
   | ARM_SUB_IMM
@@ -98,6 +99,9 @@ Variant arm_data_imm :=
   | ARM_ADDS_EXTENDED
   | ARM_SUB_EXTENDED
   | ARM_SUBS_EXTENDED
+  (*8.5*)
+  | ARM_ADDG
+  | ARM_SUBG
   (*compare*)
   | ARM_CMP_IMM
   | ARM_CMN_IMM
@@ -128,7 +132,7 @@ Variant arm_data_imm :=
   | ARM_UBFX_IMM
   | ARM_UBFIZ_IMM
   (*extract*)
-  | ARM_EXTR_IMM
+  | ARM_EXTR
   (*shift imm*)
   | ARM_ASR_IMM
   | ARM_LSL_IMM
@@ -142,10 +146,9 @@ Variant arm_data_imm :=
   | ARM_UXTH_IMM
   (*conditional comparison*)
   | ARM_CCMN_IMM
-  | ARM_CCMP_IMM.
+  | ARM_CCMP_IMM
 
 (*DP reg*)
-Variant arm_data_reg :=
   | ARM_ADD_REG
   | ARM_ADDS_REG
   | ARM_SUB_REG
@@ -155,19 +158,26 @@ Variant arm_data_reg :=
   | ARM_NEG_REG
   | ARM_NEGS_REG
   (*arith extended*)
-  | ARM_ADD_EXT_REG
-  | ARM_ADDS_EXT_REG
-  | ARM_SUB_EXT_REG
-  | ARM_SUBS_EXT_REG
-  | ARM_CMN_EXT_REG
-  | ARM_CMP_EXT_REG
+  | ARM_ADD_EXTENDED_REG
+  | ARM_ADDS_EXTENDED_REG
+  | ARM_SUB_EXTENDED_REG
+  | ARM_SUBS_EXTENDED_REG
+  | ARM_CMN_EXTENDED_REG
+  | ARM_CMP_EXTENDED_REG
+  (*arith shifted*)
+  | ARM_ADD_SHIFTED_REG
+  | ARM_ADDS_SHIFTED_REG
+  | ARM_SUB_SHIFTED_REG
+  | ARM_SUBS_SHIFTED_REG
+  | ARM_CMN_SHIFTED_REG
+  | ARM_CMP_SHIFTED_REG
   (*w carry*)
-  | ARM_ADC_REG
-  | ARM_ADCS_REG
-  | ARM_SBC_REG
-  | ARM_SBCS_REG
-  | ARM_NGC_REG
-  | ARM_NGCS_REG
+  | ARM_ADC
+  | ARM_ADCS
+  | ARM_SBC
+  | ARM_SBCS
+  | ARM_NGC
+  | ARM_NGCS
   (*logical - bitwise ops*)
   | ARM_AND_LOG_REG
   | ARM_ANDS_LOG_REG
@@ -180,6 +190,8 @@ Variant arm_data_reg :=
   | ARM_ORN_LOG_REG
   | ARM_TST_LOG_REG
   | ARM_MOV_LOG_REG (*mov register/mov register SP <-> reg*)
+  (*rotate*)
+  | ARM_RMIF
   (*shift register*)
   | ARM_ASRV_REG
   | ARM_LSLV_REG
@@ -197,8 +209,8 @@ Variant arm_data_reg :=
   (*conditional comparison*)
   | ARM_CCMN_REG
   | ARM_CCMP_REG
-  | ARM_CSINC.
-Variant mul_div_reg :=
+  | ARM_CSINC
+  (*mul/div reg*)
   | ARM_MADD
   | ARM_MSUB
   | ARM_MNEG
@@ -214,8 +226,8 @@ Variant mul_div_reg :=
   | ARM_UMULL
   | ARM_UMULH
   | ARM_SDIV
-  | ARM_UDIV.
-Variant CRC32 :=
+  | ARM_UDIV
+  (*crc32*)
   | ARM_CRC32B
   | ARM_CRC32H
   | ARM_CRC32W
@@ -223,22 +235,22 @@ Variant CRC32 :=
   | ARM_CRC32CB
   | ARM_CRC32CH
   | ARM_CRC32CW
-  | ARM_CRC32CX.
-Variant bit_ops :=
+  | ARM_CRC32CX
+  (*bit_ops*)
   | ARM_CLS
   | ARM_CLZ
   | ARM_RBIT
   | ARM_REV
   | ARM_REV16
   | ARM_REV32
-  | ARM_REV64.
+  | ARM_REV64
 
 (*Branches*)
-Variant inst :=
   (* decoding not implemented yet, treat as unpredictable *)
   | idk
   | ARM_UNPREDICTABLE
   | UDF (*ARM_UNDEFINED*)
+  | ARM_HINT
   (*conditional branch (imm)*)
   | ARM_B_COND
   (*exception generation*)
@@ -408,12 +420,12 @@ Variant inst :=
 Section Decoder.
   Variable n : N.
 
-(** DP Immediate*)
+(** DP Immediate*)    
   Definition pc_rel :=
     let op := n.[31] in
     match[bits] op with
-    | "0" => ARM_ADR (* ADR *)
-    | "1" => ARM_ADRP (* ADRP *)
+    | "0" => ARM_ADR_IMM (* ADR *)
+    | "1" => ARM_ADRP_IMM (* ADRP *)
     else UDF end.
 
   Definition add_sub_imm :=
@@ -443,6 +455,23 @@ Section Decoder.
     | "1  1  0" => ARM_SUBG (* SUBG Armv8.5 *)
     else UDF end.
 
+  (*logical imm*)
+  Definition logical_imm :=
+    let sf := n.[31] in
+    let opc := n.[29,31] in
+    let n_ := n.[22] in
+    match[bits] sf, opc, n_ with
+  | "0  -   1" => UDF (* Unallocated. *)
+  | "0  00  0" => ARM_AND_IMM (* AND (immediate) - 32-bit variant on page C6-775 *)
+  | "0  01  0" => ARM_ORR_IMM (* ORR (immediate) - 32-bit variant on page C6-1125 *)
+  | "0  10  0" => ARM_EOR_IMM (* EOR (immediate) - 32-bit variant on page C6-896 *)
+  | "0  11  0" => ARM_ANDS_IMM (* ANDS (immediate) - 32-bit variant on page C6-779 *)
+  | "1  00  -" => ARM_AND_IMM (* AND (immediate) - 64-bit variant on page C6-775 *)
+  | "1  01  -" => ARM_ORR_IMM (* ORR (immediate) - 64-bit variant on page C6-1125 *)
+  | "1  10  -" => ARM_EOR_IMM (* EOR (immediate) - 64-bit variant on page C6-896 *)
+  | "1  11  -" => ARM_ANDS_IMM (* ANDS (immediate) - 64-bit variant on page C6-779 *)
+  else UDF end.
+
   Definition move_wide_imm :=
     let sf := n.[31] in
     let opc := n.[29,31] in
@@ -450,12 +479,12 @@ Section Decoder.
     match[bits] sf, opc, hw with
     | "-  01  - " => UDF (* Unallocated. *)
     | "0  -   1x" => UDF (* Unallocated. *)
-    | "0  00  - " => ARM_MOVN (* MOVN - 32-bit variant on page C6-1100 *)
-    | "0  10  - " => ARM_MOVZ (* MOVZ - 32-bit variant on page C6-1102 *)
-    | "0  11  - " => ARM_MOVK (* MOVK - 32-bit variant on page C6-1098 *)
-    | "1  00  - " => ARM_MOVN (* MOVN - 64-bit variant on page C6-1100 *)
-    | "1  10  - " => ARM_MOVZ (* MOVZ - 64-bit variant on page C6-1102 *)
-    | "1  11  - " => ARM_MOVK (* MOVK - 64-bit variant on page C6-1098 *)
+    | "0  00  - " => ARM_MOVN_IMM (* MOVN - 32-bit variant on page C6-1100 *)
+    | "0  10  - " => ARM_MOVZ_IMM (* MOVZ - 32-bit variant on page C6-1102 *)
+    | "0  11  - " => ARM_MOVK_IMM (* MOVK - 32-bit variant on page C6-1098 *)
+    | "1  00  - " => ARM_MOVN_IMM (* MOVN - 64-bit variant on page C6-1100 *)
+    | "1  10  - " => ARM_MOVZ_IMM (* MOVZ - 64-bit variant on page C6-1102 *)
+    | "1  11  - " => ARM_MOVK_IMM (* MOVK - 64-bit variant on page C6-1098 *)
     else UDF end.
 
   Definition bitfield :=
@@ -465,13 +494,13 @@ Section Decoder.
     match[bits] sf, opc, n_ with
     | "-  11  -" => UDF (* Unallocated. *)
     | "0  -   1" => UDF (* Unallocated. *)
-    | "0  00  0" => ARM_SBFM (* SBFM - 32-bit variant on page C6-1170 *)
-    | "0  01  0" => ARM_BFM (* BFM - 32-bit variant on page C6-804 *)
-    | "0  10  0" => ARM_UBFM (* UBFM - 32-bit variant on page C6-1351 *)
+    | "0  00  0" => ARM_SBFM_IMM (* SBFM - 32-bit variant on page C6-1170 *)
+    | "0  01  0" => ARM_BFM_IMM (* BFM - 32-bit variant on page C6-804 *)
+    | "0  10  0" => ARM_UBFM_IMM (* UBFM - 32-bit variant on page C6-1351 *)
     | "1  -   0" => UDF (* Unallocated. *)
-    | "1  00  1" => ARM_SBFM (* SBFM - 64-bit variant on page C6-1170 *)
-    | "1  01  1" => ARM_BFM (* BFM - 64-bit variant on page C6-804 *)
-    | "1  10  1" => ARM_UBFM (* UBFM - 64-bit variant on page C6-1351 *)
+    | "1  00  1" => ARM_SBFM_IMM (* SBFM - 64-bit variant on page C6-1170 *)
+    | "1  01  1" => ARM_BFM_IMM (* BFM - 64-bit variant on page C6-804 *)
+    | "1  10  1" => ARM_UBFM_IMM (* UBFM - 64-bit variant on page C6-1351 *)
     else UDF end.
 
   Definition extract :=
@@ -480,16 +509,28 @@ Section Decoder.
     let n_ := n.[22] in
     let o0 := n.[21] in
     let imms := n.[10,16] in
-    match[bits] sf, op, s_, opcode2 with
-    | "-  x1  -  -" => ARM_- (* - Unallocated. *)
-    | "-  00  -  1" => ARM_- (* - Unallocated. *)
-    | "-  1x  -  -" => ARM_- (* - Unallocated. *)
-    | "0  -   -  -" => ARM_1xxxxx (* 1xxxxx Unallocated. *)
-    | "0  -   1  -" => ARM_- (* - Unallocated. *)
-    | "0  00  0  0" => ARM_0xxxxx (* 0xxxxx EXTR - 32-bit variant on page C6-903 *)
-    | "1  -   0  -" => ARM_- (* - Unallocated. *)
-    | "1  00  1  0" => ARM_- (* - EXTR - 64-bit variant on page C6-903 *)
+    match[bits] sf, op21, n_, o0, imms with
+    | "-  x1  -  -  -     " => UDF (* Unallocated. *)
+    | "-  00  -  1  -     " => UDF (* Unallocated. *)
+    | "-  1x  -  -  -     " => UDF (* Unallocated. *)
+    | "0  -   -  -  1xxxxx" => UDF (* Unallocated. *)
+    | "0  -   1  -  -     " => UDF (* Unallocated. *)
+    | "0  00  0  0  0xxxxx" => ARM_EXTR (* EXTR - 32-bit variant on page C6-903 *)
+    | "1  -   0  -  -     " => UDF (* Unallocated. *)
+    | "1  00  1  0  -     " => ARM_EXTR (* EXTR - 64-bit variant on page C6-903 *)
     else UDF end.
+
+    Definition dp_imm :=
+    let op0:= n.[23,26] in
+    match[bits] op0 with
+  | "00x" => pc_rel (* PC-rel. addressing *)
+  | "010" => add_sub_imm (* Add/subtract (immediate) *)
+  | "011" => add_sub_imm_tags (* Add/subtract (immediate, with tags) on page C4-254 *)
+  | "100" => logical_imm (* Logical (immediate) on page C4-254 *)
+  | "101" => move_wide_imm (* Move wide (immediate) on page C4-255 *)
+  | "110" => bitfield (* Bitfield on page C4-256 *)
+  | "111" => extract (* Extract on page C4-256 *)
+   else UDF end.
 
   Definition B_cond :=
     let imm19 := n.[5,24] in
@@ -622,83 +663,83 @@ Section Decoder.
     let Rn := n.[5,10] in
     let op4 := n.[0,5] in
     match[bits] opc, op2, op3, rn, op4 with
-    | "-     !=11111   -         -        -      " => UDF (* Unallocated. - *)
-    | "0000  11111     000000    -        !=00000" => UDF (* Unallocated. - *)
-    | "0000  11111     000000    -        00000  " => ARM_BR (* BR - *)
-    | "0000  11111     000001    -        -      " => UDF (* Unallocated. - *)
-    | "0000  11111     000010    -        !=11111" => UDF (* Unallocated. - *)
-    | "0000  11111     000010    -        11111  " => ARM_BRAA (* BRAA, BRAAZ, BRAB, BRABZ - Key A, zero modifier variant on page C6-817 Armv8.3 *)
-    | "0000  11111     000011    -        !=11111" => UDF (* Unallocated. - *)
-    | "0000  11111     000011    -        11111  " => ARM_BRAA (* BRAA, BRAAZ, BRAB, BRABZ - Key B, zero modifier variant on page C6-817 Armv8.3 *)
-    | "0000  11111     0001xx    -        -      " => UDF (* Unallocated. - *)
-    | "0000  11111     001xxx    -        -      " => UDF (* Unallocated. - *)
-    | "0000  11111     01xxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0000  11111     1xxxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0001  11111     000000    -        !=00000" => UDF (* Unallocated. - *)
-    | "0001  11111     000000    -        00000  " => ARM_BLR (* BLR - *)
-    | "0001  11111     000001    -        -      " => UDF (* Unallocated. - *)
-    | "0001  11111     000010    -        !=11111" => UDF (* Unallocated. - *)
-    | "0001  11111     000010    -        11111  " => ARM_BLRAA (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, *)
-    | "zero  modifier  variant   on       page   " => ARM_C6-814 (* C6-814 Armv8.3 *)
-    | "0001  11111     000011    -        !=11111" => UDF (* Unallocated. - *)
-    | "0001  11111     000011    -        11111  " => ARM_BLRAA (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, *)
-    | "zero  modifier  variant   on       page   " => ARM_C6-814 (* C6-814 Armv8.3 *)
-    | "0001  11111     0001xx    -        -      " => UDF (* Unallocated. - *)
-    | "0001  11111     001xxx    -        -      " => UDF (* Unallocated. - *)
-    | "0001  11111     01xxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0001  11111     1xxxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0010  11111     000000    -        !=00000" => UDF (* Unallocated. - *)
-    | "0010  11111     000000    -        00000  " => ARM_RET (* RET - *)
-    | "0010  11111     000001    -        -      " => UDF (* Unallocated. - *)
-    | "0010  11111     000010    !=11111  !=11111" => UDF (* Unallocated. - *)
-    | "0010  11111     000010    11111    11111  " => ARM_RETAA (* RETAA, RETAB - RETAA variant on page C6-1148 Armv8.3 *)
-    | "0010  11111     000011    !=11111  !=11111" => UDF (* Unallocated. - *)
-    | "0010  11111     000011    11111    11111  " => ARM_RETAA (* RETAA, RETAB - RETAB variant on page C6-1148 Armv8.3 *)
-    | "0010  11111     0001xx    -        -      " => UDF (* Unallocated. - *)
-    | "0010  11111     001xxx    -        -      " => UDF (* Unallocated. - *)
-    | "0010  11111     01xxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0010  11111     1xxxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0011  11111     -         -        -      " => UDF (* Unallocated. - *)
-    | "0100  11111     000000    !=11111  !=00000" => UDF (* Unallocated. - *)
-    | "0100  11111     000000    !=11111  00000  " => UDF (* Unallocated. - *)
-    | "0100  11111     000000    11111    !=00000" => UDF (* Unallocated. - *)
-    | "0100  11111     000000    11111    00000  " => ARM_ERET (* ERET - *)
-    | "0100  11111     000001    -        -      " => UDF (* Unallocated. - *)
-    | "0100  11111     000010    !=11111  !=11111" => UDF (* Unallocated. - *)
-    | "0100  11111     000010    !=11111  11111  " => UDF (* Unallocated. - *)
-    | "0100  11111     000010    11111    !=11111" => UDF (* Unallocated. - *)
-    | "0100  11111     000010    11111    11111  " => ARM_ERETAA (* ERETAA, ERETAB - ERETAA variant on page C6-901 Armv8.3 *)
-    | "0100  11111     000011    !=11111  !=11111" => UDF (* Unallocated. - *)
-    | "0100  11111     000011    !=11111  11111  " => UDF (* Unallocated. - *)
-    | "0100  11111     000011    11111    !=11111" => UDF (* Unallocated. - *)
-    | "0100  11111     000011    11111    11111  " => ARM_ERETAA (* ERETAA, ERETAB - ERETAB variant on page C6-901 Armv8.3 *)
-    | "0100  11111     0001xx    -        -      " => UDF (* Unallocated. - *)
-    | "0100  11111     001xxx    -        -      " => UDF (* Unallocated. - *)
-    | "0100  11111     01xxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0100  11111     1xxxxx    -        -      " => UDF (* Unallocated. - *)
-    | "0101  11111     !=000000  -        -      " => UDF (* Unallocated. - *)
-    | "0101  11111     000000    !=11111  !=00000" => UDF (* Unallocated. - *)
-    | "0101  11111     000000    !=11111  00000  " => UDF (* Unallocated. - *)
-    | "0101  11111     000000    11111    !=00000" => UDF (* Unallocated. - *)
-    | "0101  11111     000000    11111    00000  " => ARM_DRPS (* DRPS - *)
-    | "011x  11111     -         -        -      " => UDF (* Unallocated. - *)
-    | "1000  11111     00000x    -        -      " => UDF (* Unallocated. - *)
-    | "1000  11111     000010    -        -      " => ARM_BRAA_REG (* BRAA, BRAAZ, BRAB, BRABZ - Key A, register modifier variant on page C6-817 Armv8.3 *)
-    | "1000  11111     000011    -        -      " => ARM_BRAA_REG (* BRAA, BRAAZ, BRAB, BRABZ - Key B, register modifier variant on page C6-817 Armv8.3 *)
-    | "1000  11111     0001xx    -        -      " => UDF (* Unallocated. - *)
-    | "1000  11111     001xxx    -        -      " => UDF (* Unallocated. - *)
-    | "1000  11111     01xxxx    -        -      " => UDF (* Unallocated. - *)
-    | "1000  11111     1xxxxx    -        -      " => UDF (* Unallocated. - *)
-    | "1001  11111     00000x    -        -      " => UDF (* Unallocated. - *)
-    | "1001  11111     000010    -        -      " => ARM_BLRAA_REG (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, register modifier variant on page C6-814 Armv8.3 *)
-    | "1001  11111     000011    -        -      " => ARM_BLRAA_REG (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, register modifier variant on page C6-814 Armv8.3 *)
-    | "1001  11111     0001xx    -        -      " => UDF (* Unallocated. - *)
-    | "1001  11111     001xxx    -        -      " => UDF (* Unallocated. - *)
-    | "1001  11111     01xxxx    -        -      " => UDF (* Unallocated. - *)
-    | "1001  11111     1xxxxx    -        -      " => UDF (* Unallocated. - *)
-    | "101x  11111     -         -        -      " => UDF (* Unallocated. - *)
-    | "11xx  11111     -         -        -      " => UDF (* Unallocated. - *)
-    else UDF end.
+  | "-     !=11111  -         -        -      " => UDF (* Unallocated. - *)
+  | "0000  11111    000000    -        !=00000" => UDF (* Unallocated. - *)
+  | "0000  11111    000000    -        00000  " => ARM_BR (* BR - *)
+  | "0000  11111    000001    -        -      " => UDF (* Unallocated. - *)
+  | "0000  11111    000010    -        !=11111" => UDF (* Unallocated. - *)
+  | "0000  11111    000010    -        11111  " => ARM_BRAAZ (* BRAA, BRAAZ, BRAB, BRABZ - Key A, zero modifier variant on page C6-817 Armv8.3 *)
+  | "0000  11111    000011    -        !=11111" => UDF (* Unallocated. - *)
+  | "0000  11111    000011    -        11111  " => ARM_BRAAZ (* BRAA, BRAAZ, BRAB, BRABZ - Key B, zero modifier variant on page C6-817 Armv8.3 *)
+  | "0000  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
+  | "0000  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
+  | "0000  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0000  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0001  11111    000000    -        !=00000" => UDF (* Unallocated. - *)
+  | "0001  11111    000000    -        00000  " => ARM_BLR (* BLR - *)
+  | "0001  11111    000001    -        -      " => UDF (* Unallocated. - *)
+  | "0001  11111    000010    -        !=11111" => UDF (* Unallocated. - *)
+  | "0001  11111    000010    -        11111  " => ARM_BLRAAZ (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, zero modifier variant on page C6-814 Armv8.3 *)
+  | "0001  11111    000011    -        !=11111" => UDF (* Unallocated. - *)
+  | "0001  11111    000011    -        11111  " => ARM_BLRAAZ (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, zero modifier variant on page C6-814 Armv8.3 *)
+  | "0001  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
+  | "0001  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
+  | "0001  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0001  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0010  11111    000000    -        !=00000" => UDF (* Unallocated. -       *)
+  | "0010  11111    000000    -        00000  " => ARM_RET (* RET - *)
+  | "0010  11111    000001    -        -      " => UDF (* Unallocated. - *)
+  | "0010  11111    000010    !=11111  !=11111" => UDF (* Unallocated. - *)
+  | "0010  11111    000010    11111    11111  " => ARM_RETAA (* RETAA, RETAB - RETAA variant on page C6-1148 Armv8.3 *)
+  | "0010  11111    000011    !=11111  !=11111" => UDF (* Unallocated. - *)
+  | "0010  11111    000011    11111    11111  " => ARM_RETAA (* RETAA, RETAB - RETAB variant on page C6-1148 Armv8.3 *)
+  | "0010  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
+  | "0010  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
+  | "0010  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0010  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0011  11111    -         -        -      " => UDF (* Unallocated. - *)
+  | "0100  11111    000000    !=11111  !=00000" => UDF (* Unallocated. - *)
+  | "0100  11111    000000    !=11111  00000  " => UDF (* Unallocated. - *)
+  | "0100  11111    000000    11111    !=00000" => UDF (* Unallocated. - *)
+  | "0100  11111    000000    11111    00000  " => ARM_ERET (* ERET - *)
+  | "0100  11111    000001    -        -      " => UDF (* Unallocated. - *)
+  | "0100  11111    000010    !=11111  !=11111" => UDF (* Unallocated. - *)
+  | "0100  11111    000010    !=11111  11111  " => UDF (* Unallocated. - *)
+  | "0100  11111    000010    11111    !=11111" => UDF (* Unallocated. - *)
+  | "0100  11111    000010    11111    11111  " => ARM_ERETAA (* ERETAA, ERETAB - ERETAA variant on page C6-901 Armv8.3 *)
+  | "0100  11111    000011    !=11111  !=11111" => UDF (* Unallocated. - *)
+  | "0100  11111    000011    !=11111  11111  " => UDF (* Unallocated. - *)
+  | "0100  11111    000011    11111    !=11111" => UDF (* Unallocated. - *)
+  | "0100  11111    000011    11111    11111  " => ARM_ERETAA (* ERETAA, ERETAB - ERETAB variant on page C6-901 Armv8.3 *)
+  | "0100  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
+  | "0100  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
+  | "0100  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0100  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
+  | "0101  11111    !=000000  -        -      " => UDF (* Unallocated. - *)
+  | "0101  11111    000000    !=11111  !=00000" => UDF (* Unallocated. - *)
+  | "0101  11111    000000    !=11111  00000  " => UDF (* Unallocated. - *)
+  | "0101  11111    000000    11111    !=00000" => UDF (* Unallocated. - *)
+  | "0101  11111    000000    11111    00000  " => ARM_DRPS (* DRPS - *)
+  | "011x  11111    -         -        -      " => UDF (* Unallocated. - *)
+  | "1000  11111    00000x    -        -      " => UDF (* Unallocated. - *)
+  | "1000  11111    000010    -        -      " => ARM_BRAA_REG (* BRAA, BRAAZ, BRAB, BRABZ - Key A, register modifier variant on page C6-817 Armv8.3 *)
+  | "1000  11111    000011    -        -      " => ARM_BRAA_REG (* BRAA, BRAAZ, BRAB, BRABZ - Key B, register modifier variant on page C6-817 Armv8.3 *)
+  | "1000  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
+  | "1000  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
+  | "1000  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
+  | "1000  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
+  | "1001  11111    00000x    -        -      " => UDF (* Unallocated. - *)
+  | "1001  11111    000010    -        -      " => ARM_BLRAA_REG (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, register modifier variant on page C6-814 Armv8.3 *)
+  | "1001  11111    000011    -        -      " => ARM_BLRAA_REG (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key B, register modifier variant on page C6-814 Armv8.3 *)
+  | "1001  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
+  | "1001  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
+  | "1001  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
+  | "1001  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
+  | "101x  11111    -         -        -      " => UDF (* Unallocated. - *)
+  | "11xx  11111    -         -        -      " => UDF (* Unallocated. - *)
+  else UDF end.
+
+
 
   Definition uncond_b_imm :=
     let op := n.[31] in
@@ -741,6 +782,43 @@ Section Decoder.
     | "x01  0xxxxxxxxxxxxx  -    " => comp_and_b (* Compare and branch (immediate) on page C4-265 *)
     | "x01  1xxxxxxxxxxxxx  -    " => test_and_b (* Test and branch (immediate) on page C4-265 *)
     else UDF end.
+
+(*Loads and Stores*)
+  Definition load_store :=
+    let op0 := n.[28,32] in
+    let op1 := n.[26] in
+    let op2 := n.[23,25] in
+    let op3 := n.[16,22] in
+    let op4 := n.[10,12] in
+    match[bits] op0, op1, op2, op3, op4 with
+  | "0x00  1  00  000000  - " => UDF (* Advanced SIMD load/store multiple structures on page C4-267 *)
+  | "0x00  1  01  0xxxxx  - " => UDF (* Advanced SIMD load/store multiple structures (post-indexed) on page C4-268 *)
+  | "0x00  1  0x  1xxxxx  - " => UDF (* Unallocated. *)
+  | "0x00  1  10  x00000  - " => UDF (* Advanced SIMD load/store single structure on page C4-269 *)
+  | "0x00  1  11  -       - " => UDF (* Advanced SIMD load/store single structure (post-indexed) on page C4-272 *)
+  | "0x00  1  x0  x1xxxx  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xx1xxx  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xxx1xx  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xxxx1x  - " => UDF (* Unallocated. *)
+  | "0x00  1  x0  xxxxx1  - " => UDF (* Unallocated. *)
+  | "1101  0  1x  1xxxxx  - " => load_store_mem_tags (* Load/store memory tags on page C4-276 *)
+  | "1x00  1  -   -       - " => UDF (* Unallocated. *)
+  | "xx00  0  0x  -       - " => load_store_exclusive (* Load/store exclusive on page C4-276 *)
+  | "xx01  0  1x  0xxxxx  00" => ldapr_stlr_imm_u (* LDAPR/STLR (unscaled immediate) on page C4-279 *)
+  | "xx01  -  0x  -       - " => load_reg_literal (* Load register (literal) on page C4-280 *)
+  | "xx10  -  00  -       - " => load_store_no_alloc_pair  (* Load/store no-allocate pair (offset) on page C4-280 *)
+  | "xx10  -  01  -       - " => load_store_post_indx_pair (* Load/store register pair (post-indexed) on page C4-281 *)
+  | "xx10  -  10  -       - " => load_store_pair_offset (* Load/store register pair (offset) on page C4-282 *)
+  | "xx10  -  11  -       - " => load_store_pre_indx_pair (* Load/store register pair (pre-indexed) on page C4-282 *)
+  | "xx11  -  0x  0xxxxx  00" => load_store_reg_imm_u(* Load/store register (unscaled immediate) on page C4-283 *)
+  | "xx11  -  0x  0xxxxx  01" => load_store_reg_imm_poi (* Load/store register (immediate post-indexed) on page C4-284 *)
+  | "xx11  -  0x  0xxxxx  10" => load_store_reg_unpriv (* Load/store register (unprivileged) on page C4-286 *)
+  | "xx11  -  0x  0xxxxx  11" => load_store_reg_imm_pre  (* Load/store register (immediate pre-indexed) on page C4-286 *)
+  | "xx11  -  0x  1xxxxx  00" => atomic (* Atomic memory operations on page C4-288 *)
+  | "xx11  -  0x  1xxxxx  10" => load_store_reg_off (* Load/store register (register offset) on page C4-295 *)
+  | "xx11  -  0x  1xxxxx  x1" => load_store_reg_pac (* Load/store register (pac) on page C4-297 *)
+  | "xx11  -  1x  -       - " => load_store_reg_u_imm (* Load/store register (unsigned immediate) on page C4-297 *)
+  else UDF end.
 
   Definition load_store_mem_tags :=
     let opc := n.[22,24] in
@@ -844,7 +922,8 @@ Section Decoder.
     | "11  1  1  1  1  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
     else UDF end.
 
-  Definition ld_str_unscaled_immediate :=
+  (*LDAPR/STLR unscaled immediate*)
+  Definition ldapr_stlr_imm_u :=
     let size := n.[30,32] in
     let opc := n.[22,24] in
     match[bits] size, opc with
@@ -867,7 +946,7 @@ Section Decoder.
     else UDF end.
 
 
-  Definition ld_reg_literal :=
+  Definition load_reg_literal :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     match[bits] opc, v_ with
@@ -882,7 +961,26 @@ Section Decoder.
     else UDF end.
 
 
-  Definition ld_str_no_alloc_pair :=
+  Definition load_store_no_alloc_pair :=
+    let opc := n.[30,32] in
+    let v_ := n.[26] in
+    let l_ := n.[22] in
+    match[bits] opc, v_, l_ with
+    | "00  0  0" => ARM_STNP (* STNP - 32-bit variant on page C6-865 *)
+    | "00  0  1" => ARM_LDNP (* LDNP - 32-bit variant on page C6-662 *)
+    | "00  1  0" => UDF (* STNP (SIMD&FP) - 32-bit variant on page C7-1626 *)
+    | "00  1  1" => UDF (* LDNP (SIMD&FP) - 32-bit variant on page C7-1353 *)
+    | "01  0  -" => UDF (* Unallocated. *)
+    | "01  1  0" => UDF (* STNP (SIMD&FP) - 64-bit variant on page C7-1626 *)
+    | "01  1  1" => UDF (* LDNP (SIMD&FP) - 64-bit variant on page C7-1353 *)
+    | "10  0  0" => ARM_STNP (* STNP - 64-bit variant on page C6-865 *)
+    | "10  0  1" => ARM_LDNP (* LDNP - 64-bit variant on page C6-662 *)
+    | "10  1  0" => UDF (* STNP (SIMD&FP) - 128-bit variant on page C7-1626 *)
+    | "10  1  1" => UDF (* LDNP (SIMD&FP) - 128-bit variant on page C7-1353 *)
+    | "11  -  -" => UDF (* Unallocated *)
+    else UDF end.
+
+    Definition load_store_no_alloc_pair_offset :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
@@ -902,7 +1000,8 @@ Section Decoder.
     else UDF end.
 
 
-  Definition ld_str_post_indx_pair :=
+
+  Definition load_store_post_indx_pair :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
@@ -922,7 +1021,7 @@ Section Decoder.
     | "11  -  -" => UDF (* Unallocated *)
     else UDF end.
 
-  Definition ld_str_pair_offset :=
+  Definition load_store_pair_offset :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
@@ -942,7 +1041,7 @@ Section Decoder.
     | "11  -  -" => UDF (* Unallocated. *)
     else UDF end.
 
-  Definition ld_str_pre_indx_pair :=
+  Definition load_store_pre_indx_pair :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
@@ -962,8 +1061,8 @@ Section Decoder.
     | "11  -  -" => UDF (* Unallocated *)
     else UDF end.
 
-  (*unscaled imm*)
-  Definition ld_str_reg_imm_u :=
+  (*unscaled immediate*)
+  Definition load_store_reg_imm_u :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
@@ -998,7 +1097,7 @@ Section Decoder.
     else UDF end.
 
   (*post-indexed imm*)
-  Definition ld_str_reg_imm_poi :=
+  Definition load_store_reg_imm_poi :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
@@ -1033,7 +1132,7 @@ Section Decoder.
     else UDF end.
 
   (*unprivileged*)
-  Definition ld_str_reg_unpriv :=
+  Definition load_store_reg_unpriv :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
@@ -1057,7 +1156,7 @@ Section Decoder.
     else UDF end.
 
   (*pre-indexed imm*)
-  Definition ld_str_reg_imm_pre  :=
+  Definition load_store_reg_imm_pre  :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
@@ -1319,7 +1418,7 @@ Section Decoder.
     else UDF end.
 
   (*register offset*)
-  Definition ld_str_reg_off  :=
+  Definition load_store_reg_off  :=
     let opc := n.[22,24] in
     let size := n.[30,32] in
     let v_ := n.[26] in
@@ -1362,7 +1461,7 @@ Section Decoder.
     else UDF end.
 
 (*pac*)
-  Definition ld_str_reg_pac :=
+  Definition load_store_reg_pac :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let m_ := n.[23] in
@@ -1377,7 +1476,7 @@ Section Decoder.
     else UDF end.
 
 (*unsigned immediate*)
-  Definition ld_str_reg_u_imm  :=
+  Definition load_store_reg_u_imm  :=
     let opc := n.[22,24] in
     let size := n.[30,32] in
     let v_ := n.[26] in
@@ -1413,48 +1512,75 @@ Section Decoder.
 
 
 (** DP REG*)
+  Definition dp_reg :=
+    let op0 := n.[30] in
+    let op1 := n.[28] in
+    let op2 := n.[21,25] in
+    let op3 := n.[10,16] in
+    match[bits] op0, op1, op2, op3 with
+  | "0  1  0110  -     " => data_proc_2_src (* Data-processing (2 source) *)
+  | "1  1  0110  -     " => data_proc_1_src (* Data-processing (1 source) on page C4-301 *)
+  | "-  0  0xxx  -     " => data_proc_logical (* Logical (shifted register) on page C4-303 *)
+  | "-  0  1xx0  -     " => add_sub_shifted (* Add/subtract (shifted register) on page C4-303 *)
+  | "-  0  1xx1  -     " => add_sub_extended (* Add/subtract (extended register) on page C4-304 *)
+  | "-  1  0000  000000" => add_sub_carry (* Add/subtract (with carry) on page C4-305 *)
+  | "-  1  0000  x00001" => rotate (* Rotate right into flags on page C4-305 *)
+  | "-  1  0000  xx0010" => evaluate (* Evaluate into flags on page C4-306 *)
+  | "-  1  0010  xxxx0x" => cond_compare_reg (* Conditional compare (register) on page C4-306 *)
+  | "-  1  0010  xxxx1x" => cond_compare_imm (* Conditional compare (immediate) on page C4-307 *)
+  | "-  1  0100  -     " => cond_select (* Conditional select on page C4-307 *)
+  | "-  1  1xxx  -     " => data_proc_3_src (* Data-processing (3 source) on page C4-308 *)
+  else UDF end.
 
   (*2 source dp*)
   Definition data_proc_2_src  :=
     let sf := n.[31] in
     let s_ := n.[29] in
     let opcode := n.[10,16] in
-    match[bits] sf, s_, opcode with
-    | "-  -  00000x" => UDF (* Unallocated. *)
-    | "-  -  011xxx" => UDF (* Unallocated. *)
-    | "-  -  1xxxxx" => UDF (* Unallocated. *)
-    | "-  0  0001xx" => UDF (* Unallocated. *)
-    | "-  0  0011xx" => UDF (* Unallocated. *)
-    | "-  1  -     " => UDF (* Unallocated. *)
-    | "0  0  000010" => ARM_UDIV (* UDIV - 32-bit variant on page C6-963 *)
-    | "0  0  000011" => ARM_SDIV (* SDIV - 32-bit variant on page C6-823 *)
-    | "0  0  001000" => ARM_LSLV (* LSLV - 32-bit variant on page C6-755 *)
-    | "0  0  001001" => ARM_LSRV (* LSRV - 32-bit variant on page C6-758 *)
-    | "0  0  001010" => ARM_ASRV (* ASRV - 32-bit variant on page C6-546 *)
-    | "0  0  001011" => ARM_RORV (* RORV - 32-bit variant on page C6-814 *)
-    | "0  0  010x11" => UDF (* Unallocated. *)
-    | "0  0  010000" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32B variant on page C6-595 *)
-    | "0  0  010001" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32H variant on page C6-595 *)
-    | "0  0  010010" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32W variant on page C6-595 *)
-    | "0  0  010100" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CB variant on page C6-597 *)
-    | "0  0  010101" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CH variant on page C6-597 *)
-    | "0  0  010110" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CW variant on page C6-597 *)
+  match[bits] sf, s_, opcode with
+    | "-  -  000001" => UDF (* Unallocated. - *)
+    | "-  -  011xxx" => UDF (* Unallocated. - *)
+    | "-  -  1xxxxx" => UDF (* Unallocated. - *)
+    | "-  0  00011x" => UDF (* Unallocated. - *)
+    | "-  0  001101" => UDF (* Unallocated. - *)
+    | "-  0  00111x" => UDF (* Unallocated. - *)
+    | "-  1  00001x" => UDF (* Unallocated. - *)
+    | "-  1  0001xx" => UDF (* Unallocated. - *)
+    | "-  1  001xxx" => UDF (* Unallocated. - *)
+    | "-  1  01xxxx" => UDF (* Unallocated. - *)
+    | "0  -  000000" => UDF (* Unallocated. - *)
+    | "0  0  000010" => ARM_UDIV (* UDIV - 32-bit variant on page C6-1356 - *)
+    | "0  0  000011" => ARM_SDIV (* SDIV - 32-bit variant on page C6-1174 - *)
+    | "0  0  00010x" => UDF (* Unallocated. - *)
+    | "0  0  001000" => ARM_LSLV (* LSLV - 32-bit variant on page C6-1077 - *)
+    | "0  0  001001" => ARM_LSRV (* LSRV - 32-bit variant on page C6-1083 - *)
+    | "0  0  001010" => ARM_ASRV (* ASRV - 32-bit variant on page C6-787 - *)
+    | "0  0  001011" => ARM_RORV (* RORV - 32-bit variant on page C6-1161 - *)
+    | "0  0  001100" => UDF (* Unallocated. - *)
+    | "0  0  010x11" => UDF (* Unallocated. - *)
+    | "0  0  010000" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32B variant on page C6-866 - *)
+    | "0  0  010001" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32H variant on page C6-866 - *)
+    | "0  0  010010" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32W variant on page C6-866 - *)
+    | "0  0  010100" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CB variant on page C6-868 - *)
+    | "0  0  010101" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CH variant on page C6-868 - *)
+    | "0  0  010110" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CW variant on page C6-868 - *)
     | "1  0  000000" => ARM_SUBP (* SUBP Armv8.5 *)
-    | "1  0  000010" => ARM_UDIV (* UDIV - 64-bit variant on page C6-963 *)
-    | "1  0  000011" => ARM_SDIV (* SDIV - 64-bit variant on page C6-823 *)
+    | "1  0  000010" => ARM_UDIV (* UDIV - 64-bit variant on page C6-1356 - *)
+    | "1  0  000011" => ARM_SDIV (* SDIV - 64-bit variant on page C6-1174 - *)
     | "1  0  000100" => ARM_IRG (* IRG Armv8.5 *)
     | "1  0  000101" => ARM_GMI (* GMI Armv8.5 *)
-    | "1  0  001000" => ARM_LSLV (* LSLV - 64-bit variant on page C6-755 *)
-    | "1  0  001001" => ARM_LSRV (* LSRV - 64-bit variant on page C6-758 *)
-    | "1  0  001010" => ARM_ASRV (* ASRV - 64-bit variant on page C6-546 *)
-    | "1  0  001011" => ARM_RORV (* RORV - 64-bit variant on page C6-814 *)
+    | "1  0  001000" => ARM_LSLV (* LSLV - 64-bit variant on page C6-1077 - *)
+    | "1  0  001001" => ARM_LSRV (* LSRV - 64-bit variant on page C6-1083 - *)
+    | "1  0  001010" => ARM_ASRV (* ASRV - 64-bit variant on page C6-787 - *)
+    | "1  0  001011" => ARM_RORV (* RORV - 64-bit variant on page C6-1161 - *)
     | "1  0  001100" => ARM_PACGA (* PACGA Armv8.3 *)
-    | "1  0  010xx0" => UDF (* Unallocated. *)
-    | "1  0  010x0x" => UDF (* Unallocated. *)
-    | "1  0  010011" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32X variant on page C6-595 *)
-    | "1  0  010111" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CX variant on page C6-597 *)
+    | "1  0  010xx0" => UDF (* Unallocated. - *)
+    | "1  0  010x0x" => UDF (* Unallocated. - *)
+    | "1  0  010011" => ARM_CRC32B (* CRC32B, CRC32H, CRC32W, CRC32X - CRC32X variant on page C6-866 - *)
+    | "1  0  010111" => ARM_CRC32CB (* CRC32CB, CRC32CH, CRC32CW, CRC32CX - CRC32CX variant on page C6-868 - *)
     | "1  1  000000" => ARM_SUBPS (* SUBPS Armv8.5 *)
     else UDF end.
+
 
   (*1 source*)
   Definition data_proc_1_src  :=
@@ -1518,22 +1644,22 @@ Section Decoder.
     let imm6 := n.[10,16] in
     match[bits] sf, opc, n_, imm6 with
     | "0  -   -  1xxxxx" => UDF (* Unallocated. *)
-    | "0  00  0  -     " => ARM_AND_SHIFTED (* AND (shifted register) - 32-bit variant on page C6-538 *)
-    | "0  00  1  -     " => ARM_BIC_SHIFTED (* BIC (shifted register) - 32-bit variant on page C6-556 *)
-    | "0  01  0  -     " => ARM_ORR_SHIFTED (* ORR (shifted register) - 32-bit variant on page C6-792 *)
-    | "0  01  1  -     " => ARM_ORN_SHIFTED (* ORN (shifted register) - 32-bit variant on page C6-788 *)
-    | "0  10  0  -     " => ARM_EOR_SHIFTED (* EOR (shifted register) - 32-bit variant on page C6-620 *)
-    | "0  10  1  -     " => ARM_EON_SHIFTED (* EON (shifted register) - 32-bit variant on page C6-617 *)
-    | "0  11  0  -     " => ARM_ANDS_SHIFTED (* ANDS (shifted register) - 32-bit variant on page C6-542 *)
-    | "0  11  1  -     " => ARM_BICS_SHIFTED (* BICS (shifted register) - 32-bit variant on page C6-558 *)
-    | "1  00  0  -     " => ARM_AND_SHIFTED (* AND (shifted register) - 64-bit variant on page C6-538 *)
-    | "1  00  1  -     " => ARM_BIC_SHIFTED (* BIC (shifted register) - 64-bit variant on page C6-556 *)
-    | "1  01  0  -     " => ARM_ORR_SHIFTED (* ORR (shifted register) - 64-bit variant on page C6-792 *)
-    | "1  01  1  -     " => ARM_ORN_SHIFTED (* ORN (shifted register) - 64-bit variant on page C6-788 *)
-    | "1  10  0  -     " => ARM_EOR_SHIFTED (* EOR (shifted register) - 64-bit variant on page C6-620 *)
-    | "1  10  1  -     " => ARM_EON_SHIFTED (* EON (shifted register) - 64-bit variant on page C6-617 *)
-    | "1  11  0  -     " => ARM_ANDS_SHIFTED (* ANDS (shifted register) - 64-bit variant on page C6-542 *)
-    | "1  11  1  -     " => ARM_BICS_SHIFTED (* BICS (shifted register) - 64-bit variant on page C6-558 *)
+    | "0  00  0  -     " => ARM_AND_LOG_REG (* AND (shifted register) - 32-bit variant on page C6-538 *)
+    | "0  00  1  -     " => ARM_BIC_LOG_REG (* BIC (shifted register) - 32-bit variant on page C6-556 *)
+    | "0  01  0  -     " => ARM_ORR_LOG_REG (* ORR (shifted register) - 32-bit variant on page C6-792 *)
+    | "0  01  1  -     " => ARM_ORN_LOG_REG (* ORN (shifted register) - 32-bit variant on page C6-788 *)
+    | "0  10  0  -     " => ARM_EOR_LOG_REG (* EOR (shifted register) - 32-bit variant on page C6-620 *)
+    | "0  10  1  -     " => ARM_EON_LOG_REG (* EON (shifted register) - 32-bit variant on page C6-617 *)
+    | "0  11  0  -     " => ARM_ANDS_LOG_REG (* ANDS (shifted register) - 32-bit variant on page C6-542 *)
+    | "0  11  1  -     " => ARM_BICS_LOG_REG (* BICS (shifted register) - 32-bit variant on page C6-558 *)
+    | "1  00  0  -     " => ARM_AND_LOG_REG (* AND (shifted register) - 64-bit variant on page C6-538 *)
+    | "1  00  1  -     " => ARM_BIC_LOG_REG (* BIC (shifted register) - 64-bit variant on page C6-556 *)
+    | "1  01  0  -     " => ARM_ORR_LOG_REG (* ORR (shifted register) - 64-bit variant on page C6-792 *)
+    | "1  01  1  -     " => ARM_ORN_LOG_REG (* ORN (shifted register) - 64-bit variant on page C6-788 *)
+    | "1  10  0  -     " => ARM_EOR_LOG_REG (* EOR (shifted register) - 64-bit variant on page C6-620 *)
+    | "1  10  1  -     " => ARM_EON_LOG_REG (* EON (shifted register) - 64-bit variant on page C6-617 *)
+    | "1  11  0  -     " => ARM_ANDS_LOG_REG (* ANDS (shifted register) - 64-bit variant on page C6-542 *)
+    | "1  11  1  -     " => ARM_BICS_LOG_REG (* BICS (shifted register) - 64-bit variant on page C6-558 *)
     else UDF end.
 
 
@@ -1547,14 +1673,14 @@ Section Decoder.
     match[bits] sf, opc, s_, shift, imm6 with
     | "-  -  -  11  -     " => UDF (* Unallocated. *)
     | "0  -  -  -   1xxxxx" => UDF (* Unallocated. *)
-    | "0  0  0  -   -     " => ARM_ADD_SHIFTED (* ADD (shifted register) - 32-bit variant on page C6-527 *)
-    | "0  0  1  -   -     " => ARM_ADDS_SHIFTED (* ADDS (shifted register) - 32-bit variant on page C6-533 *)
-    | "0  1  0  -   -     " => ARM_SUB_SHIFTED (* SUB (shifted register) - 32-bit variant on page C6-932 *)
-    | "0  1  1  -   -     " => ARM_SUBS_SHIFTED (* SUBS (shifted register) - 32-bit variant on page C6-938 *)
-    | "1  0  0  -   -     " => ARM_ADD_SHIFTED (* ADD (shifted register) - 64-bit variant on page C6-527 *)
-    | "1  0  1  -   -     " => ARM_ADDS_SHIFTED (* ADDS (shifted register) - 64-bit variant on page C6-533 *)
-    | "1  1  0  -   -     " => ARM_SUB_SHIFTED (* SUB (shifted register) - 64-bit variant on page C6-932 *)
-    | "1  1  1  -   -     " => ARM_SUBS_SHIFTED (* SUBS (shifted register) - 64-bit variant on page C6-938 *)
+    | "0  0  0  -   -     " => ARM_ADD_SHIFTED_REG (* ADD (shifted register) - 32-bit variant on page C6-527 *)
+    | "0  0  1  -   -     " => ARM_ADDS_SHIFTED_REG (* ADDS (shifted register) - 32-bit variant on page C6-533 *)
+    | "0  1  0  -   -     " => ARM_SUB_SHIFTED_REG (* SUB (shifted register) - 32-bit variant on page C6-932 *)
+    | "0  1  1  -   -     " => ARM_SUBS_SHIFTED_REG (* SUBS (shifted register) - 32-bit variant on page C6-938 *)
+    | "1  0  0  -   -     " => ARM_ADD_SHIFTED_REG (* ADD (shifted register) - 64-bit variant on page C6-527 *)
+    | "1  0  1  -   -     " => ARM_ADDS_SHIFTED_REG (* ADDS (shifted register) - 64-bit variant on page C6-533 *)
+    | "1  1  0  -   -     " => ARM_SUB_SHIFTED_REG (* SUB (shifted register) - 64-bit variant on page C6-932 *)
+    | "1  1  1  -   -     " => ARM_SUBS_SHIFTED_REG (* SUBS (shifted register) - 64-bit variant on page C6-938 *)
     else UDF end.
 
   (*add/sub - extended reg*)
@@ -1562,20 +1688,21 @@ Section Decoder.
     let sf := n.[31] in
     let op := n.[30] in
     let s_ := n.[29] in
-    let imm3 := n.[10,16] in
-    match[bits] sf, opc, s_, opt, imm3 with
+    let opt := n.[22,24] in
+    let imm3 := n.[10,13] in
+    match[bits] sf, op, s_, opt, imm3 with
     | "-  -  -  -   1x1" => UDF (* Unallocated. *)
     | "-  -  -  -   11x" => UDF (* Unallocated. *)
     | "-  -  -  x1  -  " => UDF (* Unallocated. *)
     | "-  -  -  1x  -  " => UDF (* Unallocated. *)
-    | "0  0  0  00  -  " => ARM_ADD_EXTENDED (* ADD (extended register) - 32-bit variant on page C6-523 *)
-    | "0  0  1  00  -  " => ARM_ADDS_EXTENDED (* ADDS (extended register) - 32-bit variant on page C6-529 *)
-    | "0  1  0  00  -  " => ARM_SUB_EXTENDED (* SUB (extended register) - 32-bit variant on page C6-928 *)
-    | "0  1  1  00  -  " => ARM_SUBS_EXTENDED (* SUBS (extended register) - 32-bit variant on page C6-934 *)
-    | "1  0  0  00  -  " => ARM_ADD_EXTENDED (* ADD (extended register) - 64-bit variant on page C6-523 *)
-    | "1  0  1  00  -  " => ARM_ADDS_EXTENDED (* ADDS (extended register) - 64-bit variant on page C6-529 *)
-    | "1  1  0  00  -  " => ARM_SUB_EXTENDED (* SUB (extended register) - 64-bit variant on page C6-928 *)
-    | "1  1  1  00  -  " => ARM_SUBS_EXTENDED (* SUBS (extended register) - 64-bit variant on page C6-934 *)
+    | "0  0  0  00  -  " => ARM_ADD_EXTENDED_REG (* ADD (extended register) - 32-bit variant on page C6-523 *)
+    | "0  0  1  00  -  " => ARM_ADDS_EXTENDED_REG (* ADDS (extended register) - 32-bit variant on page C6-529 *)
+    | "0  1  0  00  -  " => ARM_SUB_EXTENDED_REG (* SUB (extended register) - 32-bit variant on page C6-928 *)
+    | "0  1  1  00  -  " => ARM_SUBS_EXTENDED_REG (* SUBS (extended register) - 32-bit variant on page C6-934 *)
+    | "1  0  0  00  -  " => ARM_ADD_EXTENDED_REG(* ADD (extended register) - 64-bit variant on page C6-523 *)
+    | "1  0  1  00  -  " => ARM_ADDS_EXTENDED_REG(* ADDS (extended register) - 64-bit variant on page C6-529 *)
+    | "1  1  0  00  -  " => ARM_SUB_EXTENDED_REG (* SUB (extended register) - 64-bit variant on page C6-928 *)
+    | "1  1  1  00  -  " => ARM_SUBS_EXTENDED_REG (* SUBS (extended register) - 64-bit variant on page C6-934 *)
     else UDF end.
 
   (*add/sub - with carry*)
@@ -1583,23 +1710,16 @@ Section Decoder.
     let sf := n.[31] in
     let op := n.[30] in
     let s_ := n.[29] in
-    let opcode2 := n.[10,16] in
-    match[bits] sf, opc, s_, opcode2 with
-    | "-  -  -  xxxxx1" => UDF (* Unallocated. *)
-    | "-  -  -  xxxx1x" => UDF (* Unallocated. *)
-    | "-  -  -  xxx1xx" => UDF (* Unallocated. *)
-    | "-  -  -  xx1xxx" => UDF (* Unallocated. *)
-    | "-  -  -  x1xxxx" => UDF (* Unallocated. *)
-    | "-  -  -  1xxxxx" => UDF (* Unallocated. *)
-    | "0  0  0  000000" => ARM_ADC (* ADC - 32-bit variant on page C6-521 *)
-    | "0  0  1  000000" => ARM_ADCS (* ADCS - 32-bit variant on page C6-522 *)
-    | "0  1  0  000000" => ARM_SBC (* SBC - 32-bit variant on page C6-815 *)
-    | "0  1  1  000000" => ARM_SBCS (* SBCS - 32-bit variant on page C6-817 *)
-    | "1  0  0  000000" => ARM_ADC (* ADC - 64-bit variant on page C6-521 *)
-    | "1  0  1  000000" => ARM_ADCS (* ADCS - 64-bit variant on page C6-522 *)
-    | "1  1  0  000000" => ARM_SBC (* SBC - 64-bit variant on page C6-815 *)
-    | "1  1  1  000000" => ARM_SBCS (* SBCS - 64-bit variant on page C6-817 *)
-    else UDF end.
+    match[bits] sf, op, s_ with
+      | "0  0  0" => ARM_ADC (* ADC - 32-bit variant on page C6-754 *)
+      | "0  0  1" => ARM_ADCS (* ADCS - 32-bit variant on page C6-756 *)
+      | "0  1  0" => ARM_SBC (* SBC - 32-bit variant on page C6-1164 *)
+      | "0  1  1" => ARM_SBCS (* SBCS - 32-bit variant on page C6-1166 *)
+      | "1  0  0" => ARM_ADC (* ADC - 64-bit variant on page C6-754 *)
+      | "1  0  1" => ARM_ADCS (* ADCS - 64-bit variant on page C6-756 *)
+      | "1  1  0" => ARM_SBC (* SBC - 64-bit variant on page C6-1164 *)
+      | "1  1  1" => ARM_SBCS (* SBCS - 64-bit variant on page C6-1166 *)
+      else UDF end.
 
   (*rotate right into flags*)
   Definition rotate  :=
@@ -1636,7 +1756,7 @@ Section Decoder.
     else UDF end.
 
   (*conditional compare immediate*)
-  Definition cond_compare :=
+  Definition cond_compare_imm :=
     let sf := n.[31] in
     let op := n.[30] in
     let s_ := n.[29] in
@@ -1652,8 +1772,27 @@ Section Decoder.
     | "1  1  1  0  0" => ARM_CCMP_IMM (* CCMP (immediate) - 64-bit variant on page C6-837 *)
     else UDF end.
 
+  (*conditional compare immediate*)
+  Definition cond_compare_reg :=
+    let sf := n.[31] in
+    let op := n.[30] in
+    let s_ := n.[29] in
+    let o2 := n.[10] in
+    let o3 := n.[4] in
+    match[bits] sf, op, s_, o2, o3 with
+  | "-  -  -  -  1" => UDF (* Unallocated. *)
+  | "-  -  -  1  -" => UDF (* Unallocated. *)
+  | "-  -  0  -  -" => UDF (* Unallocated. *)
+  | "0  0  1  0  0" => ARM_CCMN_REG (* CCMN (register) - 32-bit variant on page C6-835 *)
+  | "0  1  1  0  0" => ARM_CCMP_REG (* CCMP (register) - 32-bit variant on page C6-839 *)
+  | "1  0  1  0  0" => ARM_CCMN_REG (* CCMN (register) - 64-bit variant on page C6-835 *)
+  | "1  1  1  0  0" => ARM_CCMP_REG (* CCMP (register) - 64-bit variant on page C6-839 *)
+  else UDF end.
+
+
+
   (*conditional select*)
-  Definition cond_compare :=
+  Definition cond_select :=
     let sf := n.[31] in
     let op := n.[30] in
     let s_ := n.[29] in
