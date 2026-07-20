@@ -237,7 +237,7 @@ Fixpoint typchk_exp (e:exp) (c:typctx): option bitwidth :=
   | UnOp uop e1 => match typchk_exp e1 c with Some w => Some w
                                             | _ => None end
   | Cast ct w' e1 =>
-      match typchk_exp e1 c with Some w => 
+      match typchk_exp e1 c with Some w =>
         if match ct with CAST_UNSIGNED | CAST_SIGNED => w <=? w'
                        | CAST_HIGH | CAST_LOW => w' <=? w end then Some w' else None
       | _ => None
@@ -1176,7 +1176,7 @@ Proof.
   (* Extract *)
   specialize (IHe c).
   destruct (typchk_exp e c) as [w1|]; try discriminate.
-  destruct (n1 <? w1) eqn:LT; [|discriminate]. apply N.ltb_lt in LT.
+  destruct (hi <? w1) eqn:LT; [|discriminate]. apply N.ltb_lt in LT.
   injection H; intro; subst.
   eapply TExtract.
     apply IHe. reflexivity.
@@ -1348,7 +1348,7 @@ Theorem models_at_invariant:
   nextinv p Invs xp b ((x1,s1)::t).
 Proof.
   intros. apply exec_prog_nextinv. intro XP. apply H.
-  eapply preservation_exec_prog; eassumption.  
+  eapply preservation_exec_prog; eassumption.
 Qed.
 
 (* Use the exec_prog assumption within nextinv to prove that the "models"

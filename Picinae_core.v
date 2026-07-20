@@ -96,8 +96,8 @@ Definition slt w n1 n2 := Z.ltb (toZ w n1) (toZ w n2).
 Definition sle w n1 n2 := Z.leb (toZ w n1) (toZ w n2).
 
 (* Unsigned cast: extract bits i to i+j-1 of an unsigned binary number. *)
-Definition xbits n i j := (N.shiftr n i) mod 2^(j - i).
-Arguments xbits / !n !i !j.
+Definition xbits n lo hi := (N.shiftr n lo) mod 2^(hi - lo).
+Arguments xbits / !n !lo !hi.
 
 (* Concatenate high bits n1 onto width-i low bits n2 *)
 Definition cbits n1 i n2 := N.lor (N.shiftl n1 i) n2.
@@ -290,7 +290,7 @@ Inductive exp : Type :=
 | Let (v:var) (e1 e2:exp)
 | Unknown (w:bitwidth)
 | Ite (e1 e2 e3:exp)
-| Extract (n1 n2:N) (e:exp) (* Extract hbits to lbits of e (NumT type). *)
+| Extract (hi lo:N) (e:exp) (* Extract bits hi to lo of e. 0-indexed, inclusive. *)
 | Concat (e1 e2:exp) (* Bit-concat two NumT expressions together. *).
 
 (* The BIL specification formalizes statement sequences as statement lists;

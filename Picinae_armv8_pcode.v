@@ -68,6 +68,8 @@ Inductive arm8var :=
   | R_TMP_LDXN
   (* These meta-variables model page access permissions: *)
   | A_READ | A_WRITE
+  (* System control register *)
+  | SCTLR_E1
   | V_TEMP (n:N) (* Temporaries introduced by the lifter: *).
 
 (* Declare the types (i.e., bitwidths) of all the CPU registers: *)
@@ -77,11 +79,11 @@ Definition arm8typctx v :=
   | V_MEM64 => Some (8*2^64)
   | R_X0 | R_X1 | R_X2 | R_X3 | R_X4 | R_X5 | R_X6 | R_X7 | R_X8 | R_X9 | R_X10 => Some 64
   | R_X11 | R_X12 | R_X13 | R_X14 | R_X15 | R_X16 | R_X17 | R_X18 | R_X19 | R_X20 => Some 64
-  | R_X21 | R_X22 | R_X23 | R_X24 | R_X25 | R_X26 | R_X27 | R_X28 | R_X29 | R_X30 => Some 64
-  | R_XZR => Some 64
+  | R_X21 | R_X22 | R_X23 | R_X24 | R_X25 | R_X26 | R_X27 | R_X28 | R_X29 | R_X30 => Some 64 | R_XZR => Some 64
   | R_SP | R_LR | R_PC => Some 64
   | R_NG | R_ZR | R_CY | R_OV => Some 8
   | R_TMPNG | R_TMPZR | R_TMPCY | R_TMPOV => Some 8
+  | SCTLR_E1 => Some 64
   | A_READ | A_WRITE => Some (2^64)
   | V_TEMP _ => None
   | R_Z0 | R_Z1 | R_Z2 | R_Z3 | R_Z4 | R_Z5 | R_Z6 | R_Z7 | R_Z8 | R_Z9 | R_Z10 => Some 256

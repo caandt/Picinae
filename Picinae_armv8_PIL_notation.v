@@ -14,9 +14,6 @@ Declare Custom Entry PIL.
 (* ---------- entry point ---------- *)
 Notation "<{ e }>" := (e) (e custom PIL at level 99).
 
-(* ---------- escape hatches ---------- *)
-Coercion Var : var >-> exp.
-
 (* ================= expressions ================= *)
 
 (* Let any plain Gallina atom (identifier, literal, etc.) count as a PIL term *)
@@ -38,15 +35,38 @@ Notation "'load' '[' addr ',' en ',' w ']'" := (Load (Var V_MEM64) addr en w)
 
 Definition f := <{ load [ w32 , LittleE , 4 ] }>.
 
-Notation "'store' '[' addr ',' val ',' en ',' w ']'" := (Store (Var V_MEM64) addr val en w)
+Notation "'store' '[' addr ',' val ',' en ',' w ']'" := (Move V_MEM64 (Store (Var V_MEM64) addr val en w))
   (in custom PIL at level 2, addr at level 99, val at level 99, en at level 0, w at level 0).
 
 
 (* --- binary ops: rename OP_PLUS/OP_MINUS/OP_LSHIFT/OP_RSHIFT to match your binop_typ --- *)
 Notation "x + y"  := (BinOp OP_PLUS   x y) (in custom PIL at level 50, left associativity).
 Notation "x - y"  := (BinOp OP_MINUS  x y) (in custom PIL at level 50, left associativity).
+
+(* --- multiplicative: bind tighter than +/- --- *)
+Notation "x * y"  := (BinOp OP_TIMES  x y) (in custom PIL at level 40, left associativity).
+Notation "x / y"  := (BinOp OP_DIVIDE x y) (in custom PIL at level 40, left associativity).
+Notation "x % y"  := (BinOp OP_MOD    x y) (in custom PIL at level 40, left associativity).
+
+(* --- shifts  --- *)
 Notation "x << y" := (BinOp OP_LSHIFT x y) (in custom PIL at level 55, left associativity).
 Notation "x >> y" := (BinOp OP_RSHIFT x y) (in custom PIL at level 55, left associativity).
+Notation "x >>a y" := (BinOp OP_ARSHIFT x y) (in custom PIL at level 55, left associativity).
+
+(* --- bitwise --- *)
+Notation "! x"    := (UnOp  OP_NOT x)   (in custom PIL at level 60).
+Notation "x & y"  := (BinOp OP_AND x y) (in custom PIL at level 65, left associativity).
+Notation "x ^ y"  := (BinOp OP_XOR x y) (in custom PIL at level 68, left associativity).
+Notation "x | y"  := (BinOp OP_OR  x y) (in custom PIL at level 70, left associativity).
+
+(* --- comparisons: loosest, don't chain --- *)
+Notation "x = y"   := (BinOp OP_EQ  x y) (in custom PIL at level 75, no associativity).
+Notation "x <> y"  := (BinOp OP_NEQ x y) (in custom PIL at level 75, no associativity).
+Notation "x < y"   := (BinOp OP_LT  x y) (in custom PIL at level 75, no associativity).
+Notation "x <= y"  := (BinOp OP_LE  x y) (in custom PIL at level 75, no associativity).
+Notation "x 's<' y"  := (BinOp OP_SLT x y) (in custom PIL at level 75, no associativity).
+Notation "x 's<=' y" := (BinOp OP_SLE x y) (in custom PIL at level 75, no associativity).
+
 
 Notation "'ucast' w e" := (Cast CAST_UNSIGNED w e) (in custom PIL at level 0, w at level 0, e at level 99).
 Notation "'scast' w e" := (Cast CAST_SIGNED   w e) (in custom PIL at level 0, w at level 0, e at level 99).
@@ -59,8 +79,11 @@ Notation "'unknown' w" := (Unknown w) (in custom PIL at level 0, w at level 0).
 Notation "'ite' e1 e2 e3" := (Ite e1 e2 e3)
   (in custom PIL at level 0, e2 at level 99, e3 at level 99).
 
-Notation "e [ n1 ':' n2 ]" := (Extract n1 n2 e)
-  (in custom PIL at level 2, n1 at level 0, n2 at level 0).
+Notation "e [ hi ':' lo ]" := (Extract hi lo e)
+  (in custom PIL at level 2, hi at level 0, lo at level 0).
+
+Notation "e [ n1 ]" := (Extract n1 n1 e)
+  (in custom PIL at level 2, n1 at level 0).
 
 Notation "x '++' y" := (Concat x y) (in custom PIL at level 60, right associativity).
 

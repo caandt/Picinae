@@ -3,7 +3,8 @@
    https://developer.arm.com/documentation/ddi0487/ea/
  *)
 
-Require Import Picinae_armv8_pcode.
+Require Import Picinae_armv8_pcode Picinae_armv8_PIL_notation.
+Import Picinae_armv8_PIL_notation.Notation.
 Require Import List String Ascii NArith Bool.
 Import ListNotations.
 Local Open Scope string_scope.
@@ -15,8 +16,7 @@ Module Notation.
     | N0 => if b then Npos xH else N0
     | Npos p => if b then Npos (xI p) else Npos (xO p)
     end.
-  Definition parse_pattern pat :=
-    let (s, e) := match pat with
+  Definition parse_pattern pat := let (s, e) := match pat with
                     | String "!" (String "=" s') => (s', false)
                     | _ => (pat, true)
                     end in
@@ -79,6 +79,9 @@ Module Notation.
 
   Notation "n .[ i , j ]" := (xbits n i j) (at level 30, format "n .[ i , j ]").
   Notation "n .[ b ]" := (xbits n b (b+1)) (at level 30, format "n .[ b ]").
+
+  (* ARMv8 Constants *)
+  Notation "'LOG2_TAG_GRANULE'" := (4) (at level 0, only parsing).
 End Notation.
 Import Notation.
 
@@ -366,41 +369,33 @@ Variant inst :=
   | ARM_CASAL
   | ARM_CASL
   (*LDAPR/STLR unscaled immediate*)
-  | ARM_STLURB
-  | ARM_LDAPURB
-  | ARM_LDAPURSB
-  | ARM_STLURH
-  | ARM_LDAPURH
-  | ARM_LDAPURSH
-  | ARM_LDAPUR
-  | ARM_LDAPURSW
-  | ARM_STLUR
-  | ARM_PRFM
-  | ARM_PRFM_IMM
+  | ARM_STLURB (Xn Xt imm9:N)
+  | ARM_LDAPURB (Xn Xt imm9:N)
+  | ARM_LDAPURSB (Xn Xt imm9 size:N)
+  | ARM_STLURH (Xn Xt imm9:N)
+  | ARM_LDAPURH (Xn Xt imm9:N)
+  | ARM_LDAPURSH (Xn Xt imm9 size:N)
+  | ARM_LDAPUR (Xn Xt imm9 size:N)
+  | ARM_LDAPURSW (Xn Xt imm9 size:N)
+  | ARM_STLUR (Xn Xt imm9 size:N)
+  | ARM_PRFM (Xn Xt imm9:N)
+  | ARM_PRFM_IMM (Xn Xt imm9:N)
   (*load/store memory tags*)
-  | ARM_STG_POST
-  | ARM_STG_SIGN
-  | ARM_STG_PRE
-  | ARM_STZG_POST
-  | ARM_STZG_SIGN
-  | ARM_STZG_PRE
-  | ARM_STZGM
+  | ARM_STG (Xn Xt imm9:N) (writeback printindex:bool)
+  | ARM_STZG (Xn Xt imm9:N) (writeback printindex:bool)
+  | ARM_STZGM (Xn Xt:N)
   | ARM_LDG
-  | ARM_ST2G_POST
-  | ARM_ST2G_SIGN
-  | ARM_ST2G_PRE
-  | ARM_STGM
-  | ARM_STZ2G_POST
-  | ARM_STZ2G_SIGN
-  | ARM_STZ2G_PRE
-  | ARM_LDGM
+  | ARM_ST2G (Xn Xt imm9:N) (writeback printindex:bool)
+  | ARM_STGM (Xn Xt:N)
+  | ARM_STZ2G (Xn Xt imm9:N) (writeback printindex:bool)
+  | ARM_LDGM (Xn Xt:N)
   (*load register (literal)*)
-  | ARM_LDR_LIT
-  | ARM_LDRSW_LIT
-  | ARM_PRFM_LIT
+  | ARM_LDR_LIT (Xt imm19 size:N)
+  | ARM_LDRSW_LIT (Xt imm19:N)
+  | ARM_PRFM_LIT (Xt imm19:N)
   (*load/store no-allocate pair (offset)*)
-  | ARM_STNP
-  | ARM_LDNP
+  | ARM_STNP (Xn Xt Xt2 imm7 scale:N)
+  | ARM_LDNP (Xn Xt Xt2 imm7 scale:N)
   (*load/store register pair (post-indexed, pre-indexed, offset)*)
   | ARM_STP
   | ARM_LDP
@@ -484,7 +479,7 @@ Variant inst :=
   | ARM_LDUMINH
   | ARM_STUMINH
   | ARM_SWPH
-  | ARM_LDADD 
+  | ARM_LDADD
   | ARM_STADD
   | ARM_LDCLR
   | ARM_STCLR
@@ -519,7 +514,7 @@ Variant inst :=
   (*TODO: There are way more load instructions than written out here, add to this section plz*)
 (*Data Processing*)
   (*2 src*)
-  | ARM_LSLV  
+  | ARM_LSLV
   | ARM_LSRV
   | ARM_ASRV
   | ARM_RORV
@@ -534,12 +529,12 @@ Variant inst :=
   | ARM_AUTDA
   | ARM_AUTDB
   (*evaluate*)
-  | ARM_SETF8 
-  .  
+  | ARM_SETF8
+  .
 Section Decoder.
   Variable n : N.
 
-(** DP Immediate*)    
+(** DP Immediate*)
   Definition pc_rel :=
     let op := n.[31] in
     match[bits] op with
@@ -900,30 +895,207 @@ Section Decoder.
     | "x01  1xxxxxxxxxxxxx  -    " => test_and_b (* Test and branch (immediate) on page C4-265 *)
     else UDF end.
 
-(*Loads and Stores*)
+
+
+  (* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
+  (*  J1-7341
+      bits(64) sp = SP[];
+      stack_align_check = (SCTLR[].SA0 != '0')
+      if stack_align_check && sp != Align(sp, 16) then SPAlignmentFault()
+      return;
+    *)
+
+  Definition XtoVar n := let n := <{n#5}> in <{
+    ite (n = (0#5)) {Var R_X0} ( ite (n = (1#5)) {Var R_X1} ( ite (n = (2#5)) {Var R_X2} ( ite (n = (3#5)) {Var R_X3} (
+    ite (n = (4#5)) {Var R_X4} ( ite (n = (5#5)) {Var R_X5} ( ite (n = (6#5)) {Var R_X6} ( ite (n = (7#5)) {Var R_X7} (
+    ite (n = (8#5)) {Var R_X8} ( ite (n = (9#5)) {Var R_X9} ( ite (n = (10#5)) {Var R_X10} ( ite (n = (11#5)) {Var R_X11} (
+    ite (n = (12#5)) {Var R_X12} ( ite (n = (13#5)) {Var R_X13} ( ite (n = (14#5)) {Var R_X14} ( ite (n = (15#5)) {Var R_X15} (
+    ite (n = (16#5)) {Var R_X16} ( ite (n = (17#5)) {Var R_X17} ( ite (n = (18#5)) {Var R_X18} ( ite (n = (19#5)) {Var R_X19} (
+    ite (n = (20#5)) {Var R_X20} ( ite (n = (21#5)) {Var R_X21} ( ite (n = (22#5)) {Var R_X22} ( ite (n = (23#5)) {Var R_X23} (
+    ite (n = (24#5)) {Var R_X24} ( ite (n = (25#5)) {Var R_X25} ( ite (n = (26#5)) {Var R_X26} ( ite (n = (27#5)) {Var R_X27} (
+    ite (n = (28#5)) {Var R_X28} ( ite (n = (29#5)) {Var R_X29} ( ite (n = (30#5)) {Var R_X30} {Var R_SP}))))))))))))))))))))))))))))))
+  }>.
+
+  Definition NTovar n :=
+    match n with
+    | 0 => R_X0 | 1 => R_X1 | 2 => R_X2 | 3 => R_X3 | 4 => R_X4 | 5 => R_X5 | 6 => R_X6 | 7 => R_X7
+    | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
+    | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
+    | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
+    end.
+
+  Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
+  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
+  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
+  Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
+
+  Definition b2exp b := match b with true => Word 1 1 | false => Word 0 1 end.
+  Definition SP_read w := <{lcast w {Var R_SP} }>.
+  Definition SP_write e : stmt := <{R_SP := ucast 64 e }>.
+
+  Definition AllocationTagFromAddress e := <{e[59:56]}>. (* AArch64.AllocationTagFromAddress *)
+  Notation "'AllocTag' e" := (AllocationTagFromAddress e) (in custom PIL at level 65, no associativity).
+
+  Definition AlignPow2 e w pow2 := match pow2 with
+                                  | 1 =>      e
+                                  | 2 =>   <{ e >> (1 # w) << 1 # w }>
+                                  | 4 =>   <{ e >> (2 # w) << 2 # w }>
+                                  | 8 =>   <{ e >> (3 # w) << 3 # w }>
+                                  | 16 =>  <{ e >> (4 # w) << 4 # w }>
+                                  | 32 =>  <{ e >> (5 # w) << 5 # w }>
+                                  | 64 =>  <{ e >> (6 # w) << 6 # w }>
+                                  | 128 => <{ e >> (7 # w) << 7 # w }>
+                                  | 256 => <{ e >> (8 # w) << 8 # w }>
+                                  | _ =>      e  (* No good sentinel value *)
+                                  end.
+  Notation "'Align[' e , w , pow2 ']'" := (AlignPow2 e w pow2) (in custom PIL at level 65, no associativity).
+
+  (* Checks whether w-bit e is a multiple of alignment. *)
+  Definition AlignCheck e w alignment := <{ e % (alignment # w) = (0 # w) }>.
+  Notation "'Aligned[' e , w , alignment ']'" := (AlignCheck e w alignment) (in custom PIL at level 65, no associativity).
+  Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custom PIL at level 65, no associativity).
+  Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
+
+  (* Addr - 64bits; tag - 4bits *)
+  (* We do not model tag memory, this is a no-op if the address is aligned. *)
+  Definition MemTagWrite (addr tag:exp) := <{
+    if ! TagAligned[addr] then exn 0 else nop end
+    (* Assumption: address translation does not abort nor raise a debug exception *)
+  }>.
+  (* Addr - 64bits *)
+  (* We do not model tag memory, this just returns the tagging-disabled value. *)
+  Definition MemTagRead (addr:exp) := <{ 0 # 4 }>.
+
+
+  Definition CheckSPAlignment :=
+    <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
+
+  (* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
+  Definition AddressWithAllocationTag (Xt tag:exp) := <{
+    (Xt & (! 0x0F00_0000_0000_0000 # 64))
+  }>.
+
+  (* J1-7339 *)
+  Definition MemSingleWrite address size (val:exp) := <{
+    (* assert size in {1, 2, 4, 8, 16} omitted *)
+    if Aligned[ address, 64, size ] then nop else exn 0 end;
+    store[address, val, LittleE, size]
+  }>.
+
+  (* J1-7342 *)
+  Definition MemWrite address size val := MemSingleWrite address size val.
+
+  (* J1-7341 *)
+  Definition MemRead address size := <{load[address, LittleE, size]}>.
+
+  (* We do not model tag memory, this is a no-op if the SP is aligned. *)
+  Definition arm_stg2il (Rn Rt imm9:N) (writeback postindex:bool) :=
+    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in
+    let Xn := <{Rn # 64}> in
+    let Xt := <{Rt # 64}> in <{
+      (* V_TEMP 1000 := address
+        V_TEMP 2000 := data *)
+      if (Rn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Rn];
+      if ! {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := X[Rt];
+      temp[3000] := AllocTag Xtemp[2000]
+    }>.
+
+  Definition havoc := <{ exn 0 }>.
+  (* Store Tag and Zero Multiple C6.2.306-1307
+     This instruction's semantics are undefined for EL0. *)
+  Definition arm_stzgm2il (t n:N) := havoc.
+
+  (* Load Allocation Tag C6.2.122-962 *)
+  Definition arm_ldg2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in
+    <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[1000] := Align[Xtemp[1000],64,16];
+      (* Skip tag access *)
+      {NTovar Xt} := Xtemp[1000]
+  }>.
+
+  (* Load Allocation Tag C6.2.122-962 *)
+  Definition arm_stzg2il (Xn Xt imm9:N) (writeback postindex:bool) :=
+    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in
+    <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      store[Xtemp[1000], 0 # 128, LittleE, 16];
+      temp[2000] := X[Xt];
+      temp[2001] := AllocTag (Xtemp[2000]);
+      if {b2exp writeback} then
+        if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+        {NTovar Xn} := Xtemp[1000]
+      else
+        nop
+      end
+  }>.
+
+  (* Store Allocation Tags C6-1187 *)
+  Definition arm_st2g2il (Xn Xt imm9:N) (writeback postindex:bool) :=
+    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in <{
+      temp[2000] := X[Xt];
+      temp[2001] := AllocTag (Xtemp[2000]);
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      if {b2exp writeback} then
+        if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+        {NTovar Xn} := Xtemp[1000]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_stgm2il (Xn Xt:N) := havoc.
+
+  Definition arm_stz2g2il (Xn Xt imm9:N) (writeback postindex:bool) :=
+    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in <{
+      temp[2000] := X[Xt];
+      temp[2001] := AllocTag (Xtemp[2000]);
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      store[Xtemp[1000], (0#256), LittleE, 32];
+      if {b2exp writeback} then
+        if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+        {NTovar Xn} := Xtemp[1000]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldgm2il (Xn Xt:N) := havoc.
+
+
+    (*Loads and Stores C4.1.4-266*)
   Definition load_store_mem_tags :=
     let opc := n.[22,24] in
     let imm9 := n.[12,21] in
     let op2 := n.[10,12] in
+    let Rn := n.[5,10] in
+    let Rt := n.[0,5] in
     match[bits] opc, imm9, op2 with
-    | "00  -            01" => ARM_STG_POST (* STG - Post-index variant on page C6-1207 Armv8.5 *)
-    | "00  -            10" => ARM_STG_SIGN (* STG - Signed offset variant on page C6-1207 Armv8.5 *)
-    | "00  -            11" => ARM_STG_PRE (* STG - Pre-index variant on page C6-1207 Armv8.5 *)
-    | "00  000000000    00" => ARM_STZGM (* STZGM Armv8.5 *)
+      (* STG C4-276, C6-1207 *)
+    | "00  -            01" => ARM_STG Rn Rt imm9 true  true  (* STG - Post-index variant on page C6-1207 Armv8.5 *)
+    | "00  -            10" => ARM_STG Rn Rt imm9 false false (* STG - Signed offset variant on page C6-1207 Armv8.5 *)
+    | "00  -            11" => ARM_STG Rn Rt imm9 true  false (* STG - Pre-index variant on page C6-1207 Armv8.5 *)
+    | "00  000000000    00" => ARM_STZGM Rn Rt (* STZGM Armv8.5 *)
     | "01  -            00" => ARM_LDG (* LDG Armv8.5 *)
-    | "01  -            01" => ARM_STZG_POST (* STZG - Post-index variant on page C6-1305 Armv8.5 *)
-    | "01  -            10" => ARM_STZG_SIGN (* STZG - Signed offset variant on page C6-1305 Armv8.5 *)
-    | "01  -            11" => ARM_STZG_PRE (* STZG - Pre-index variant on page C6-1305 Armv8.5 *)
-    | "10  -            01" => ARM_ST2G_POST (* ST2G - Post-index variant on page C6-1187 Armv8.5 *)
-    | "10  -            10" => ARM_ST2G_SIGN (* ST2G - Signed offset variant on page C6-1187 Armv8.5 *)
-    | "10  -            11" => ARM_ST2G_PRE (* ST2G - Pre-index variant on page C6-1187 Armv8.5 *)
+    | "01  -            01" => ARM_STZG Rn Rt imm9 true  true  (* STZG - Post-index variant on page C6-1305 Armv8.5 *)
+    | "01  -            10" => ARM_STZG Rn Rt imm9 false false (* STZG - Signed offset variant on page C6-1305 Armv8.5 *)
+    | "01  -            11" => ARM_STZG Rn Rt imm9 true  false (* STZG - Pre-index variant on page C6-1305 Armv8.5 *)
+    | "10  -            01" => ARM_ST2G Rn Rt imm9 true  true (* ST2G - Post-index variant on page C6-1187 Armv8.5 *)
+    | "10  -            10" => ARM_ST2G Rn Rt imm9 false false (* ST2G - Signed offset variant on page C6-1187 Armv8.5 *)
+    | "10  -            11" => ARM_ST2G Rn Rt imm9 true  false (* ST2G - Pre-index variant on page C6-1187 Armv8.5 *)
     | "10  !=000000000  00" => UDF (* Unallocated. - *)
-    | "10  000000000    00" => ARM_STGM (* STGM Armv8.5 *)
-    | "11  -            01" => ARM_STZ2G_POST (* STZ2G - Post-index variant on page C6-1303 Armv8.5 *)
-    | "11  -            10" => ARM_STZ2G_SIGN (* STZ2G - Signed offset variant on page C6-1303 Armv8.5 *)
-    | "11  -            11" => ARM_STZ2G_PRE (* STZ2G - Pre-index variant on page C6-1303 Armv8.5 *)
+    | "10  000000000    00" => ARM_STGM Rn Rt (* STGM Armv8.5 *)
+    | "11  -            01" => ARM_STZ2G Rn Rt imm9 true  true (* STZ2G - Post-index variant on page C6-1303 Armv8.5 *)
+    | "11  -            10" => ARM_STZ2G Rn Rt imm9 false false (* STZ2G - Signed offset variant on page C6-1303 Armv8.5 *)
+    | "11  -            11" => ARM_STZ2G Rn Rt imm9 true  false (* STZ2G - Pre-index variant on page C6-1303 Armv8.5 *)
     | "11  !=000000000  00" => UDF (* Unallocated. - *)
-    | "11  000000000    00" => ARM_LDGM (* LDGM Armv8.5 *)
+    | "11  000000000    00" => ARM_LDGM Rn Rt(* LDGM Armv8.5 *)
     else UDF end.
 
 
@@ -1003,84 +1175,207 @@ Section Decoder.
     | "11  1  1  1  1  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
     else UDF end.
 
-  (*LDAPR/STLR unscaled immediate*)
+  Definition arm_stlurb2il Xn Xt imm9 :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := X[Xt];
+      store[Xtemp[1000],Xtemp[2000],LittleE,1]
+    }>.
+
+  (* C6-928 *)
+  Definition arm_ldapurb2il Xn Xt imm9 :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000],LittleE,1];
+      {NTovar Xt} := ucast 64 Xtemp[2000]
+    }>.
+
+  Definition arm_ldapursb2il Xn Xt imm9 (size:N) :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000],LittleE,1];
+      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
+      {NTovar Xt} := scast 64 Xtemp[2000]
+    }>.
+
+  Definition arm_stlurh2il Xn Xt imm9 :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := X[Xt];
+      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
+      store[Xtemp[1000],Xtemp[2000],LittleE,2]
+    }>.
+
+  Definition arm_ldapurh2il Xn Xt imm9 :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000],LittleE,1];
+      {NTovar Xt} := ucast 64 Xtemp[2000]
+    }>.
+
+  Definition arm_ldapursh2il Xn Xt imm9 (size:N) :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000],LittleE,2];
+      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
+      {NTovar Xt} := ucast 64 Xtemp[2000]
+    }>.
+
+  Definition arm_stlur2il Xn Xt imm9 (size:N) :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := X[Xt];
+      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
+      store[Xtemp[1000],Xtemp[2000],LittleE,{N.shiftr size 3}]
+    }>.
+
+  Definition arm_ldapur2il Xn Xt imm9 (size:N) :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000],LittleE,{N.shiftr size 3}];
+      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
+      {NTovar Xt} := Xtemp[2000]
+    }>.
+
+  Definition arm_ldapursw2il Xn Xt imm9 (size:N) :=
+    let offset := <{scast 64 imm9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000],LittleE,4];
+      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
+      {NTovar Xt} := scast 64 Xtemp[2000]
+    }>.
+
+  (*LDAPR/STLR unscaled immediate C4-279*)
   Definition ldapr_stlr_imm_u :=
     let size := n.[30,32] in
     let opc := n.[22,24] in
+    let Rn := n.[5,10] in
+    let Rt := n.[0,5] in
+    let imm9 := n.[12,21] in
+    let size := n.[30,32] in
     match[bits] size, opc with
-    | "00  00" => ARM_STLURB (* STLURB Armv8.4 *)
-    | "00  01" => ARM_LDAPURB (* LDAPURB Armv8.4 *)
-    | "00  10" => ARM_LDAPURSB (* LDAPURSB - 64-bit variant on page C6-932 Armv8.4 *)
-    | "00  11" => ARM_LDAPURSB (* LDAPURSB - 32-bit variant on page C6-932 Armv8.4 *)
-    | "01  00" => ARM_STLURH (* STLURH Armv8.4 *)
-    | "01  01" => ARM_LDAPURH (* LDAPURH Armv8.4 *)
-    | "01  10" => ARM_LDAPURSH (* LDAPURSH - 64-bit variant on page C6-934 Armv8.4 *)
-    | "01  11" => ARM_LDAPURSH (* LDAPURSH - 32-bit variant on page C6-934 Armv8.4 *)
-    | "10  00" => ARM_STLUR (* STLUR - 32-bit variant on page C6-1219 Armv8.4 *)
-    | "10  01" => ARM_LDAPUR (* LDAPUR - 32-bit variant on page C6-926 Armv8.4 *)
-    | "10  10" => ARM_LDAPURSW (* LDAPURSW Armv8.4 *)
+    | "00  00" => ARM_STLURB Rn Rt imm9 (* STLURB Armv8.4 *)
+    | "00  01" => ARM_LDAPURB Rn Rt imm9 (* LDAPURB Armv8.4 *)
+    | "00  10" => ARM_LDAPURSB Rn Rt imm9 64 (* LDAPURSB - 64-bit variant on page C6-932 Armv8.4 *)
+    | "00  11" => ARM_LDAPURSB Rn Rt imm9 32 (* LDAPURSB - 32-bit variant on page C6-932 Armv8.4 *)
+    | "01  00" => ARM_STLURH Rn Rt imm9 (* STLURH Armv8.4 *)
+    | "01  01" => ARM_LDAPURH Rn Rt imm9 (* LDAPURH Armv8.4 *)
+    | "01  10" => ARM_LDAPURSH Rn Rt imm9 64 (* LDAPURSH - 64-bit variant on page C6-934 Armv8.4 *)
+    | "01  11" => ARM_LDAPURSH Rn Rt imm9 32 (* LDAPURSH - 32-bit variant on page C6-934 Armv8.4 *)
+    | "10  00" => ARM_STLUR Rn Rt imm9 32 (* STLUR - 32-bit variant on page C6-1219 Armv8.4 *)
+    | "10  01" => ARM_LDAPUR Rn Rt imm9 32(* LDAPUR - 32-bit variant on page C6-926 Armv8.4 *)
+    | "10  10" => ARM_LDAPURSW Rn Rt imm9 size (* LDAPURSW Armv8.4 *)
     | "10  11" => UDF (* Unallocated. - *)
-    | "11  00" => ARM_STLUR (* STLUR - 64-bit variant on page C6-1219 Armv8.4 *)
-    | "11  01" => ARM_LDAPUR (* LDAPUR - 64-bit variant on page C6-926 Armv8.4 *)
+    | "11  00" => ARM_STLUR Rn Rt imm9 64 (* STLUR - 64-bit variant on page C6-1219 Armv8.4 *)
+    | "11  01" => ARM_LDAPUR Rn Rt imm9 64(* LDAPUR - 64-bit variant on page C6-926 Armv8.4 *)
     | "11  10" => UDF (* Unallocated. - *)
     | "11  11" => UDF (* Unallocated. - *)
     else UDF end.
 
+  Notation "'PC'" := (R_PC) (in custom PIL at level 65).
+  Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
 
+  Definition arm_ldrsw2il Xt imm19 :=
+    let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
+    <{temp[1000]:= PC + offset;
+    {NTovar Xt} := scast 64 {MemRead (Xtemp[1000]) 4}}>.
+
+  (* C6-979 *)
+  Definition arm_ldr2il Xt imm19 size :=
+    let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
+    <{temp[1000]:= PC + offset;
+    {NTovar Xt} := ucast 64 {MemRead (Xtemp[1000]) size}}>.
+
+  (* C6-1138; The effects of PRFM is implementation defined. *)
+  Definition arm_prfm2il (Xt imm19:N) := <{havoc}>.
+
+  (* C4-280 *)
   Definition load_reg_literal :=
     let opc := n.[30,32] in
+    let Rt := n.[0,5] in
+    let imm19 := n.[5,24] in
     let v_ := n.[26] in
     match[bits] opc, v_ with
-    | "00  0" => ARM_LDR_LIT (* LDR (literal) - 32-bit variant on page C6-673 *)
-    | "00  1" => ARM_LDR_LIT (* LDR (literal, SIMD&FP) - 32-bit variant on page C7-1362 *)
-    | "01  0" => ARM_LDR_LIT (* LDR (literal) - 64-bit variant on page C6-673 *)
-    | "01  1" => ARM_LDR_LIT (* LDR (literal, SIMD&FP) - 64-bit variant on page C7-1362 *)
-    | "10  0" => ARM_LDRSW_LIT (* LDRSW (literal) *)
-    | "10  1" => ARM_LDR_LIT (* LDR (literal, SIMD&FP) - 128-bit variant on page C7-1362 *)
-    | "11  0" => ARM_PRFM_LIT (* PRFM (literal) *)
+    | "00  0" => ARM_LDR_LIT Rt imm19 4 (* LDR (literal) - 32-bit variant on page C6-673 *)
+    | "00  1" => UDF (* LDR (literal, SIMD&FP) - 32-bit variant on page C7-1362 *)
+    | "01  0" => ARM_LDR_LIT Rt imm19 8 (* LDR (literal) - 64-bit variant on page C6-673 *)
+    | "01  1" => UDF (* LDR (literal, SIMD&FP) - 64-bit variant on page C7-1362 *)
+    | "10  0" => ARM_LDRSW_LIT Rt imm19 (* LDRSW (literal) *)
+    | "10  1" => UDF (* LDR (literal, SIMD&FP) - 128-bit variant on page C7-1362 *)
+    | "11  0" => ARM_PRFM_LIT Rt imm19 (* PRFM (literal) *)
     | "11  1" => UDF (* Unallocated. *)
     else UDF end.
 
+  Definition arm_stnp2il Xn Xt Xt2 imm7 scale :=
+    let size := N.shiftl 8 scale in
+    let dbytes := N.shiftl 1 scale in
+    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := X[Xt];
+      temp[3000] := X[Xt2];
+      {MemWrite (Var (V_TEMP 2000)) dbytes (Var (V_TEMP 2000))};
+      temp[1000] := Xtemp[1000] + (dbytes # 64);
+      {MemWrite (Var (V_TEMP 2000)) dbytes (Var (V_TEMP 2000))}
+    }>.
+
+  Definition arm_ldnp2il_happy Xn Xt Xt2 imm7 scale :=
+    let size := N.shiftl 8 scale in
+    let dbytes := N.shiftl 1 scale in
+    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      temp[2000] := load[Xtemp[1000], LittleE, dbytes];
+      temp[3000] := load[Xtemp[1000]+(dbytes#64), LittleE, dbytes];
+      {NTovar Xt} := Xtemp[2000];
+      {NTovar Xt2} := Xtemp[3000]
+    }>.
+
+  Definition arm_ldnp2il Xn Xt Xt2 imm7 scale :=
+    <{
+      if (Xt # 5) <> (Xt2 # 5) then {arm_ldnp2il_happy Xn Xt Xt2 imm7 scale} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      {arm_ldnp2il_happy Xn Xt Xt2 imm7 scale};
+      {NTovar Xt} := unknown 64;
+      {NTovar Xt2} := unknown 64
+      end end end
+    }>.
 
   Definition load_store_no_alloc_pair :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let Rt2 := n.[10,15] in
+    let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STNP (* STNP - 32-bit variant on page C6-865 *)
-    | "00  0  1" => ARM_LDNP (* LDNP - 32-bit variant on page C6-662 *)
+    | "00  0  0" => ARM_STNP Rn Rt Rt2 imm7 2 (* STNP - 32-bit variant on page C6-865 *)
+    | "00  0  1" => ARM_LDNP Rn Rt Rt2 imm7 2 (* LDNP - 32-bit variant on page C6-662 *)
     | "00  1  0" => UDF (* STNP (SIMD&FP) - 32-bit variant on page C7-1626 *)
     | "00  1  1" => UDF (* LDNP (SIMD&FP) - 32-bit variant on page C7-1353 *)
     | "01  0  -" => UDF (* Unallocated. *)
     | "01  1  0" => UDF (* STNP (SIMD&FP) - 64-bit variant on page C7-1626 *)
     | "01  1  1" => UDF (* LDNP (SIMD&FP) - 64-bit variant on page C7-1353 *)
-    | "10  0  0" => ARM_STNP (* STNP - 64-bit variant on page C6-865 *)
-    | "10  0  1" => ARM_LDNP (* LDNP - 64-bit variant on page C6-662 *)
+    | "10  0  0" => ARM_STNP Rn Rt Rt2 imm7 3 (* STNP - 64-bit variant on page C6-865 *)
+    | "10  0  1" => ARM_LDNP Rn Rt Rt2 imm7 3 (* LDNP - 64-bit variant on page C6-662 *)
     | "10  1  0" => UDF (* STNP (SIMD&FP) - 128-bit variant on page C7-1626 *)
     | "10  1  1" => UDF (* LDNP (SIMD&FP) - 128-bit variant on page C7-1353 *)
     | "11  -  -" => UDF (* Unallocated *)
     else UDF end.
-
-    Definition load_store_no_alloc_pair_offset :=
-    let opc := n.[30,32] in
-    let v_ := n.[26] in
-    let l_ := n.[22] in
-    match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STNP (* STNP - 32-bit variant on page C6-865 *)
-    | "00  0  1" => ARM_LDNP (* LDNP - 32-bit variant on page C6-662 *)
-    | "00  1  0" => UDF (* STNP (SIMD&FP) - 32-bit variant on page C7-1626 *)
-    | "00  1  1" => UDF (* LDNP (SIMD&FP) - 32-bit variant on page C7-1353 *)
-    | "01  0  -" => UDF (* Unallocated. *)
-    | "01  1  0" => UDF (* STNP (SIMD&FP) - 64-bit variant on page C7-1626 *)
-    | "01  1  1" => UDF (* LDNP (SIMD&FP) - 64-bit variant on page C7-1353 *)
-    | "10  0  0" => ARM_STNP (* STNP - 64-bit variant on page C6-865 *)
-    | "10  0  1" => ARM_LDNP (* LDNP - 64-bit variant on page C6-662 *)
-    | "10  1  0" => UDF (* STNP (SIMD&FP) - 128-bit variant on page C7-1626 *)
-    | "10  1  1" => UDF (* LDNP (SIMD&FP) - 128-bit variant on page C7-1353 *)
-    | "11  -  -" => UDF (* Unallocated *)
-    else UDF end.
-
-
 
   Definition load_store_post_indx_pair :=
     let opc := n.[30,32] in
@@ -1172,7 +1467,7 @@ Section Decoder.
     | "10  1  01" => UDF (* LDUR (SIMD&FP) - 32-bit variant on page C7-1367 *)
     | "11  0  00" => ARM_STUR (* STUR - 64-bit variant on page C6-917 *)
     | "11  0  01" => ARM_LDUR (* LDUR - 64-bit variant on page C6-739 *)
-    | "11  0  10" => ARM_PRFM (* PRFM (unscaled offset) *)
+    | "11  0  10" => ARM_PRFM 0 0 0 (* PRFM (unscaled offset) TODO: 0s are a temp placeholder. *)
     | "11  1  00" => UDF (* STUR (SIMD&FP) - 64-bit variant on page C7-1638 *)
     | "11  1  01" => UDF (* LDUR (SIMD&FP) - 64-bit variant on page C7-1367 *)
     else UDF end.
@@ -1591,6 +1886,7 @@ Section Decoder.
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1801 *)
     else UDF end.
 
+    (*Loads and Stores C4.1.4-266*)
     Definition load_store :=
     let op0 := n.[28,32] in
     let op1 := n.[26] in
