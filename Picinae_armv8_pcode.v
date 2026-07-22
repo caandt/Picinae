@@ -55,6 +55,8 @@ Inductive arm8var :=
   | R_SP | R_LR | R_PC
   (* ng = negative, zr = zero reg, cy = carry, ov = overflow *)
   | R_NG | R_ZR | R_CY | R_OV
+  (* nRW = AArch32 *)
+  | R_nRW
   (* for modeling how the cpu handles flag updates *)
   | R_TMPNG | R_TMPZR | R_TMPCY | R_TMPOV
   (* zero reg *)
@@ -70,8 +72,6 @@ Inductive arm8var :=
   | A_READ | A_WRITE
   (* System control register *)
   | SCTLR_E1
-  (* Process state variables *)
-  | PSTATE_nRW (* AArch32 mode when set *)
   | V_TEMP (n:N) (* Temporaries introduced by the lifter: *).
 
 (* Declare the types (i.e., bitwidths) of all the CPU registers: *)
@@ -86,7 +86,7 @@ Definition arm8typctx v :=
   | R_NG | R_ZR | R_CY | R_OV => Some 8
   | R_TMPNG | R_TMPZR | R_TMPCY | R_TMPOV => Some 8
   | SCTLR_E1 => Some 64
-  | PSTATE_nRW => Some 1
+  | R_nRW => Some 1
   | A_READ | A_WRITE => Some (2^64)
   | V_TEMP _ => None
   | R_Z0 | R_Z1 | R_Z2 | R_Z3 | R_Z4 | R_Z5 | R_Z6 | R_Z7 | R_Z8 | R_Z9 | R_Z10 => Some 256

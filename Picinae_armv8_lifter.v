@@ -203,10 +203,10 @@ Variant inst :=
   | ARM_CMP_IMM
   | ARM_CMN_IMM
   (*logical imm*)
-  | ARM_AND_IMM
-  | ARM_ANDS_IMM
-  | ARM_EOR_IMM
-  | ARM_ORR_IMM
+  | ARM_AND_IMM  (Rn Rd immr imms sf n_:N)
+  | ARM_ANDS_IMM (Rn Rd immr imms sf n_:N)
+  | ARM_EOR_IMM (Rn Rd immr imms sf n_:N)
+  | ARM_ORR_IMM (Rn Rd immr imms sf n_:N)
   | ARM_TST_IMM
   (*move wide*)
   | ARM_MOVZ_IMM (Rd imm16 size shift:N)
@@ -217,8 +217,8 @@ Variant inst :=
   | ARM_ADRP_IMM
   | ARM_ADR_IMM
   (*bitfield move*)
-  | ARM_BFM_IMM
-  | ARM_SBFM_IMM
+  | ARM_BFM_IMM (Rn Rd immr imms sf n_:N)
+  | ARM_SBFM_IMM (Rn Rd immr imms sf n_:N)
   | ARM_UBFM_IMM (Rn Rd immr imms sf n_:N)
   (*bitfield insert extract*)
   | ARM_BFC_IMM
@@ -653,6 +653,75 @@ Definition Replicate rettemp t w w' x := <{
   rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
 }>.
 
+(* J1-7389 *)
+(* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
+Definition DecodeBitMasks (immN imms immr immediate M:N) :=
+  let imms := <{imms#6}> in
+  let immr := <{immr#6}> in
+  let immN := Word immN 1 in
+  let immediate := Word immediate 1 in
+  let immNNOTimms := <{immN ++ imms}> in
+  let levels := <{Xtemp[400]}> in
+  let S := <{Xtemp[401]}> in
+  let R := <{Xtemp[402]}> in
+  let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
+  let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
+  let esize := <{Xtemp[404]}> in
+  let d := <{Xtemp[405]}> in
+  <{
+    (* lenw7 *) {HighestSetBit 7 immNNOTimms};
+    (* The highest setbit position of w bits is w-1;
+        casting the len down to 6-bits does not lose information
+        and is useful below. *)
+    (* lenw6 *) temp[301] := lcast 6 lenw7;
+    if Xtemp[300] < 1#7 then exn 0 else nop end;
+    if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
+
+    (* levels *) temp[400] := {Ones 6 lenw6};
+    if immediate & (imms & levels = levels) then exn 0 else nop end;
+    (* S *) temp[401] := imms & levels;
+    (* R *) temp[402] := immr & levels;
+    (* diff *) temp[403] := S-R;
+    (* esize *) temp[404] := 1#7 << lenw7;
+    (* TODO: Shreya double check this logic please.
+        I'm encoding `d = UInt(diff<lenw7-1:0>`) as a bit-and with levels,
+        the Ones run of length lenw7. I think this correctly takes the lower
+        lenw7 bits; cannot use an lcast because the cast-lenw7gth has to be N, not exp. *)
+
+    (* d *) temp[405] := Xtemp[403] & levels;
+    if lenw6 = 1#6 then
+    (* welem *) temp[410] := {Ones 2 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 2 <{d+1#6}>};
+    (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
+    if lenw6 = 2#6 then
+    (* welem *) temp[410] := {Ones 4 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 4 <{d+1#6}>};
+    (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
+    if lenw6 = 3#6 then
+    (* welem *) temp[410] := {Ones 8 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 8 <{d+1#6}>};
+    (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
+    if lenw6 = 4#6 then
+    (* welem *) temp[410] := {Ones 16 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 16 <{d+1#6}>};
+    (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
+    if lenw6 = 5#6 then
+    (* welem *) temp[410] := {Ones 32 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 32 <{d+1#6}>};
+    (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
+    if lenw6 = 6#6 then
+    (* welem *) temp[410] := {Ones 64 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 64 <{d+1#6}>};
+    (* wmask *) {Replicate 980 406 64 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
+    exn 0 end end end end end end
+}>.
+
 Section Decoder.
   Variable n : N.
 
@@ -691,21 +760,79 @@ Section Decoder.
     | "1  1  0" => ARM_SUBG (* SUBG Armv8.5 *)
     else UDF end.
 
+  Definition arm_ands_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let imm := <{Xtemp[980]}> in
+    let UNDEF := <{ (sf#1 = 0#1 & n#1 <> 0#1) }> in
+    <{
+      if UNDEF then exn 0 else nop end;
+      {DecodeBitMasks n imms immr 1 datasize};
+      (* imm: temp[980] *)
+      (* operand1 *) temp[1000] := lcast datasize X[Xn];
+      (* result *) {NTovar Xd} := Xtemp[1000] & imm;
+      R_NG := X[Xd][{datasize-1}];
+      R_ZR := X[Xd] = 0#64;
+      R_CY := 0#1;
+      R_OV := 0#1
+    }>.
+
+  Definition arm_and_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let imm := <{Xtemp[980]}> in
+    let UNDEF := <{ (sf#1 = 0#1 & n#1 <> 0#1) }> in
+    <{
+      if UNDEF then exn 0 else nop end;
+      {DecodeBitMasks n imms immr 1 datasize};
+      (* imm: temp[980] *)
+      (* operand1 *) temp[1000] := lcast datasize X[Xn];
+       {NTovar Xd} := Xtemp[1000] & imm
+    }>.
+
+  Definition arm_eor_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let imm := <{Xtemp[980]}> in
+    let UNDEF := <{ (sf#1 = 0#1 & n#1 <> 0#1) }> in
+    <{
+      if UNDEF then exn 0 else nop end;
+      {DecodeBitMasks n imms immr 1 datasize};
+      (* imm: temp[980] *)
+      {NTovar Xd} := X[Xn] ^ imm
+    }>.
+
+  Definition arm_orr_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let imm := <{Xtemp[980]}> in
+    let UNDEF := <{ (sf#1 = 0#1 & n#1 <> 0#1) }> in
+    <{
+      if UNDEF then exn 0 else nop end;
+      {DecodeBitMasks n imms immr 1 datasize};
+      (* imm: temp[980] *)
+      {NTovar Xd} := X[Xn] | imm
+    }>.
+
   (*logical imm*)
   Definition logical_imm :=
     let sf := n.[31] in
     let opc := n.[29,31] in
     let n_ := n.[22] in
+    let Rd := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imms := n.[10,16] in
+    let immr := n.[16,22] in
     match[bits] sf, opc, n_ with
   | "0  -   1" => UDF (* Unallocated. *)
-  | "0  00  0" => ARM_AND_IMM (* AND (immediate) - 32-bit variant on page C6-775 *)
-  | "0  01  0" => ARM_ORR_IMM (* ORR (immediate) - 32-bit variant on page C6-1125 *)
-  | "0  10  0" => ARM_EOR_IMM (* EOR (immediate) - 32-bit variant on page C6-896 *)
-  | "0  11  0" => ARM_ANDS_IMM (* ANDS (immediate) - 32-bit variant on page C6-779 *)
-  | "1  00  -" => ARM_AND_IMM (* AND (immediate) - 64-bit variant on page C6-775 *)
-  | "1  01  -" => ARM_ORR_IMM (* ORR (immediate) - 64-bit variant on page C6-1125 *)
-  | "1  10  -" => ARM_EOR_IMM (* EOR (immediate) - 64-bit variant on page C6-896 *)
-  | "1  11  -" => ARM_ANDS_IMM (* ANDS (immediate) - 64-bit variant on page C6-779 *)
+  | "0  00  0" => ARM_AND_IMM Rn Rd immr imms sf n_ (* AND (immediate) - 32-bit variant on page C6-775 *)
+  | "0  01  0" => ARM_ORR_IMM Rn Rd immr imms sf n_ (* ORR (immediate) - 32-bit variant on page C6-1125 *)
+  | "0  10  0" => ARM_EOR_IMM Rn Rd immr imms sf n_ (* EOR (immediate) - 32-bit variant on page C6-896 *)
+  | "0  11  0" => ARM_ANDS_IMM Rn Rd immr imms sf n_ (* ANDS (immediate) - 32-bit variant on page C6-779 *)
+  | "1  00  -" => ARM_AND_IMM Rn Rd immr imms sf n_ (* AND (immediate) - 64-bit variant on page C6-775 *)
+  | "1  01  -" => ARM_ORR_IMM Rn Rd immr imms sf n_ (* ORR (immediate) - 64-bit variant on page C6-1125 *)
+  | "1  10  -" => ARM_EOR_IMM Rn Rd immr imms sf n_ (* EOR (immediate) - 64-bit variant on page C6-896 *)
+  | "1  11  -" => ARM_ANDS_IMM Rn Rd immr imms sf n_ (* ANDS (immediate) - 64-bit variant on page C6-779 *)
   else UDF end.
 
   Definition arm_movk_imm2il Xd imm16 size shift :=
@@ -754,75 +881,6 @@ Section Decoder.
     | "1  11  - " => ARM_MOVK_IMM Rd imm16 64 hw (* MOVK - 64-bit variant on page C6-1098 *)
     else UDF end.
 
-  (* J1-7389 *)
-  (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
-  Definition DecodeBitMasks (immN imms immr immediate M:N) :=
-    let imms := <{imms#6}> in
-    let immr := <{immr#6}> in
-    let immN := Word immN 1 in
-    let immediate := Word immediate 1 in
-    let immNNOTimms := <{immN ++ imms}> in
-    let levels := <{Xtemp[400]}> in
-    let S := <{Xtemp[401]}> in
-    let R := <{Xtemp[402]}> in
-    let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
-    let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
-    let esize := <{Xtemp[404]}> in
-    let d := <{Xtemp[405]}> in
-    <{
-      (* lenw7 *) {HighestSetBit 7 immNNOTimms};
-      (* The highest setbit position of w bits is w-1;
-         casting the len down to 6-bits does not lose information
-         and is useful below. *)
-      (* lenw6 *) temp[301] := lcast 6 lenw7;
-      if Xtemp[300] < 1#7 then exn 0 else nop end;
-      if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
-
-      (* levels *) temp[400] := {Ones 6 lenw6};
-      if immediate & (imms & levels = levels) then exn 0 else nop end;
-      (* S *) temp[401] := imms & levels;
-      (* R *) temp[402] := immr & levels;
-      (* diff *) temp[403] := S-R;
-      (* esize *) temp[404] := 1#7 << lenw7;
-      (* TODO: Shreya double check this logic please.
-         I'm encoding `d = UInt(diff<lenw7-1:0>`) as a bit-and with levels,
-         the Ones run of length lenw7. I think this correctly takes the lower
-         lenw7 bits; cannot use an lcast because the cast-lenw7gth has to be N, not exp. *)
-
-      (* d *) temp[405] := Xtemp[403] & levels;
-      if lenw6 = 1#6 then
-      (* welem *) temp[410] := {Ones 2 <{S+1#6}>};
-      (* telem *) temp[411] := {Ones 2 <{d+1#6}>};
-      (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
-      (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
-      if lenw6 = 2#6 then
-      (* welem *) temp[410] := {Ones 4 <{S+1#6}>};
-      (* telem *) temp[411] := {Ones 4 <{d+1#6}>};
-      (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
-      (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
-      if lenw6 = 3#6 then
-      (* welem *) temp[410] := {Ones 8 <{S+1#6}>};
-      (* telem *) temp[411] := {Ones 8 <{d+1#6}>};
-      (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
-      (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
-      if lenw6 = 4#6 then
-      (* welem *) temp[410] := {Ones 16 <{S+1#6}>};
-      (* telem *) temp[411] := {Ones 16 <{d+1#6}>};
-      (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
-      (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
-      if lenw6 = 5#6 then
-      (* welem *) temp[410] := {Ones 32 <{S+1#6}>};
-      (* telem *) temp[411] := {Ones 32 <{d+1#6}>};
-      (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
-      (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
-      if lenw6 = 6#6 then
-      (* welem *) temp[410] := {Ones 64 <{S+1#6}>};
-      (* telem *) temp[411] := {Ones 64 <{d+1#6}>};
-      (* wmask *) {Replicate 980 406 64 M <{Xtemp[410]}>};
-      (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
-      exn 0 end end end end end end
-  }>.
-
   (*  If <imms> is greater than or equal to <immr>, this copies a bitfield of (<imms>-<immr>+1) bits starting from bit position
       <immr> in the source register to the least significant bits of the destination register.
 
@@ -831,6 +889,7 @@ Section Decoder.
       or 64 bits.
 
       In both cases the destination bits below and above the bitfield are set to zero *)
+
   Definition arm_ubfm_imm2il (Xn Xd immr imms sf n:N) :=
     let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
     let datasize := (if sf =? 1 then 64 else 32) in
@@ -839,11 +898,56 @@ Section Decoder.
     let UNDEF := <{ (sf#1 = 1#1 & n#1 <> 1#1) |
                     ((sf#1 = 0#1) & (n#1 <> 0#1 | (immr#6 [5] <> 0#1) | (imms#6[5] <> 0#1))) }> in
     <{
+      if UNDEF then exn 0 else nop end;
       {DecodeBitMasks n imms immr 0 datasize};
       (* wmask: temp[980]; tmask: temp[990] *)
       (* src *) temp[1000] := X[Xn];
       (* bot *) temp[1001] := {ROR datasize <{Xtemp[1000]}> immr} & wmask;
       {NTovar Xd} := Xtemp[1001] & tmask
+    }>.
+
+  Definition arm_bfm_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let wmask := <{Xtemp[980]}> in
+    let tmask := <{Xtemp[990]}> in
+    let dst := <{Xtemp[1000]}> in
+    let bot := <{Xtemp[3000]}> in
+    let UNDEF := <{ (sf#1 = 1#1 & n#1 <> 1#1) |
+                    ((sf#1 = 0#1) & (n#1 <> 0#1 | (immr#6 [5] <> 0#1) | (imms#6[5] <> 0#1))) }> in
+    <{
+      if UNDEF then exn 0 else nop end;
+      {DecodeBitMasks n imms immr 0 datasize};
+      (* wmask: temp[980]; tmask: temp[990] *)
+      (* dst *) temp[1000] := lcast datasize X[Xd];
+      (* src *) temp[2000] := lcast datasize X[Xn];
+      (* bot *) temp[3000] := (dst & !wmask) | ({ROR datasize <{Xtemp[2000]}> immr} & wmask);
+      {NTovar Xd} := ucast 64 ((dst * !tmask) | (bot & tmask))
+    }>.
+
+  Print Replicate.
+  Print xbits.
+  Definition pilxbits (w:N) (n lo hi:exp) :=
+    <{ (n >> lo) % (1#w << (hi-lo)) }>.
+
+  Definition arm_sbfm_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let wmask := <{Xtemp[980]}> in
+    let tmask := <{Xtemp[990]}> in
+    let src := <{Xtemp[2000]}> in
+    let bot := <{Xtemp[3000]}> in
+    let top := <{Xtemp[4000]}> in
+    let UNDEF := <{ (sf#1 = 1#1 & n#1 <> 1#1) |
+                    ((sf#1 = 0#1) & (n#1 <> 0#1 | (immr#6 [5] <> 0#1) | (imms#6[5] <> 0#1))) }> in
+    <{
+      if UNDEF then exn 0 else nop end;
+      {DecodeBitMasks n imms immr 0 datasize};
+      (* wmask: temp[980]; tmask: temp[990] *)
+      (* src *) temp[2000] := lcast datasize X[Xn];
+      (* bot *) temp[3000] := {ROR datasize src immr} & wmask;
+      (* top *) {Replicate 4000 4001 1 64 (pilxbits datasize src (Word 0 datasize) (Word 1 datasize))};
+      {NTovar Xd} := ucast 64 ((top & !tmask) | (bot & tmask))
     }>.
 
   Definition bitfield :=
@@ -857,12 +961,12 @@ Section Decoder.
     match[bits] sf, opc, n_ with
     | "-  11  -" => UDF (* Unallocated. *)
     | "0  -   1" => UDF (* Unallocated. *)
-    | "0  00  0" => ARM_SBFM_IMM (* SBFM - 32-bit variant on page C6-1170 *)
-    | "0  01  0" => ARM_BFM_IMM (* BFM - 32-bit variant on page C6-804 *)
+    | "0  00  0" => ARM_SBFM_IMM Rn Rd immr imms sf n_ (* SBFM - 32-bit variant on page C6-1170 *)
+    | "0  01  0" => ARM_BFM_IMM Rn Rd immr imms sf n_ (* BFM - 32-bit variant on page C6-804 *)
     | "0  10  0" => ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 32-bit variant on page C6-1351 *)
     | "1  -   0" => UDF (* Unallocated. *)
-    | "1  00  1" => ARM_SBFM_IMM (* SBFM - 64-bit variant on page C6-1170 *)
-    | "1  01  1" => ARM_BFM_IMM (* BFM - 64-bit variant on page C6-804 *)
+    | "1  00  1" => ARM_SBFM_IMM Rn Rd immr imms sf n_ (* SBFM - 64-bit variant on page C6-1170 *)
+    | "1  01  1" => ARM_BFM_IMM Rn Rd immr imms sf n_ (* BFM - 64-bit variant on page C6-804 *)
     | "1  10  1" => ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 64-bit variant on page C6-1351 *)
     else UDF end.
 
@@ -940,6 +1044,8 @@ Section Decoder.
     | "111  000  01" => UDF (* Unallocated. *)
     | "111  000  1x" => UDF (* Unallocated. *)
     else UDF end.
+
+  Definition arm_nop2il := <{nop}>.
 
   Definition hints :=
     let CRm := n.[8,12] in
@@ -1118,7 +1224,7 @@ Section Decoder.
     | "1" => ARM_BL imm26 (* BL *)
     else UDF end.
 
-  Definition UsingAArch32 := <{ {Var PSTATE_nRW} = 1#1 }>.
+  Definition UsingAArch32 := <{ {Var R_nRW} = 1#1 }>.
   Definition Branch w target := <{
     if (w#w = 32#w) then
       if UsingAArch32 then PCvar := ucast 64 target else exn 0 end
