@@ -62,7 +62,9 @@ Notation "x | y"  := (BinOp OP_OR  x y) (in custom PIL at level 70, y at level 6
 Notation "x = y"   := (BinOp OP_EQ  x y) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x <> y"  := (BinOp OP_NEQ x y) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x < y"   := (BinOp OP_LT  x y) (in custom PIL at level 75, y at level 75, no associativity).
+Notation "x > y"   := (BinOp OP_LE  y x) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x <= y"  := (BinOp OP_LE  x y) (in custom PIL at level 75, y at level 75, no associativity).
+Notation "x >= y"   := (BinOp OP_LT  y x) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x 's<' y"  := (BinOp OP_SLT x y) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x 's<=' y" := (BinOp OP_SLE x y) (in custom PIL at level 75, y at level 75, no associativity).
 
@@ -76,7 +78,7 @@ Notation "'lcast' w e" := (Cast CAST_LOW      w e) (in custom PIL at level 0, w 
 Notation "'unknown' w" := (Unknown w) (in custom PIL at level 0, w at level 0).
 
 Notation "'ite' e1 e2 e3" := (Ite e1 e2 e3)
-  (in custom PIL at level 0, e2 at level 99, e3 at level 99).
+  (in custom PIL at level 0, e2 at level 89, e3 at level 89).
 
 Notation "e [ hi ':' lo ]" := (Extract hi lo e)
   (in custom PIL at level 3, hi at level 0, lo at level 0).

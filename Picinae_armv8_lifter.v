@@ -85,7 +85,7 @@ Module Notation.
 End Notation.
 Import Notation.
 
-  Notation "'PC'" := (R_PC) (in custom PIL at level 65).
+  Notation "'PCvar'" := (R_PC) (in custom PIL at level 65).
   Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
 
 
@@ -209,9 +209,9 @@ Variant inst :=
   | ARM_ORR_IMM
   | ARM_TST_IMM
   (*move wide*)
-  | ARM_MOVZ_IMM
-  | ARM_MOVN_IMM
-  | ARM_MOVK_IMM
+  | ARM_MOVZ_IMM (Rd imm16 size shift:N)
+  | ARM_MOVN_IMM (Rd imm16 size shift:N)
+  | ARM_MOVK_IMM (Rd imm16 size shift:N)
   | ARM_MOV_IMM (*bitmask imm/wide imm/inverted wide imm*)
   (*PC relative addr*)
   | ARM_ADRP_IMM
@@ -406,10 +406,10 @@ Variant inst :=
   | ARM_RETAA
   | ARM_ERETAA
   (*unconditional branch(imm)*)
-  | ARM_B
-  | ARM_BL
+  | ARM_B (imm26:N)
+  | ARM_BL (imm26:N)
   (*compare and branch(imm)*)
-  | ARM_CBZ
+  | ARM_CBZ (Rt imm19 size:N)
   | ARM_CBNZ
   (*test and branch(imm)*)
   | ARM_TBZ (Rt imm14 b5 b40:N)
@@ -625,6 +625,34 @@ Variant inst :=
   (*evaluate*)
   | ARM_SETF8
   .
+
+(* Returns index in Xtemp[300], returns 0 for no-bits set, thus it is ambiguous.
+    Clobber Xtemp[301].
+
+    NB. We can embed HighestSetBit in a PIL expression rather than a statement
+    if we know the bitwidth beforehand. Just use a sequence of nested ites.
+    This already assumes a max iwdth of 64 bits. *)
+Definition HighestSetBit w e := <{
+  temp[301] := w#w;
+  rep w#w do if 1#w<<Xtemp[301] & e then nop else temp[301] := Xtemp[301] - 1#64 end end;
+  temp[300] := Xtemp[301]
+}>.
+
+(* Return a w-bit expression of e ones *)
+Definition Ones w e := <{
+  (1#w << e) - 1#w
+}>.
+
+Definition ROR w x shift := <{ite (shift#w = 0#w) x ((x >> shift#w) | (x << (w#w-shift#w)))}>.
+
+(* Replicate w-bit expression x until it is w' bits *)
+Definition Replicate rettemp t w w' x := <{
+  if w'#w' % w#w' <> 0#w' then exn 0 else nop end;
+  temp[t] := 0#w';
+  temp[rettemp] := 0#w';
+  rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
+}>.
+
 Section Decoder.
   Variable n : N.
 
@@ -680,47 +708,51 @@ Section Decoder.
   | "1  11  -" => ARM_ANDS_IMM (* ANDS (immediate) - 64-bit variant on page C6-779 *)
   else UDF end.
 
+  Definition arm_movk_imm2il Xd imm16 size shift :=
+    <{
+      (* pos *) temp[100] := shift#64 << 4#64;
+      (* Clip the shift to 16 if using 32-bit variant *)
+      if (Xtemp[100] > 16#64) & (size#64=32#64) then temp[100] := 16#64 else nop end;
+      (* mask *) (temp[101] := {Ones 64 (Word 16 64)} << Xtemp[100]);
+      {NTovar Xd} := X[Xd] & (! Xtemp[101]) | (imm16#64 << Xtemp[100])
+    }>.
+
+  Definition arm_movn_imm2il Xd imm16 size shift :=
+    <{
+      (* pos *) temp[100] := shift#64 << 4#64;
+      (* Clip the shift to 16 if using 32-bit variant *)
+      if (Xtemp[100] > 16#64) & (size#64=32#64) then temp[100] := 16#64 else nop end;
+      (* mask *) (temp[101] := {Ones 64 (Word 16 64)} << Xtemp[100]);
+      {NTovar Xd} := ! (imm16#64 << Xtemp[100])
+    }>.
+
+
+  Definition arm_movz_imm2il Xd imm16 size shift :=
+    <{
+      (* pos *) temp[100] := shift#64 << 4#64;
+      (* Clip the shift to 16 if using 32-bit variant *)
+      if (Xtemp[100] > 16#64) & (size#64=32#64) then temp[100] := 16#64 else nop end;
+      (* mask *) (temp[101] := {Ones 64 (Word 16 64)} << Xtemp[100]);
+      {NTovar Xd} := (imm16#64 << Xtemp[100])
+    }>.
+
+
   Definition move_wide_imm :=
     let sf := n.[31] in
     let opc := n.[29,31] in
     let hw := n.[21,23] in
+    let Rd := n.[0,5] in
+    let imm16 := n.[5,21] in
     match[bits] sf, opc, hw with
     | "-  01  - " => UDF (* Unallocated. *)
     | "0  -   1x" => UDF (* Unallocated. *)
-    | "0  00  - " => ARM_MOVN_IMM (* MOVN - 32-bit variant on page C6-1100 *)
-    | "0  10  - " => ARM_MOVZ_IMM (* MOVZ - 32-bit variant on page C6-1102 *)
-    | "0  11  - " => ARM_MOVK_IMM (* MOVK - 32-bit variant on page C6-1098 *)
-    | "1  00  - " => ARM_MOVN_IMM (* MOVN - 64-bit variant on page C6-1100 *)
-    | "1  10  - " => ARM_MOVZ_IMM (* MOVZ - 64-bit variant on page C6-1102 *)
-    | "1  11  - " => ARM_MOVK_IMM (* MOVK - 64-bit variant on page C6-1098 *)
+    | "0  00  - " => ARM_MOVN_IMM Rd imm16 32 hw (* MOVN - 32-bit variant on page C6-1100 *)
+    | "0  10  - " => ARM_MOVZ_IMM Rd imm16 32 hw (* MOVZ - 32-bit variant on page C6-1102 *)
+    | "0  11  - " => ARM_MOVK_IMM Rd imm16 32 hw (* MOVK - 32-bit variant on page C6-1098 *)
+    | "1  00  - " => ARM_MOVN_IMM Rd imm16 64 hw (* MOVN - 64-bit variant on page C6-1100 *)
+    | "1  10  - " => ARM_MOVZ_IMM Rd imm16 64 hw (* MOVZ - 64-bit variant on page C6-1102 *)
+    | "1  11  - " => ARM_MOVK_IMM Rd imm16 64 hw (* MOVK - 64-bit variant on page C6-1098 *)
     else UDF end.
-
-  (* Returns index in Xtemp[300], returns 0 for no-bits set, thus it is ambiguous.
-     Clobber Xtemp[301].
-
-     NB. We can embed HighestSetBit in a PIL expression rather than a statement
-     if we know the bitwidth beforehand. Just use a sequence of nested ites.
-     This already assumes a max iwdth of 64 bits. *)
-  Definition HighestSetBit w e := <{
-    temp[301] := w#w;
-    rep w#w do if 1#w<<Xtemp[301] & e then nop else temp[301] := Xtemp[301] - 1#64 end end;
-    temp[300] := Xtemp[301]
-  }>.
-
-  (* Return a w-bit expression of e ones *)
-  Definition Ones w e := <{
-    (1#w << e) - 1#w
-  }>.
-
-  Definition ROR w x shift := <{ite (shift#w = 0#w) x ((x >> shift#w) | (x << (w#w-shift#w)))}>.
-
-  (* Replicate w-bit expression x until it is w' bits *)
-  Definition Replicate rettemp t w w' x := <{
-    if w'#w' % w#w' <> 0#w' then exn 0 else nop end;
-    temp[t] := 0#w';
-    temp[rettemp] := 0#w';
-    rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
-  }>.
 
   (* J1-7389 *)
   (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
@@ -1070,20 +1102,46 @@ Section Decoder.
   | "11xx  11111    -         -        -      " => UDF (* Unallocated. - *)
   else UDF end.
 
+  Definition arm_b2il imm26 :=
+    let offset := <{scast 64 (imm26#28 << 2#28)}> in
+    <{jmp PC+offset}>.
+
+  Definition arm_bl2il imm26 :=
+    let offset := <{scast 64 (imm26#28 << 2#28)}> in
+    <{{NTovar 30} := PC + 4#64; jmp PC+offset}>.
+
   Definition uncond_b_imm :=
     let op := n.[31] in
+    let imm26 := n.[0,26] in
     match[bits] op with
-    | "0" => ARM_B (* B *)
-    | "1" => ARM_BL (* BL *)
+    | "0" => ARM_B  imm26 (* B *)
+    | "1" => ARM_BL imm26 (* BL *)
     else UDF end.
+
+  Definition UsingAArch32 := <{ {Var PSTATE_nRW} = 1#1 }>.
+  Definition Branch w target := <{
+    if (w#w = 32#w) then
+      if UsingAArch32 then PCvar := ucast 64 target else exn 0 end
+    else
+      if (w#w = 64#w) & !UsingAArch32 then PCvar := target else exn 0 end
+    end
+  }>.
+  (* Assumes we're not using Aarch32 *)
+  Definition arm_cbz2il Xn imm19 size :=
+    let offset := <{scast 64 (imm19#21 << 2#21)}> in
+    let target := <{PC + offset}> in <{
+    if lcast size X[Xn] = 0#size then {Branch size target} else nop end
+  }>.
 
   Definition comp_and_b :=
     let sf := n.[31] in
     let op := n.[24] in
+    let Rt := n.[0,5] in
+    let imm19 := n.[5,24] in
     match[bits] sf, op with
-    | "0  0" => ARM_CBZ (* CBZ - 32-bit variant *)
+    | "0  0" => ARM_CBZ Rt imm19 32 (* CBZ - 32-bit variant *)
     | "0  1" => ARM_CBNZ (* CBNZ - 32-bit variant *)
-    | "1  0" => ARM_CBZ (* CBZ - 64-bit variant *)
+    | "1  0" => ARM_CBZ Rt imm19 64 (* CBZ - 64-bit variant *)
     | "1  1" => ARM_CBNZ (* CBNZ - 64-bit variant *)
     else UDF end.
 
