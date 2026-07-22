@@ -85,6 +85,100 @@ Module Notation.
 End Notation.
 Import Notation.
 
+  Notation "'PC'" := (R_PC) (in custom PIL at level 65).
+  Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
+
+
+  (* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
+  (*  J1-7341
+      bits(64) sp = SP[];
+      stack_align_check = (SCTLR[].SA0 != '0')
+      if stack_align_check && sp != Align(sp, 16) then SPAlignmentFault()
+      return;
+    *)
+
+  Definition XtoVar n := let n := <{n#5}> in <{
+    ite (n = (0#5)) {Var R_X0} ( ite (n = (1#5)) {Var R_X1} ( ite (n = (2#5)) {Var R_X2} ( ite (n = (3#5)) {Var R_X3} (
+    ite (n = (4#5)) {Var R_X4} ( ite (n = (5#5)) {Var R_X5} ( ite (n = (6#5)) {Var R_X6} ( ite (n = (7#5)) {Var R_X7} (
+    ite (n = (8#5)) {Var R_X8} ( ite (n = (9#5)) {Var R_X9} ( ite (n = (10#5)) {Var R_X10} ( ite (n = (11#5)) {Var R_X11} (
+    ite (n = (12#5)) {Var R_X12} ( ite (n = (13#5)) {Var R_X13} ( ite (n = (14#5)) {Var R_X14} ( ite (n = (15#5)) {Var R_X15} (
+    ite (n = (16#5)) {Var R_X16} ( ite (n = (17#5)) {Var R_X17} ( ite (n = (18#5)) {Var R_X18} ( ite (n = (19#5)) {Var R_X19} (
+    ite (n = (20#5)) {Var R_X20} ( ite (n = (21#5)) {Var R_X21} ( ite (n = (22#5)) {Var R_X22} ( ite (n = (23#5)) {Var R_X23} (
+    ite (n = (24#5)) {Var R_X24} ( ite (n = (25#5)) {Var R_X25} ( ite (n = (26#5)) {Var R_X26} ( ite (n = (27#5)) {Var R_X27} (
+    ite (n = (28#5)) {Var R_X28} ( ite (n = (29#5)) {Var R_X29} ( ite (n = (30#5)) {Var R_X30} {Var R_SP}))))))))))))))))))))))))))))))
+  }>.
+
+  Definition NTovar n :=
+    match n with
+    | 0 => R_X0 | 1 => R_X1 | 2 => R_X2 | 3 => R_X3 | 4 => R_X4 | 5 => R_X5 | 6 => R_X6 | 7 => R_X7
+    | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
+    | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
+    | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
+    end.
+
+  Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
+  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
+  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
+  Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
+  Notation "'temp[' n ']'" := (V_TEMP n) (at level 65, no associativity).
+  Definition SP_read w := <{lcast w {Var R_SP} }>.
+  Definition SP_write e : stmt := <{R_SP := ucast 64 e }>.
+  Definition b2exp b := match b with true => Word 1 1 | false => Word 0 1 end.
+
+
+  Definition AllocationTagFromAddress e := <{e[59:56]}>. (* AArch64.AllocationTagFromAddress *)
+  Notation "'AllocTag' e" := (AllocationTagFromAddress e) (in custom PIL at level 65, no associativity).
+
+  Definition AlignPow2 e w pow2 := match pow2 with
+                                  | 1 =>      e
+                                  | 2 =>   <{ e >> (1 # w) << 1 # w }>
+                                  | 4 =>   <{ e >> (2 # w) << 2 # w }>
+                                  | 8 =>   <{ e >> (3 # w) << 3 # w }>
+                                  | 16 =>  <{ e >> (4 # w) << 4 # w }>
+                                  | 32 =>  <{ e >> (5 # w) << 5 # w }>
+                                  | 64 =>  <{ e >> (6 # w) << 6 # w }>
+                                  | 128 => <{ e >> (7 # w) << 7 # w }>
+                                  | 256 => <{ e >> (8 # w) << 8 # w }>
+                                  | _ =>      e  (* No good sentinel value *)
+                                  end.
+  Notation "'Align[' e , w , pow2 ']'" := (AlignPow2 e w pow2) (in custom PIL at level 65, no associativity).
+
+  (* Checks whether w-bit e is a multiple of alignment. *)
+  Definition AlignCheck e w alignment := <{ e % (alignment # w) = (0 # w) }>.
+  Notation "'Aligned[' e , w , alignment ']'" := (AlignCheck e w alignment) (in custom PIL at level 65, no associativity).
+  Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custom PIL at level 65, no associativity).
+  Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
+
+  Definition CheckSPAlignment :=
+    <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
+
+  (* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
+  Definition AddressWithAllocationTag (Xt tag:exp) := <{
+    (Xt & (! 0x0F00_0000_0000_0000 # 64))
+  }>.
+
+  (* J1-7339 *)
+  Definition MemSingleWrite address size (val:exp) := <{
+    (* assert size in {1, 2, 4, 8, 16} omitted *)
+    if Aligned[ address, 64, size ] then nop else exn 0 end;
+    store[address, val, LittleE, size]
+  }>.
+
+  (* J1-7342 *)
+  Definition MemWrite address size val := MemSingleWrite address size val.
+
+  (* J1-7341 *)
+  Definition MemRead address size := <{load[address, LittleE, size]}>.
+
+  (* Addr - 64bits; tag - 4bits *)
+  (* We do not model tag memory, this is a no-op if the address is aligned. *)
+  Definition MemTagWrite (addr tag:exp) := <{
+    if ! TagAligned[addr] then exn 0 else nop end
+    (* Assumption: address translation does not abort nor raise a debug exception *)
+  }>.
+  (* Addr - 64bits *)
+  (* We do not model tag memory, this just returns the tagging-disabled value. *)
+  Definition MemTagRead (addr:exp) := <{ 0 # 4 }>.
 
 Variant inst :=
 (*DP imm*)
@@ -125,7 +219,7 @@ Variant inst :=
   (*bitfield move*)
   | ARM_BFM_IMM
   | ARM_SBFM_IMM
-  | ARM_UBFM_IMM
+  | ARM_UBFM_IMM (Rn Rd immr imms sf n_:N)
   (*bitfield insert extract*)
   | ARM_BFC_IMM
   | ARM_BFI_IMM
@@ -318,8 +412,8 @@ Variant inst :=
   | ARM_CBZ
   | ARM_CBNZ
   (*test and branch(imm)*)
-  | ARM_TBZ
-  | ARM_TBNZ
+  | ARM_TBZ (Rt imm14 b5 b40:N)
+  | ARM_TBNZ (Rt imm14 b5 b40:N)
 
 (*Loads and Stores*)
   (*exclusive/others*)
@@ -397,10 +491,10 @@ Variant inst :=
   | ARM_STNP (Xn Xt Xt2 imm7 scale:N)
   | ARM_LDNP (Xn Xt Xt2 imm7 scale:N)
   (*load/store register pair (post-indexed, pre-indexed, offset)*)
-  | ARM_STP
-  | ARM_LDP
-  | ARM_LDPSW
-  | ARM_STGP
+  | ARM_STP (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool)
+  | ARM_LDP (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool)
+  | ARM_LDPSW (Xn Xt Xt2 imm7:N) (wback postindex:bool)
+  | ARM_STGP (Xn Xt Xt2 imm7:N) (wback postindex:bool)
   (*load/store register (unscaled immediate)*)
   | ARM_STURB
   | ARM_LDURB
@@ -508,7 +602,7 @@ Variant inst :=
   | ARM_LDRH_REG
   | ARM_LDRSH_REG
   | ARM_STR_REG
-  | ARM_LDR_REG
+  | ARM_LDR_REG (Xn Xm Xt extend size S:N)
   | ARM_LDRSW_REG
   | ARM_PRFM_REG
   (*TODO: There are way more load instructions than written out here, add to this section plz*)
@@ -601,20 +695,143 @@ Section Decoder.
     | "1  11  - " => ARM_MOVK_IMM (* MOVK - 64-bit variant on page C6-1098 *)
     else UDF end.
 
+  (* Returns index in Xtemp[300], returns 0 for no-bits set, thus it is ambiguous.
+     Clobber Xtemp[301].
+
+     NB. We can embed HighestSetBit in a PIL expression rather than a statement
+     if we know the bitwidth beforehand. Just use a sequence of nested ites.
+     This already assumes a max iwdth of 64 bits. *)
+  Definition HighestSetBit w e := <{
+    temp[301] := w#w;
+    rep w#w do if 1#w<<Xtemp[301] & e then nop else temp[301] := Xtemp[301] - 1#64 end end;
+    temp[300] := Xtemp[301]
+  }>.
+
+  (* Return a w-bit expression of e ones *)
+  Definition Ones w e := <{
+    (1#w << e) - 1#w
+  }>.
+
+  Definition ROR w x shift := <{ite (shift#w = 0#w) x ((x >> shift#w) | (x << (w#w-shift#w)))}>.
+
+  (* Replicate w-bit expression x until it is w' bits *)
+  Definition Replicate rettemp t w w' x := <{
+    if w'#w' % w#w' <> 0#w' then exn 0 else nop end;
+    temp[t] := 0#w';
+    temp[rettemp] := 0#w';
+    rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
+  }>.
+
+  (* J1-7389 *)
+  (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
+  Definition DecodeBitMasks (immN imms immr immediate M:N) :=
+    let imms := <{imms#6}> in
+    let immr := <{immr#6}> in
+    let immN := Word immN 1 in
+    let immediate := Word immediate 1 in
+    let immNNOTimms := <{immN ++ imms}> in
+    let levels := <{Xtemp[400]}> in
+    let S := <{Xtemp[401]}> in
+    let R := <{Xtemp[402]}> in
+    let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
+    let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
+    let esize := <{Xtemp[404]}> in
+    let d := <{Xtemp[405]}> in
+    <{
+      (* lenw7 *) {HighestSetBit 7 immNNOTimms};
+      (* The highest setbit position of w bits is w-1;
+         casting the len down to 6-bits does not lose information
+         and is useful below. *)
+      (* lenw6 *) temp[301] := lcast 6 lenw7;
+      if Xtemp[300] < 1#7 then exn 0 else nop end;
+      if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
+
+      (* levels *) temp[400] := {Ones 6 lenw6};
+      if immediate & (imms & levels = levels) then exn 0 else nop end;
+      (* S *) temp[401] := imms & levels;
+      (* R *) temp[402] := immr & levels;
+      (* diff *) temp[403] := S-R;
+      (* esize *) temp[404] := 1#7 << lenw7;
+      (* TODO: Shreya double check this logic please.
+         I'm encoding `d = UInt(diff<lenw7-1:0>`) as a bit-and with levels,
+         the Ones run of length lenw7. I think this correctly takes the lower
+         lenw7 bits; cannot use an lcast because the cast-lenw7gth has to be N, not exp. *)
+
+      (* d *) temp[405] := Xtemp[403] & levels;
+      if lenw6 = 1#6 then
+      (* welem *) temp[410] := {Ones 2 <{S+1#6}>};
+      (* telem *) temp[411] := {Ones 2 <{d+1#6}>};
+      (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
+      if lenw6 = 2#6 then
+      (* welem *) temp[410] := {Ones 4 <{S+1#6}>};
+      (* telem *) temp[411] := {Ones 4 <{d+1#6}>};
+      (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
+      if lenw6 = 3#6 then
+      (* welem *) temp[410] := {Ones 8 <{S+1#6}>};
+      (* telem *) temp[411] := {Ones 8 <{d+1#6}>};
+      (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
+      if lenw6 = 4#6 then
+      (* welem *) temp[410] := {Ones 16 <{S+1#6}>};
+      (* telem *) temp[411] := {Ones 16 <{d+1#6}>};
+      (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
+      if lenw6 = 5#6 then
+      (* welem *) temp[410] := {Ones 32 <{S+1#6}>};
+      (* telem *) temp[411] := {Ones 32 <{d+1#6}>};
+      (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
+      if lenw6 = 6#6 then
+      (* welem *) temp[410] := {Ones 64 <{S+1#6}>};
+      (* telem *) temp[411] := {Ones 64 <{d+1#6}>};
+      (* wmask *) {Replicate 980 406 64 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
+      exn 0 end end end end end end
+  }>.
+
+  (*  If <imms> is greater than or equal to <immr>, this copies a bitfield of (<imms>-<immr>+1) bits starting from bit position
+      <immr> in the source register to the least significant bits of the destination register.
+
+      If <imms> is less than <immr>, this copies a bitfield of (<imms>+1) bits from the least significant bits of the source
+      register to bit position (regsize-<immr>) of the destination register, where regsize is the destination register size of 32
+      or 64 bits.
+
+      In both cases the destination bits below and above the bitfield are set to zero *)
+  Definition arm_ubfm_imm2il (Xn Xd immr imms sf n:N) :=
+    let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
+    let datasize := (if sf =? 1 then 64 else 32) in
+    let wmask := <{Xtemp[980]}> in
+    let tmask := <{Xtemp[990]}> in
+    let UNDEF := <{ (sf#1 = 1#1 & n#1 <> 1#1) |
+                    ((sf#1 = 0#1) & (n#1 <> 0#1 | (immr#6 [5] <> 0#1) | (imms#6[5] <> 0#1))) }> in
+    <{
+      {DecodeBitMasks n imms immr 0 datasize};
+      (* wmask: temp[980]; tmask: temp[990] *)
+      (* src *) temp[1000] := X[Xn];
+      (* bot *) temp[1001] := {ROR datasize <{Xtemp[1000]}> immr} & wmask;
+      {NTovar Xd} := Xtemp[1001] & tmask
+    }>.
+
   Definition bitfield :=
     let sf := n.[31] in
     let opc := n.[29,31] in
     let n_ := n.[22] in
+    let Rd := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imms := n.[10,16] in
+    let immr := n.[16,22] in
     match[bits] sf, opc, n_ with
     | "-  11  -" => UDF (* Unallocated. *)
     | "0  -   1" => UDF (* Unallocated. *)
     | "0  00  0" => ARM_SBFM_IMM (* SBFM - 32-bit variant on page C6-1170 *)
     | "0  01  0" => ARM_BFM_IMM (* BFM - 32-bit variant on page C6-804 *)
-    | "0  10  0" => ARM_UBFM_IMM (* UBFM - 32-bit variant on page C6-1351 *)
+    | "0  10  0" => ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 32-bit variant on page C6-1351 *)
     | "1  -   0" => UDF (* Unallocated. *)
     | "1  00  1" => ARM_SBFM_IMM (* SBFM - 64-bit variant on page C6-1170 *)
     | "1  01  1" => ARM_BFM_IMM (* BFM - 64-bit variant on page C6-804 *)
-    | "1  10  1" => ARM_UBFM_IMM (* UBFM - 64-bit variant on page C6-1351 *)
+    | "1  10  1" => ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 64-bit variant on page C6-1351 *)
     else UDF end.
 
   Definition extract :=
@@ -634,7 +851,7 @@ Section Decoder.
     | "1  00  1  0  -     " => ARM_EXTR (* EXTR - 64-bit variant on page C6-903 *)
     else UDF end.
 
-    Definition dp_imm :=
+  Definition dp_imm :=
     let op0:= n.[23,26] in
     match[bits] op0 with
   | "00x" => pc_rel (* PC-rel. addressing *)
@@ -870,11 +1087,32 @@ Section Decoder.
     | "1  1" => ARM_CBNZ (* CBNZ - 64-bit variant *)
     else UDF end.
 
+
+
+  (* C6-1341 *)
+  Definition arm_tbz2il (Xt imm14 b5 b40:N) :=
+    let pos := cbits b5 5 b40 in
+    let offset := <{ scast 64 (imm14#16 << 2#16) }> in <{
+      if  X[Xt][pos] = 0#1 then jmp PC + offset else nop end
+  }>.
+
+  (* C6-1340 *)
+  Definition arm_tbnz2il (Xt imm14 b5 b40:N) :=
+    let pos := cbits b5 5 b40 in
+    let offset := <{ scast 64 (imm14#16 << 2#16) }> in <{
+      if  X[Xt][pos] = 1#1 then jmp PC + offset else nop end
+  }>.
+
+
   Definition test_and_b :=
     let op := n.[24] in
+    let b5 := n.[31] in
+    let b40 := n.[19,24] in
+    let imm14 := n.[5,19] in
+    let Rt := n.[0,5] in
     match[bits] op with
-    | "0" => ARM_TBZ (* TBZ *)
-    | "1" => ARM_TBNZ (* TBNZ *)
+    | "0" => ARM_TBZ Rt imm14 b5 b40(* TBZ *)
+    | "1" => ARM_TBNZ Rt imm14 b5 b40 (* TBNZ *)
     else UDF end.
 
   Definition branch_exc :=
@@ -895,98 +1133,6 @@ Section Decoder.
     | "x01  1xxxxxxxxxxxxx  -    " => test_and_b (* Test and branch (immediate) on page C4-265 *)
     else UDF end.
 
-
-
-  (* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
-  (*  J1-7341
-      bits(64) sp = SP[];
-      stack_align_check = (SCTLR[].SA0 != '0')
-      if stack_align_check && sp != Align(sp, 16) then SPAlignmentFault()
-      return;
-    *)
-
-  Definition XtoVar n := let n := <{n#5}> in <{
-    ite (n = (0#5)) {Var R_X0} ( ite (n = (1#5)) {Var R_X1} ( ite (n = (2#5)) {Var R_X2} ( ite (n = (3#5)) {Var R_X3} (
-    ite (n = (4#5)) {Var R_X4} ( ite (n = (5#5)) {Var R_X5} ( ite (n = (6#5)) {Var R_X6} ( ite (n = (7#5)) {Var R_X7} (
-    ite (n = (8#5)) {Var R_X8} ( ite (n = (9#5)) {Var R_X9} ( ite (n = (10#5)) {Var R_X10} ( ite (n = (11#5)) {Var R_X11} (
-    ite (n = (12#5)) {Var R_X12} ( ite (n = (13#5)) {Var R_X13} ( ite (n = (14#5)) {Var R_X14} ( ite (n = (15#5)) {Var R_X15} (
-    ite (n = (16#5)) {Var R_X16} ( ite (n = (17#5)) {Var R_X17} ( ite (n = (18#5)) {Var R_X18} ( ite (n = (19#5)) {Var R_X19} (
-    ite (n = (20#5)) {Var R_X20} ( ite (n = (21#5)) {Var R_X21} ( ite (n = (22#5)) {Var R_X22} ( ite (n = (23#5)) {Var R_X23} (
-    ite (n = (24#5)) {Var R_X24} ( ite (n = (25#5)) {Var R_X25} ( ite (n = (26#5)) {Var R_X26} ( ite (n = (27#5)) {Var R_X27} (
-    ite (n = (28#5)) {Var R_X28} ( ite (n = (29#5)) {Var R_X29} ( ite (n = (30#5)) {Var R_X30} {Var R_SP}))))))))))))))))))))))))))))))
-  }>.
-
-  Definition NTovar n :=
-    match n with
-    | 0 => R_X0 | 1 => R_X1 | 2 => R_X2 | 3 => R_X3 | 4 => R_X4 | 5 => R_X5 | 6 => R_X6 | 7 => R_X7
-    | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
-    | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
-    | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
-    end.
-
-  Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
-  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
-  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
-  Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
-
-  Definition b2exp b := match b with true => Word 1 1 | false => Word 0 1 end.
-  Definition SP_read w := <{lcast w {Var R_SP} }>.
-  Definition SP_write e : stmt := <{R_SP := ucast 64 e }>.
-
-  Definition AllocationTagFromAddress e := <{e[59:56]}>. (* AArch64.AllocationTagFromAddress *)
-  Notation "'AllocTag' e" := (AllocationTagFromAddress e) (in custom PIL at level 65, no associativity).
-
-  Definition AlignPow2 e w pow2 := match pow2 with
-                                  | 1 =>      e
-                                  | 2 =>   <{ e >> (1 # w) << 1 # w }>
-                                  | 4 =>   <{ e >> (2 # w) << 2 # w }>
-                                  | 8 =>   <{ e >> (3 # w) << 3 # w }>
-                                  | 16 =>  <{ e >> (4 # w) << 4 # w }>
-                                  | 32 =>  <{ e >> (5 # w) << 5 # w }>
-                                  | 64 =>  <{ e >> (6 # w) << 6 # w }>
-                                  | 128 => <{ e >> (7 # w) << 7 # w }>
-                                  | 256 => <{ e >> (8 # w) << 8 # w }>
-                                  | _ =>      e  (* No good sentinel value *)
-                                  end.
-  Notation "'Align[' e , w , pow2 ']'" := (AlignPow2 e w pow2) (in custom PIL at level 65, no associativity).
-
-  (* Checks whether w-bit e is a multiple of alignment. *)
-  Definition AlignCheck e w alignment := <{ e % (alignment # w) = (0 # w) }>.
-  Notation "'Aligned[' e , w , alignment ']'" := (AlignCheck e w alignment) (in custom PIL at level 65, no associativity).
-  Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custom PIL at level 65, no associativity).
-  Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
-
-  (* Addr - 64bits; tag - 4bits *)
-  (* We do not model tag memory, this is a no-op if the address is aligned. *)
-  Definition MemTagWrite (addr tag:exp) := <{
-    if ! TagAligned[addr] then exn 0 else nop end
-    (* Assumption: address translation does not abort nor raise a debug exception *)
-  }>.
-  (* Addr - 64bits *)
-  (* We do not model tag memory, this just returns the tagging-disabled value. *)
-  Definition MemTagRead (addr:exp) := <{ 0 # 4 }>.
-
-
-  Definition CheckSPAlignment :=
-    <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
-
-  (* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
-  Definition AddressWithAllocationTag (Xt tag:exp) := <{
-    (Xt & (! 0x0F00_0000_0000_0000 # 64))
-  }>.
-
-  (* J1-7339 *)
-  Definition MemSingleWrite address size (val:exp) := <{
-    (* assert size in {1, 2, 4, 8, 16} omitted *)
-    if Aligned[ address, 64, size ] then nop else exn 0 end;
-    store[address, val, LittleE, size]
-  }>.
-
-  (* J1-7342 *)
-  Definition MemWrite address size val := MemSingleWrite address size val.
-
-  (* J1-7341 *)
-  Definition MemRead address size := <{load[address, LittleE, size]}>.
 
   (* We do not model tag memory, this is a no-op if the SP is aligned. *)
   Definition arm_stg2il (Rn Rt imm9:N) (writeback postindex:bool) :=
@@ -1281,9 +1427,6 @@ Section Decoder.
     | "11  11" => UDF (* Unallocated. - *)
     else UDF end.
 
-  Notation "'PC'" := (R_PC) (in custom PIL at level 65).
-  Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
-
   Definition arm_ldrsw2il Xt imm19 :=
     let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
     <{temp[1000]:= PC + offset;
@@ -1354,6 +1497,162 @@ Section Decoder.
       end end end
     }>.
 
+  Definition arm_stp2il_happy Xn Xt Xt2 imm7 scale wback postindex :=
+    let size := N.shiftl 8 scale in
+    let dbytes := N.shiftl 1 scale in
+    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := X[Xt];
+      temp[3000] := X[Xt2];
+      store[Xtemp[1000], Xtemp[2000], LittleE, dbytes];
+      store[Xtemp[1000]+dbytes#64, Xtemp[2000], LittleE, dbytes];
+      if {b2exp wback} then
+        if {b2exp postindex} then temp[1001] := Xtemp[1001] + offset else nop end;
+        {NTovar Xn} := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_stp2il Xn Xt Xt2 imm7 scale wback postindex :=
+    let size := N.shiftl 8 scale in
+    let dbytes := N.shiftl 1 scale in
+    let constraint_check := <{ {b2exp wback} & ((Xt#5 = Xn#5) | (Xt#5 = Xn#5)) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_stp2il_happy Xn Xt Xt2 imm7 scale wback postindex} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      {arm_stp2il_happy Xn Xt Xt2 imm7 scale wback postindex}; (* address in temp[1000] *)
+      if Xt#5 = Xn#5 then store[Xtemp[1000],unknown size, LittleE, dbytes] else nop;
+      if Xt2#5 = Xn#5 then store[Xtemp[1000]+dbytes#64,unknown size, LittleE, dbytes] else nop
+      end end end end end
+    }>.
+
+  Definition arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex :=
+    let size := N.shiftl 8 scale in
+    let dbytes := N.shiftl 1 scale in
+    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := load[Xtemp[1000],LittleE,dbytes];
+      temp[3000] := load[Xtemp[1000]+dbytes#64,LittleE,dbytes];
+      if rt_unknown then temp[2000] := unknown size; temp[3000] := unknown size else nop end;
+      {NTovar Xt} := ucast 64 Xtemp[2000];
+      {NTovar Xt2} := ucast 64 Xtemp[3000];
+      if wback then
+        if wb_unknown then
+          temp[1000] := unknown 64
+        else if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset
+              else nop
+              end
+        end;
+        {NTovar Xn} := Xtemp[1000]
+      else nop
+      end
+    }>.
+
+  (* C6-970; semantic deviation for some constraint conditions *)
+  Definition arm_ldp2il (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool) :=
+    let constraint1 := <{ {b2exp wback} & (Xt#5 = Xn#5 | Xt2#5 = Xn#5) & Xn#5 <> 31#5}> in
+    let constraint2 := <{ Xt#5 = Xt2#5 }> in <{
+      temp[1] := {b2exp wback}; (* wback *)
+      temp[2] := 0#1; (* rt_unknown *)
+      temp[3] := 0#1; (* wb_unknown *)
+      temp[4] := 0#1; (* NOP *)
+      temp[5] := 0#1; (* UNDEF *)
+      if constraint1 then
+        (* Constraint_WBSUPPRESS *)
+        if unknown 1 then temp[1] := 0#1 else
+        (* Constraint_UNKNOWN *)
+        if unknown 1 then temp[3] := 1#1 else
+        (* Constraint_UNDEF *)
+        if unknown 1 then temp[5] := 1#1 else
+        (* Constraint_NOP *)
+        temp[4] := 1#1 end end end
+      else nop end;
+      if constraint2 then
+        (* Constraint_UNKNOWN *)
+        if unknown 1 then temp[2] := 1#1 else
+        (* Constraint_UNDEF *)
+        if unknown 1 then temp[5] := 1#1 else
+        (* Constraint_NOP *)
+        temp[4] := 1#1 end end
+      else nop end;
+      if Xtemp[4] then nop else
+      if Xtemp[5] then havoc else
+        {arm_ldp2il_constr Xn Xt Xt2 imm7 scale <{Xtemp[1]}> <{Xtemp[3]}> <{Xtemp[2]}> postindex}
+      end end
+    }>.
+
+  Definition arm_stgp2il Xn Xt Xt2 imm7 wback postindex :=
+    let offset := <{scast 64 (imm7#7) << LOG2_TAG_GRANULE#64}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := X[Xt];
+      temp[3000] := X[Xt2];
+      store[Xtemp[1000],Xtemp[2000],LittleE,8];
+      store[Xtemp[1000]+8#64,Xtemp[3000],LittleE,8];
+      if {b2exp wback} then
+        if {b2exp postindex} then temp[1000]:=Xtemp[1000]+offset else nop end;
+        {NTovar Xn} := Xtemp[1000]
+      else nop end}>.
+
+  Definition arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex :=
+    let offset := <{scast 64 (imm7#7) << (2#64)}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := load[Xtemp[1000],LittleE,4];
+      temp[3000] := load[Xtemp[1000]+4#64,LittleE,4];
+      if rt_unknown then temp[2000] := unknown 32; temp[3000] := unknown 32 else nop end;
+      {NTovar Xt} := scast 64 Xtemp[2000];
+      {NTovar Xt2} := scast 64 Xtemp[3000];
+      if wback then
+        if wb_unknown then
+          temp[1000] := unknown 64
+        else if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset
+              else nop
+              end
+        end;
+        {NTovar Xn} := Xtemp[1000]
+      else nop
+      end
+    }>.
+
+  Definition arm_ldpsw2il (Xn Xt Xt2 imm7:N) (wback postindex:bool) :=
+    let constraint1 := <{ {b2exp wback} & (Xt#5 = Xn#5 | Xt2#5 = Xn#5) & Xn#5 <> 31#5}> in
+    let constraint2 := <{ Xt#5 = Xt2#5 }> in <{
+      temp[1] := {b2exp wback}; (* wback *)
+      temp[2] := 0#1; (* rt_unknown *)
+      temp[3] := 0#1; (* wb_unknown *)
+      temp[4] := 0#1; (* NOP *)
+      temp[5] := 0#1; (* UNDEF *)
+      if constraint1 then
+        (* Constraint_WBSUPPRESS *)
+        if unknown 1 then temp[1] := 0#1 else
+        (* Constraint_UNKNOWN *)
+        if unknown 1 then temp[3] := 1#1 else
+        (* Constraint_UNDEF *)
+        if unknown 1 then temp[5] := 1#1 else
+        (* Constraint_NOP *)
+        temp[4] := 1#1 end end end
+      else nop end;
+      if constraint2 then
+        (* Constraint_UNKNOWN *)
+        if unknown 1 then temp[2] := 1#1 else
+        (* Constraint_UNDEF *)
+        if unknown 1 then temp[5] := 1#1 else
+        (* Constraint_NOP *)
+        temp[4] := 1#1 end end
+      else nop end;
+      if Xtemp[4] then nop else
+      if Xtemp[5] then havoc else
+        {arm_ldpsw2il_constr Xn Xt Xt2 imm7 <{Xtemp[1]}> <{Xtemp[3]}> <{Xtemp[2]}> postindex}
+      end end
+    }>.
+
   Definition load_store_no_alloc_pair :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
@@ -1377,21 +1676,26 @@ Section Decoder.
     | "11  -  -" => UDF (* Unallocated *)
     else UDF end.
 
+
   Definition load_store_post_indx_pair :=
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let Rt2 := n.[10,15] in
+    let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STP (* STP - 32-bit variant on page C6-867 *)
-    | "00  0  1" => ARM_LDP (* LDP - 32-bit variant on page C6-664 *)
+    | "00  0  0" => ARM_STP Rn Rt Rt2 imm7 2 true true (* STP - 32-bit variant on page C6-867 *)
+    | "00  0  1" => ARM_LDP Rn Rt Rt2 imm7 2 true true (* LDP - 32-bit variant on page C6-664 *)
     | "00  1  0" => UDF (* STP (SIMD&FP) - 32-bit variant on page C7-1628 *)
     | "00  1  1" => UDF (* LDP (SIMD&FP) - 32-bit variant on page C7-1355 *)
-    | "01  0  0" => ARM_STGP (* Armv8.5 *)
-    | "01  0  1" => ARM_LDPSW (* LDPSW *)
+    | "01  0  0" => ARM_STGP Rn Rt Rt2 imm7 true true (* Armv8.5 *)
+    | "01  0  1" => ARM_LDPSW Rn Rt Rt2 imm7 true true (* LDPSW *)
     | "01  1  0" => UDF (* STP (SIMD&FP) - 64-bit variant on page C7-1628 *)
     | "01  1  1" => UDF (* LDP (SIMD&FP) - 64-bit variant on page C7-1355 *)
-    | "10  0  0" => ARM_STP (* STP - 64-bit variant on page C6-867 *)
-    | "10  0  1" => ARM_LDP (* LDP - 64-bit variant on page C6-664 *)
+    | "10  0  0" => ARM_STP Rn Rt Rt2 imm7 3 true true (* STP - 64-bit variant on page C6-867 *)
+    | "10  0  1" => ARM_LDP Rn Rt Rt2 imm7 3 true true (* LDP - 64-bit variant on page C6-664 *)
     | "10  1  0" => UDF (* STP (SIMD&FP) - 128-bit variant on page C7-1628 *)
     | "10  1  1" => UDF (* LDP (SIMD&FP) - 128-bit variant on page C7-1355 *)
     | "11  -  -" => UDF (* Unallocated *)
@@ -1401,17 +1705,21 @@ Section Decoder.
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let Rt2 := n.[10,15] in
+    let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STP (* STP - 32-bit variant on page C6-868 *)
-    | "00  0  1" => ARM_LDP (* LDP - 32-bit variant on page C6-665 *)
+    | "00  0  0" => ARM_STP Rn Rt Rt2 imm7 2 false false (* STP - 32-bit variant on page C6-868 *)
+    | "00  0  1" => ARM_LDP Rn Rt Rt2 imm7 2 false false (* LDP - 32-bit variant on page C6-665 *)
     | "00  1  0" => UDF (* STP (SIMD&FP) - 32-bit variant on page C7-1629 *)
     | "00  1  1" => UDF (* LDP (SIMD&FP) - 32-bit variant on page C7-1356 *)
-    | "01  0  0" => ARM_STGP (* Unallocated. *)
-    | "01  0  1" => ARM_LDPSW (* LDPSW *)
+    | "01  0  0" => ARM_STGP Rn Rt Rt2 imm7 false false (* Unallocated. *)
+    | "01  0  1" => ARM_LDPSW Rn Rt Rt2 imm7 false false (* LDPSW *)
     | "01  1  0" => UDF (* STP (SIMD&FP) - 64-bit variant on page C7-1629 *)
     | "01  1  1" => UDF (* LDP (SIMD&FP) - 64-bit variant on page C7-1356 *)
-    | "10  0  0" => ARM_STP (* STP - 64-bit variant on page C6-868 *)
-    | "10  0  1" => ARM_LDP (* LDP - 64-bit variant on page C6-665 *)
+    | "10  0  0" => ARM_STP Rn Rt Rt2 imm7 3 false false (* STP - 64-bit variant on page C6-868 *)
+    | "10  0  1" => ARM_LDP Rn Rt Rt2 imm7 3 false false (* LDP - 64-bit variant on page C6-665 *)
     | "10  1  0" => UDF (* STP (SIMD&FP) - 128-bit variant on page C7-1629 *)
     | "10  1  1" => UDF (* LDP (SIMD&FP) - 128-bit variant on page C7-1356 *)
     | "11  -  -" => UDF (* Unallocated. *)
@@ -1421,17 +1729,21 @@ Section Decoder.
     let opc := n.[30,32] in
     let v_ := n.[26] in
     let l_ := n.[22] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let Rt2 := n.[10,15] in
+    let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STP (* STP - 32-bit variant on page C6-867 *)
-    | "00  0  1" => ARM_LDP (* LDP - 32-bit variant on page C6-664 *)
+    | "00  0  0" => ARM_STP Rn Rt Rt2 imm7 2 true false (* STP - 32-bit variant on page C6-867 *)
+    | "00  0  1" => ARM_LDP Rn Rt Rt2 imm7 2 true false (* LDP - 32-bit variant on page C6-664 *)
     | "00  1  0" => UDF (* STP (SIMD&FP) - 32-bit variant on page C7-1628 *)
     | "00  1  1" => UDF (* LDP (SIMD&FP) - 32-bit variant on page C7-1355 *)
-    | "01  0  0" => ARM_STGP (* Unallocated. *)
-    | "01  0  1" => ARM_LDPSW (* LDPSW *)
+    | "01  0  0" => ARM_STGP Rn Rt Rt2 imm7 true false (* Unallocated. *)
+    | "01  0  1" => ARM_LDPSW Rn Rt Rt2 imm7 true false (* LDPSW *)
     | "01  1  0" => UDF (* STP (SIMD&FP) - 64-bit variant on page C7-1628 *)
     | "01  1  1" => UDF (* LDP (SIMD&FP) - 64-bit variant on page C7-1355 *)
-    | "10  0  0" => ARM_STP (* STP - 64-bit variant on page C6-867 *)
-    | "10  0  1" => ARM_LDP (* LDP - 64-bit variant on page C6-664 *)
+    | "10  0  0" => ARM_STP Rn Rt Rt2 imm7 3 true false (* STP - 64-bit variant on page C6-867 *)
+    | "10  0  1" => ARM_LDP Rn Rt Rt2 imm7 3 true false (* LDP - 64-bit variant on page C6-664 *)
     | "10  1  0" => UDF (* STP (SIMD&FP) - 128-bit variant on page C7-1628 *)
     | "10  1  1" => UDF (* LDP (SIMD&FP) - 128-bit variant on page C7-1355 *)
     | "11  -  -" => UDF (* Unallocated *)
@@ -1793,12 +2105,51 @@ Section Decoder.
     | "11  0  1  1  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire and release variant on page C6-945 *)
     else UDF end.
 
+
+  (* This cannot be easily embedded in PIL because we want to
+     scast to a variable length. *)
+  (* exttype - 3bit encoding of the type of extension. See J1-7387 and 7388 *)
+  (* Assign the extended value ro regt *)
+  Definition ExtendReg regt (w regn exttype shift:N) :=
+    let exttype := <{exttype#3}> in
+    let signed  := <{exttype [2]}> in
+    <{if 4#3 < (shift#3) then exn 0 else nop end;
+      temp[200] := lcast w X[regn];
+      if exttype = 0#3 then (* UXTB *) temp[201] := ucast 8  Xtemp[200] else
+      if exttype = 1#3 then (* UXTH *) temp[201] := ucast 16 Xtemp[200] else
+      if exttype = 2#3 then (* UXTW *) temp[201] := ucast 32 Xtemp[200] else
+      if exttype = 3#3 then (* UXTX *) temp[201] := ucast 64 Xtemp[200] else
+      if exttype = 4#3 then (* SXTB *) temp[201] := scast 8  Xtemp[200] else
+      if exttype = 5#3 then (* SXTH *) temp[201] := scast 16 Xtemp[200] else
+      if exttype = 6#3 then (* SXTW *) temp[201] := scast 32 Xtemp[200] else
+                            (* SXTX *) temp[201] := scast 64 Xtemp[200]
+      end end end end end end end;
+      regt := Xtemp[201]
+    }>.
+
+  Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
+    let scale := Word size 64 in
+    let shift := match S with | 0 => 0 | _ => size end in
+    let datasize := N.shiftl 8 size in
+    let dbytes := N.shiftl 1 size in
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend shift in <{
+      calc_offset ;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      temp[2000] := load[Xtemp[1000],LittleE,dbytes];
+      {NTovar Xt} := ucast 64 Xtemp[2000]
+    }>.
+
   (*register offset*)
   Definition load_store_reg_off  :=
     let opc := n.[22,24] in
     let size := n.[30,32] in
     let v_ := n.[26] in
     let option_ := n.[13,16] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let Rm := n.[16,21] in
+    let S := n.[12] in
     match[bits] size, v_, opc, option_ with
     | "-   -  -   x0x  " => UDF (* Unallocated. *)
     | "x1  1  1x  -    " => UDF (* Unallocated. *)
@@ -1825,12 +2176,12 @@ Section Decoder.
     | "1x  0  11  -    " => UDF (* Unallocated. *)
     | "1x  1  1x  -    " => UDF (* Unallocated. *)
     | "10  0  00  -    " => ARM_STR_REG (* STR (register) - 32-bit variant on page C6-873 *)
-    | "10  0  01  -    " => ARM_LDR_REG (* LDR (register) - 32-bit variant on page C6-675 *)
+    | "10  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 2 S  (* LDR (register) - 32-bit variant on page C6-675 *)
     | "10  0  10  -    " => ARM_LDRSW_REG (* LDRSW (register) *)
     | "10  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "10  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     | "11  0  00  -    " => ARM_STR_REG (* STR (register) - 64-bit variant on page C6-873 *)
-    | "11  0  01  -    " => ARM_LDR_REG (* LDR (register) - 64-bit variant on page C6-675 *)
+    | "11  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 3 S (* LDR (register) - 64-bit variant on page C6-675 *)
     | "11  0  10  -    " => ARM_PRFM_REG (* PRFM (register) *)
     | "11  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "11  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
@@ -1856,6 +2207,9 @@ Section Decoder.
     let opc := n.[22,24] in
     let size := n.[30,32] in
     let v_ := n.[26] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
     | "00  0  00" => ARM_STRB_IMM (* STRB (immediate) *)
@@ -1881,7 +2235,7 @@ Section Decoder.
     | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1801 *)
     | "11  0  00" => ARM_STR_IMM (* STR (immediate) - 64-bit variant on page C6-1240 *)
     | "11  0  01" => ARM_LDR_IMM (* LDR (immediate) - 64-bit variant on page C6-977 *)
-    | "11  0  10" => ARM_PRFM_IMM (* PRFM (immediate) *)
+    | "11  0  10" => ARM_PRFM_IMM Rn Rt imm9 (* PRFM (immediate) *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-2115 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1801 *)
     else UDF end.
@@ -2233,8 +2587,6 @@ Section Decoder.
     | "1  00  101  1" => ARM_UMSUBL (* UMSUBL *)
     | "1  00  110  0" => ARM_UMULH (* UMULH *)
     else UDF end.
-
-
 
   Definition dp_reg :=
     let op0 := n.[30] in
