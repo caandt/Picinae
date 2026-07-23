@@ -32,11 +32,14 @@ Definition w32 := <{ 0 # 32 }>.
 Notation "'load' '[' addr ',' en ',' w ']'" := (Load (Var V_MEM64) addr en w)
   (in custom PIL at level 2, addr at level 99, en at level 0, w at level 0).
 
-Definition f := <{ load [ w32 , LittleE , 4 ] }>.
+Notation "'load' '[' addr ',' w ']'" := (Load (Var V_MEM64) addr LittleE w)
+  (in custom PIL at level 2, addr at level 99, w at level 0).
 
 Notation "'store' '[' addr ',' val ',' en ',' w ']'" := (Move V_MEM64 (Store (Var V_MEM64) addr val en w))
   (in custom PIL at level 2, addr at level 99, val at level 99, en at level 0, w at level 0).
 
+Notation "'store' '[' addr ',' val ',' w ']'" := (Move V_MEM64 (Store (Var V_MEM64) addr val LittleE w))
+  (in custom PIL at level 2, addr at level 99, val at level 99, w at level 0).
 
 (* --- binary ops: rename OP_PLUS/OP_MINUS/OP_LSHIFT/OP_RSHIFT to match your binop_typ --- *)
 Notation "x + y"  := (BinOp OP_PLUS   x y) (in custom PIL at level 50, y at level 49, left associativity).

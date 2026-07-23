@@ -116,6 +116,7 @@ Import Notation.
     | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
     end.
 
+  Notation "'var[' n ']'" := (NTovar n) (in custom PIL at level 65, no associativity).
   Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
   Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
   Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
@@ -456,36 +457,36 @@ Variant inst :=
   | ARM_LDPSW (Xn Xt Xt2 imm7:N) (wback postindex:bool)
   | ARM_STGP (Xn Xt Xt2 imm7:N) (wback postindex:bool)
   (*load/store register (unscaled immediate)*)
-  | ARM_STURB
-  | ARM_LDURB
-  | ARM_LDURSB
-  | ARM_STURH
-  | ARM_LDURH
-  | ARM_LDURSH
-  | ARM_STUR
-  | ARM_LDUR
-  | ARM_LDURSW
+  | ARM_STURB (Xn Xt imm9:N)
+  | ARM_LDURB (Xn Xt imm9:N)
+  | ARM_LDURSB (Xn Xt imm9 size:N)
+  | ARM_STURH (Xn Xt imm9:N)
+  | ARM_LDURH (Xn Xt imm9:N)
+  | ARM_LDURSH (Xn Xt imm9 size:N)
+  | ARM_STUR (Xn Xt imm9 size:N)
+  | ARM_LDUR (Xn Xt imm9 size:N)
+  | ARM_LDURSW (Xn Xt imm9:N)
   | ARM_PFRM
   (*imm pre/post-indexed*)
-  | ARM_STRB_IMM
-  | ARM_LDRB_IMM
-  | ARM_LDRSB_IMM
-  | ARM_LDR_IMM
-  | ARM_STRH_IMM
-  | ARM_LDRH_IMM
-  | ARM_LDRSH_IMM
-  | ARM_STR_IMM
-  | ARM_LDRSW_IMM
+  | ARM_STRB_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
+  | ARM_LDRB_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
+  | ARM_LDRSB_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
+  | ARM_LDR_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
+  | ARM_STRH_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
+  | ARM_LDRH_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
+  | ARM_LDRSH_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
+  | ARM_STR_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
+  | ARM_LDRSW_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
   (*register unprivileged*)
-  | ARM_STTRB
-  | ARM_LDTRB
-  | ARM_LDTRSB
-  | ARM_STTRH
-  | ARM_LDTRH
-  | ARM_LDTRSH
-  | ARM_STTR
-  | ARM_LDTR
-  | ARM_LDTRSW
+  | ARM_STTRB (Rn Rt imm9:N)
+  | ARM_LDTRB (Rn Rt imm9:N)
+  | ARM_LDTRSB (Rn Rt imm9 size:N)
+  | ARM_STTRH (Rn Rt imm9:N)
+  | ARM_LDTRH (Rn Rt imm9:N)
+  | ARM_LDTRSH (Rn Rt imm9 size:N)
+  | ARM_STTR (Rn Rt imm9 size:N)
+  | ARM_LDTR (Rn Rt imm9 size:N)
+  | ARM_LDTRSW (Rn Rt imm9:N)
   (*atomic memory ops*)
   | ARM_LDADDB
   | ARM_LDADDAB
@@ -551,19 +552,18 @@ Variant inst :=
   | ARM_SWP
   (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
   (*pac*)
-  | ARM_LDRAA_OFFSET
-  | ARM_LDRAA_PRE
+  | ARM_LDRAA (Xn Xt S imm9:N) (wback:bool)
   (*load/store register*)
-  | ARM_STRB_REG
-  | ARM_LDRB_REG
-  | ARM_LDRSB_REG
-  | ARM_STRH_REG
+  | ARM_STRB_REG (Xn Xm Xt extend:N)
+  | ARM_LDRB_REG (Xn Xm Xt extend:N)
+  | ARM_LDRSB_REG (Xn Xm Xt extend size:N)
+  | ARM_STRH_REG (Xn Xm Xt extend S:N)
   | ARM_LDRH_REG
-  | ARM_LDRSH_REG
-  | ARM_STR_REG
+  | ARM_LDRSH_REG (Xn Xm Xt extend size S:N)
+  | ARM_STR_REG (Xn Xm Xt extend size S:N)
   | ARM_LDR_REG (Xn Xm Xt extend size S:N)
-  | ARM_LDRSW_REG
-  | ARM_PRFM_REG
+  | ARM_LDRSW_REG (Xn Xm Xt extend S:N)
+  | ARM_PRFM_REG (Xn Xm Xt extend S:N)
   (*TODO: There are way more load instructions than written out here, add to this section plz*)
 (*Data Processing*)
   (*2 src*)
@@ -1550,19 +1550,19 @@ Section Decoder.
     | "11  11" => UDF (* Unallocated. - *)
     else UDF end.
 
-  Definition arm_ldrsw2il Xt imm19 :=
+  Definition arm_ldrsw_lit2il Xt imm19 :=
     let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
     <{temp[1000]:= PC + offset;
     {NTovar Xt} := scast 64 {MemRead (Xtemp[1000]) 4}}>.
 
   (* C6-979 *)
-  Definition arm_ldr2il Xt imm19 size :=
+  Definition arm_ldr_lit2il Xt imm19 size :=
     let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
     <{temp[1000]:= PC + offset;
     {NTovar Xt} := ucast 64 {MemRead (Xtemp[1000]) size}}>.
 
   (* C6-1138; The effects of PRFM is implementation defined. *)
-  Definition arm_prfm2il (Xt imm19:N) := <{havoc}>.
+  Definition arm_prfm_lit2il (Xt imm19:N) := <{havoc}>.
 
   (* C4-280 *)
   Definition load_reg_literal :=
@@ -1631,6 +1631,7 @@ Section Decoder.
       store[Xtemp[1000], Xtemp[2000], LittleE, dbytes];
       store[Xtemp[1000]+dbytes#64, Xtemp[2000], LittleE, dbytes];
       if {b2exp wback} then
+        temp[1001] := Xtemp[1000];
         if {b2exp postindex} then temp[1001] := Xtemp[1001] + offset else nop end;
         {NTovar Xn} := Xtemp[1001]
       else
@@ -1872,97 +1873,567 @@ Section Decoder.
     | "11  -  -" => UDF (* Unallocated *)
     else UDF end.
 
+  Definition arm_sturb2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      store[Xtemp[1000],X[Xt],1]
+    }>.
+
+  Definition arm_sturh2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      store[Xtemp[1000],X[Xt],2]
+    }>.
+
+  Definition arm_stur2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in
+    let bytes := N.shiftr size 3 in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      store[Xtemp[1000],X[Xt],bytes]
+    }>.
+
+  Definition arm_ldurb2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 load[Xtemp[1000],1]
+    }>.
+
+  Definition arm_ldursb2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1])
+    }>.
+
+  Definition arm_ldurh2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 load[Xtemp[1000],2]
+    }>.
+
+  Definition arm_ldursh2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2])
+    }>.
+
+  Definition arm_ldur2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in
+    let bytes := N.shiftr size 3 in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 load[Xtemp[1000],bytes]
+    }>.
+
+  Definition arm_ldursw2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := scast 64 load[Xtemp[1000],4]
+    }>.
+
+  Definition arm_prfum2il (Rn Rt imm9:N) := havoc.
+
   (*unscaled immediate*)
   Definition load_store_reg_imm_u :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STURB (* STURB *)
-    | "00  0  01" => ARM_LDURB (* LDURB *)
-    | "00  0  10" => ARM_LDURSB (* LDURSB - 64-bit variant on page C6-743 *)
-    | "00  0  11" => ARM_LDURSB (* LDURSB - 32-bit variant on page C6-743 *)
+    | "00  0  00" => ARM_STURB Rn Rt imm9 (* STURB *)
+    | "00  0  01" => ARM_LDURB Rn Rt imm9 (* LDURB *)
+    | "00  0  10" => ARM_LDURSB Rn Rt imm9 32 (* LDURSB - 64-bit variant on page C6-743 *)
+    | "00  0  11" => ARM_LDURSB Rn Rt imm9 64 (* LDURSB - 32-bit variant on page C6-743 *)
     | "00  1  00" => UDF (* STUR (SIMD&FP) - 8-bit variant on page C7-1638 *)
     | "00  1  01" => UDF (* LDUR (SIMD&FP) - 8-bit variant on page C7-1367 *)
     | "00  1  10" => UDF (* STUR (SIMD&FP) - 128-bit variant on page C7-1638 *)
     | "00  1  11" => UDF (* LDUR (SIMD&FP) - 128-bit variant on page C7-1367 *)
-    | "01  0  00" => ARM_STURH (* STURH *)
-    | "01  0  01" => ARM_LDURH (* LDURH *)
-    | "01  0  10" => ARM_LDURSH (* LDURSH - 64-bit variant on page C6-745 *)
-    | "01  0  11" => ARM_LDURSH (* LDURSH - 32-bit variant on page C6-745 *)
+    | "01  0  00" => ARM_STURH Rn Rt imm9(* STURH *)
+    | "01  0  01" => ARM_LDURH Rn Rt imm9 (* LDURH *)
+    | "01  0  10" => ARM_LDURSH Rn Rt imm9 64 (* LDURSH - 64-bit variant on page C6-745 *)
+    | "01  0  11" => ARM_LDURSH Rn Rt imm9 32 (* LDURSH - 32-bit variant on page C6-745 *)
     | "01  1  00" => UDF (* STUR (SIMD&FP) - 16-bit variant on page C7-1638 *)
     | "01  1  01" => UDF (* LDUR (SIMD&FP) - 16-bit variant on page C7-1367 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STUR (* STUR - 32-bit variant on page C6-917 *)
-    | "10  0  01" => ARM_LDUR (* LDUR - 32-bit variant on page C6-739 *)
-    | "10  0  10" => ARM_LDURSW (* LDURSW *)
+    | "10  0  00" => ARM_STUR Rn Rt imm9 32 (* STUR - 32-bit variant on page C6-917 *)
+    | "10  0  01" => ARM_LDUR Rn Rt imm9 32 (* LDUR - 32-bit variant on page C6-739 *)
+    | "10  0  10" => ARM_LDURSW Rn Rt imm9 (* LDURSW *)
     | "10  1  00" => UDF (* STUR (SIMD&FP) - 32-bit variant on page C7-1638 *)
     | "10  1  01" => UDF (* LDUR (SIMD&FP) - 32-bit variant on page C7-1367 *)
-    | "11  0  00" => ARM_STUR (* STUR - 64-bit variant on page C6-917 *)
-    | "11  0  01" => ARM_LDUR (* LDUR - 64-bit variant on page C6-739 *)
-    | "11  0  10" => ARM_PRFM 0 0 0 (* PRFM (unscaled offset) TODO: 0s are a temp placeholder. *)
+    | "11  0  00" => ARM_STUR Rn Rt imm9 64 (* STUR - 64-bit variant on page C6-917 *)
+    | "11  0  01" => ARM_LDUR Rn Rt imm9 64 (* LDUR - 64-bit variant on page C6-739 *)
+    | "11  0  10" => ARM_PRFM Rn Rt imm9 (* PRFM (unscaled offset) TODO: 0s are a temp placeholder. *)
     | "11  1  00" => UDF (* STUR (SIMD&FP) - 64-bit variant on page C7-1638 *)
     | "11  1  01" => UDF (* LDUR (SIMD&FP) - 64-bit variant on page C7-1367 *)
     else UDF end.
+
+  Definition arm_strb_imm2il_constr (Xn Xt imm912:N) (signed wback postindex rtunknown:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let rtunknown := b2exp rtunknown in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := X[Xt];
+      if rtunknown then temp[2000] := ucast 64 unknown 8 else nop end;
+      store[Xtemp[1000],Xtemp[2000],1];
+      if wback then
+        temp[1001] := Xtemp[1000];
+        if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_strb_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_strb_imm2il_constr Xn Xt imm912 signed wback' postindex false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      {arm_strb_imm2il_constr Xn Xt imm912 signed wback' postindex true}
+      end end end
+    }>.
+
+  Definition arm_strh_imm2il_constr (Xn Xt imm912:N) (signed wback postindex rtunknown:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let rtunknown := b2exp rtunknown in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := X[Xt];
+      if rtunknown then temp[2000] := ucast 64 unknown 16 else nop end;
+      store[Xtemp[1000],Xtemp[2000],2];
+      if wback then
+        temp[1001] := Xtemp[1000];
+        if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_strh_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_strh_imm2il_constr Xn Xt imm912 signed wback' postindex false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      {arm_strh_imm2il_constr Xn Xt imm912 signed wback' postindex true}
+      end end end
+    }>.
+
+
+  Definition arm_str_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex rtunknown:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let rtunknown := b2exp rtunknown in
+    let wback := b2exp wback in
+    let bytes := N.shiftr size 3 in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      temp[2000] := X[Xt];
+      if rtunknown then temp[2000] := ucast 64 unknown size else nop end;
+      store[Xtemp[1000],Xtemp[2000],bytes];
+      if wback then
+        temp[1001] := Xtemp[1000];
+        if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_str_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_str_imm2il_constr Xn Xt imm912 size signed wback' postindex false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      {arm_str_imm2il_constr Xn Xt imm912 size signed wback' postindex true}
+      end end end
+    }>.
+
+  Definition arm_ldrb_imm2il_constr (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      var[Xt] := ucast 64 load[Xtemp[1000],1];
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else
+        if postindex then temp[1001] := Xtemp[1001] + offset
+        else nop end end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldrb_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldrb_imm2il_constr Xn Xt imm912 signed wback' postindex false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldrb_imm2il_constr Xn Xt imm912 signed wback' postindex true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldrb_imm2il_constr Xn Xt imm912 signed wback' postindex false true}
+      end end end end
+    }>.
+
+  Definition arm_ldrh_imm2il_constr (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      var[Xt] := ucast 64 load[Xtemp[1000],2];
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else
+        if postindex then temp[1001] := Xtemp[1001] + offset
+        else nop end end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldrh_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldrh_imm2il_constr Xn Xt imm912 signed wback' postindex false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldrh_imm2il_constr Xn Xt imm912 signed wback' postindex true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldrh_imm2il_constr Xn Xt imm912 signed wback' postindex false true}
+      end end end end
+    }>.
+
+  Definition arm_ldr_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let bytes := N.shiftr size 3 in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      var[Xt] := ucast 64 load[Xtemp[1000],bytes];
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else
+        if postindex then temp[1001] := Xtemp[1001] + offset
+        else nop end end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldr_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldr_imm2il_constr Xn Xt imm912 size signed wback' postindex false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldr_imm2il_constr Xn Xt imm912 size signed wback' postindex true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldr_imm2il_constr Xn Xt imm912 size signed wback' postindex false true}
+      end end end end
+    }>.
+
+  Definition arm_ldrsb_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1]);
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else
+        if postindex then temp[1001] := Xtemp[1001] + offset
+        else nop end end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldrsb_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback' postindex false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback' postindex true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback' postindex false true}
+      end end end end
+    }>.
+
+  Definition arm_ldrsh_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2]);
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else
+        if postindex then temp[1001] := Xtemp[1001] + offset
+        else nop end end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldrsh_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback' postindex false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback' postindex true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback' postindex false true}
+      end end end end
+    }>.
+
+  Definition arm_ldrsw_imm2il_constr (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool) :=
+    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    let postindex := b2exp postindex in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
+      var[Xt] := scast 64 load[Xtemp[1000],4];
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else
+        if postindex then temp[1001] := Xtemp[1001] + offset
+        else nop end end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldrsw_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback' postindex false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback' postindex true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback' postindex false true}
+      end end end end
+    }>.
 
   (*post-indexed imm*)
   Definition load_store_reg_imm_poi :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STRB_IMM (* STRB (immediate) *)
-    | "00  0  01" => ARM_LDRB_IMM (* LDRB (immediate) *)
-    | "00  0  10" => ARM_LDRSB_IMM (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
-    | "00  0  11" => ARM_LDRSB_IMM (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
+    | "00  0  00" => ARM_STRB_IMM Rn Rt imm9 true true true (* STRB (immediate) *)
+    | "00  0  01" => ARM_LDRB_IMM Rn Rt imm9 true true true (* LDRB (immediate) *)
+    | "00  0  10" => ARM_LDRSB_IMM Rn Rt imm9 64 true true true (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
+    | "00  0  11" => ARM_LDRSB_IMM Rn Rt imm9 32 true true true (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
     | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-1631 *)
     | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1358 *)
     | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-1631 *)
     | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1358 *)
-    | "01  0  00" => ARM_STRH_IMM (* STRH (immediate) *)
-    | "01  0  01" => ARM_LDRH_IMM (* LDRH (immediate) *)
-    | "01  0  10" => ARM_LDRSH_IMM (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
-    | "01  0  11" => ARM_LDRSH_IMM (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
+    | "01  0  00" => ARM_STRH_IMM Rn Rt imm9 true true true (* STRH (immediate) *)
+    | "01  0  01" => ARM_LDRH_IMM Rn Rt imm9 true true true (* LDRH (immediate) *)
+    | "01  0  10" => ARM_LDRSH_IMM Rn Rt imm9 64 true true true (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
+    | "01  0  11" => ARM_LDRSH_IMM Rn Rt imm9 32 true true true (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
     | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-1631 *)
     | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1358 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STR_IMM (* STR (immediate) - 32-bit variant on page C6-870 *)
-    | "10  0  01" => ARM_LDR_IMM (* LDR (immediate) - 32-bit variant on page C6-670 *)
-    | "10  0  10" => ARM_LDRSW_IMM (* LDRSW (immediate) *)
+    | "10  0  00" => ARM_STR_IMM Rn Rt imm9 32 true true true (* STR (immediate) - 32-bit variant on page C6-870 *)
+    | "10  0  01" => ARM_LDR_IMM Rn Rt imm9 32 true true true (* LDR (immediate) - 32-bit variant on page C6-670 *)
+    | "10  0  10" => ARM_LDRSW_IMM Rn Rt imm9 true true true (* LDRSW (immediate) *)
     | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-1631 *)
     | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1358 *)
-    | "11  0  00" => ARM_STR_IMM (* STR (immediate) - 64-bit variant on page C6-870 *)
-    | "11  0  01" => ARM_LDR_IMM (* LDR (immediate) - 64-bit variant on page C6-670 *)
+    | "11  0  00" => ARM_STR_IMM Rn Rt imm9 64 true true true (* STR (immediate) - 64-bit variant on page C6-870 *)
+    | "11  0  01" => ARM_LDR_IMM Rn Rt imm9 64 true true true (* LDR (immediate) - 64-bit variant on page C6-670 *)
     | "11  0  10" => UDF (* Unallocated. *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-1631 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-135 *)
     else UDF end.
 
-  (*unprivileged*)
+  Definition arm_sttrb2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      store[Xtemp[1000],X[Xt],1]
+    }>.
+
+  Definition arm_sttrh2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      store[Xtemp[1000],X[Xt],2]
+    }>.
+
+  Definition arm_sttr2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in
+    let bytes := N.shiftr size 3 in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      store[Xtemp[1000],X[Xt],bytes]
+    }>.
+
+  Definition arm_ldtrb2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 load[Xtemp[1000],1]
+    }>.
+
+  Definition arm_ldtrh2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 load[Xtemp[1000],2]
+    }>.
+
+  Definition arm_ldtrsb2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1])
+    }>.
+
+  Definition arm_ldtrsh2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2])
+    }>.
+
+  Definition arm_ldtrsw2il (Xn Xt imm9:N) :=
+    let offset := <{scast 64 imm9#9}> in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := scast 64 load[Xtemp[1000],4]
+    }>.
+
+  Definition arm_ldtr2il (Xn Xt imm9 size:N) :=
+    let offset := <{scast 64 imm9#9}> in
+    let bytes := N.shiftr size 3 in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + offset);
+      var[Xt] := ucast 64 load[Xtemp[1000],bytes]
+    }>.
+
+
+  (*unprivileged; not encoding privilege checks. E.g., for STTRB:
+
+    unpriv_at_el1 = PSTATE.EL == EL1 && !(EL2Enabled() && HaveNVExt() && HCR_EL2.<NV,NV1> == '11');
+    unpriv_at_el2 = PSTATE.EL == EL2 && HaveVirtHostExt() && HCR_EL2.<E2H,TGE> == '11';
+
+    user_access_override = HaveUAOExt() && PSTATE.UAO == '1';
+    if !user_access_override && (unpriv_at_el1 || unpriv_at_el2) then
+    acctype = AccType_UNPRIV;
+    else
+    acctype = AccType_NORMAL;
+  *)
   Definition load_store_reg_unpriv :=
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "-   1  - " => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STTRB (* STTRB *)
-    | "00  0  01" => ARM_LDTRB (* LDTRB *)
-    | "00  0  10" => ARM_LDTRSB (* LDTRSB - 64-bit variant on page C6-722 *)
-    | "00  0  11" => ARM_LDTRSB (* LDTRSB - 32-bit variant on page C6-722 *)
-    | "01  0  00" => ARM_STTRH (* STTRH *)
-    | "01  0  01" => ARM_LDTRH (* LDTRH *)
-    | "01  0  10" => ARM_LDTRSH (* LDTRSH - 64-bit variant on page C6-724 *)
-    | "01  0  11" => ARM_LDTRSH (* LDTRSH - 32-bit variant on page C6-724 *)
+    | "00  0  00" => ARM_STTRB Rn Rt imm9 (* STTRB *)
+    | "00  0  01" => ARM_LDTRB Rn Rt imm9 (* LDTRB *)
+    | "00  0  10" => ARM_LDTRSB Rn Rt imm9 64 (* LDTRSB - 64-bit variant on page C6-722 *)
+    | "00  0  11" => ARM_LDTRSB Rn Rt imm9 32 (* LDTRSB - 32-bit variant on page C6-722 *)
+    | "01  0  00" => ARM_STTRH Rn Rt imm9 (* STTRH *)
+    | "01  0  01" => ARM_LDTRH Rn Rt imm9 (* LDTRH *)
+    | "01  0  10" => ARM_LDTRSH Rn Rt imm9 64 (* LDTRSH - 64-bit variant on page C6-724 *)
+    | "01  0  11" => ARM_LDTRSH Rn Rt imm9 32 (* LDTRSH - 32-bit variant on page C6-724 *)
     | "1x  0  11" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STTR (* STTR - 32-bit variant on page C6-901 *)
-    | "10  0  01" => ARM_LDTR (* LDTR - 32-bit variant on page C6-718 *)
-    | "10  0  10" => ARM_LDTRSW (* LDTRSW *)
-    | "11  0  00" => ARM_STTR (* STTR - 64-bit variant on page C6-901 *)
-    | "11  0  01" => ARM_LDTR (* LDTR - 64-bit variant on page C6-718 *)
+    | "10  0  00" => ARM_STTR Rn Rt imm9 32 (* STTR - 32-bit variant on page C6-901 *)
+    | "10  0  01" => ARM_LDTR Rn Rt imm9 32 (* LDTR - 32-bit variant on page C6-718 *)
+    | "10  0  10" => ARM_LDTRSW Rn Rt imm9 (* LDTRSW *)
+    | "11  0  00" => ARM_STTR Rn Rt imm9 64 (* STTR - 64-bit variant on page C6-901 *)
+    | "11  0  01" => ARM_LDTR Rn Rt imm9 64 (* LDTR - 64-bit variant on page C6-718 *)
     | "11  0  10" => UDF (* Unallocated. *)
     else UDF end.
 
@@ -1971,31 +2442,34 @@ Section Decoder.
     let size := n.[30,32] in
     let v_ := n.[26] in
     let opc := n.[22,24] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STRB_IMM (* STRB (immediate) *)
-    | "00  0  01" => ARM_LDRB_IMM (* LDRB (immediate) *)
-    | "00  0  10" => ARM_LDRSB_IMM (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
-    | "00  0  11" => ARM_LDRSB_IMM (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
+    | "00  0  00" => ARM_STRB_IMM Rn Rt imm9 true true false (* STRB (immediate) *)
+    | "00  0  01" => ARM_LDRB_IMM Rn Rt imm9 true true false (* LDRB (immediate) *)
+    | "00  0  10" => ARM_LDRSB_IMM Rn Rt imm9 64 true true false (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
+    | "00  0  11" => ARM_LDRSB_IMM Rn Rt imm9 32 true true false (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
     | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-1631 *)
     | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1358 *)
     | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-1632 *)
     | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1359 *)
-    | "01  0  00" => ARM_STRH_IMM (* STRH (immediate) *)
-    | "01  0  01" => ARM_LDRH_IMM (* LDRH (immediate) *)
-    | "01  0  10" => ARM_LDRSH_IMM (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
-    | "01  0  11" => ARM_LDRSH_IMM (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
+    | "01  0  00" => ARM_STRH_IMM Rn Rt imm9 true true false (* STRH (immediate) *)
+    | "01  0  01" => ARM_LDRH_IMM Rn Rt imm9 true true false (* LDRH (immediate) *)
+    | "01  0  10" => ARM_LDRSH_IMM Rn Rt imm9 64 true true false (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
+    | "01  0  11" => ARM_LDRSH_IMM Rn Rt imm9 32 true true false (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
     | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-1632 *)
     | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1359 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STR_IMM (* STR (immediate) - 32-bit variant on page C6-870 *)
-    | "10  0  01" => ARM_LDR_IMM (* LDR (immediate) - 32-bit variant on page C6-670 *)
-    | "10  0  10" => ARM_LDRSW_IMM (* LDRSW (immediate) *)
+    | "10  0  00" => ARM_STR_IMM Rn Rt imm9 32 true true false (* STR (immediate) - 32-bit variant on page C6-870 *)
+    | "10  0  01" => ARM_LDR_IMM Rn Rt imm9 32 true true false (* LDR (immediate) - 32-bit variant on page C6-670 *)
+    | "10  0  10" => ARM_LDRSW_IMM Rn Rt imm9 true true false (* LDRSW (immediate) *)
     | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-1632 *)
     | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1359 *)
-    | "11  0  00" => ARM_STR_IMM (* STR (immediate) - 64-bit variant on page C6-870 *)
-    | "11  0  01" => ARM_LDR_IMM (* LDR (immediate) - 64-bit variant on page C6-670 *)
+    | "11  0  00" => ARM_STR_IMM Rn Rt imm9 64 true true false (* STR (immediate) - 64-bit variant on page C6-870 *)
+    | "11  0  01" => ARM_LDR_IMM Rn Rt imm9 64 true true false (* LDR (immediate) - 64-bit variant on page C6-670 *)
     | "11  0  10" => UDF (* Unallocated. *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-1632 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1359 *)
@@ -2253,12 +2727,99 @@ Section Decoder.
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
     let dbytes := N.shiftl 1 size in
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend shift in <{
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend shift in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset ;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      store[Xtemp[1000],X[Xt],dbytes]
+    }>.
+
+  Definition arm_str_reg2il (Xn Xm Xt extend size S:N) :=
+    let scale := Word size 64 in
+    let shift := match S with | 0 => 0 | _ => size end in
+    let datasize := N.shiftl 8 size in
+    let dbytes := N.shiftl 1 size in
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend shift in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
       calc_offset ;
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       (temp[1000] := Xtemp[1000] + Xtemp[9000]);
       temp[2000] := load[Xtemp[1000],LittleE,dbytes];
-      {NTovar Xt} := ucast 64 Xtemp[2000]
+      var[Xt] := ucast 64 Xtemp[2000]
+    }>.
+
+  Definition arm_ldrb_reg2il (Xn Xm Xt extend:N) :=
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend 0 in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      var[Xt] := load[Xtemp[1000],1]
+    }>.
+
+  Definition arm_ldrsb_reg2il (Xn Xm Xt size extend:N) :=
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend 0 in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1])
+    }>.
+
+  Definition arm_ldrh_reg2il (Xn Xm Xt extend S:N) :=
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      var[Xt] := ucast 64 load[Xtemp[1000],2]
+    }>.
+
+  Definition arm_ldrsh_reg2il (Xn Xm Xt extend size S:N) :=
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2])
+    }>.
+
+  Definition arm_ldrsw_reg2il (Xn Xm Xt extend S:N) :=
+    let shift := match S with 0 => 0 | _ => 2 end in
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      var[Xt] := scast 64 load[Xtemp[1000],4]
+    }>.
+
+  Definition arm_strb_reg2il (Xn Xm Xt extend:N) :=
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend 0 in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      store[Xtemp[1000],X[Xt],1]
+    }>.
+
+  Definition arm_strh_reg2il (Xn Xm Xt extend S:N) :=
+    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
+      if undefined then exn 0 else nop end;
+      calc_offset;
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
+      store[Xtemp[1000],X[Xt],2]
     }>.
 
   (*register offset*)
@@ -2274,39 +2835,74 @@ Section Decoder.
     match[bits] size, v_, opc, option_ with
     | "-   -  -   x0x  " => UDF (* Unallocated. *)
     | "x1  1  1x  -    " => UDF (* Unallocated. *)
-    | "00  0  00  !=011" => ARM_STRB_REG (* STRB (register) - Extended register variant on page C6-877 *)
-    | "00  0  00  011  " => ARM_STRB_REG (* STRB (register) - Shifted register variant on page C6-877 *)
-    | "00  0  01  !=011" => ARM_LDRB_REG (* LDRB (register) - Extended register variant on page C6-679 *)
-    | "00  0  01  011  " => ARM_LDRB_REG (* LDRB (register) - Shifted register variant on page C6-679 *)
-    | "00  0  10  !=011" => ARM_LDRSB_REG (* LDRSB (register) - 64-bit with extended register offset variant on page C6-688 *)
-    | "00  0  10  011  " => ARM_LDRSB_REG (* LDRSB (register) - 64-bit with shifted register offset variant on page C6-688 *)
-    | "00  0  11  !=011" => ARM_LDRSB_REG (* LDRSB (register) - 32-bit with extended register offset variant on page C6-688 *)
-    | "00  0  11  011  " => ARM_LDRSB_REG (* LDRSB (register) - 32-bit with shifted register offset variant on page C6-688 *)
+    | "00  0  00  !=011" => ARM_STRB_REG Rn Rm Rt option_ (* STRB (register) - Extended register variant on page C6-877 *)
+    | "00  0  00  011  " => ARM_STRB_REG Rn Rm Rt option_ (* STRB (register) - Shifted register variant on page C6-877 *)
+    | "00  0  01  !=011" => ARM_LDRB_REG Rn Rm Rt option_ (* LDRB (register) - Extended register variant on page C6-679 *)
+    | "00  0  01  011  " => ARM_LDRB_REG Rn Rm Rt option_ (* LDRB (register) - Shifted register variant on page C6-679 *)
+    | "00  0  10  !=011" => ARM_LDRSB_REG Rn Rm Rt option_ 64 (* LDRSB (register) - 64-bit with extended register offset variant on page C6-688 *)
+    | "00  0  10  011  " => ARM_LDRSB_REG Rn Rm Rt option_ 64 (* LDRSB (register) - 64-bit with shifted register offset variant on page C6-688 *)
+    | "00  0  11  !=011" => ARM_LDRSB_REG Rn Rm Rt option_ 32 (* LDRSB (register) - 32-bit with extended register offset variant on page C6-688 *)
+    | "00  0  11  011  " => ARM_LDRSB_REG Rn Rm Rt option_ 32 (* LDRSB (register) - 32-bit with shifted register offset variant on page C6-688 *)
     | "00  1  00  !=011" => UDF (* STR (register, SIMD&FP) *)
     | "00  1  00  011  " => UDF (* STR (register, SIMD&FP) *)
     | "00  1  01  !=011" => UDF (* LDR (register, SIMD&FP) *)
     | "00  1  01  011  " => UDF (* LDR (register, SIMD&FP) *)
     | "00  1  10  -    " => UDF (* STR (register, SIMD&FP) *)
     | "00  1  11  -    " => UDF (* LDR (register, SIMD&FP) *)
-    | "01  0  00  -    " => ARM_STRH_REG (* STRH (register) *)
+    | "01  0  00  -    " => ARM_STRH_REG Rn Rm Rt option_ S (* STRH (register) *)
     | "01  0  01  -    " => ARM_LDRH_REG (* LDRH (register) *)
-    | "01  0  10  -    " => ARM_LDRSH_REG (* LDRSH (register) - 64-bit variant on page C6-693 *)
-    | "01  0  11  -    " => ARM_LDRSH_REG (* LDRSH (register) - 32-bit variant on page C6-693 *)
+    | "01  0  10  -    " => ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 64-bit variant on page C6-693 *)
+    | "01  0  11  -    " => ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 32-bit variant on page C6-693 *)
     | "01  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "01  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     | "1x  0  11  -    " => UDF (* Unallocated. *)
     | "1x  1  1x  -    " => UDF (* Unallocated. *)
-    | "10  0  00  -    " => ARM_STR_REG (* STR (register) - 32-bit variant on page C6-873 *)
-    | "10  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 2 S  (* LDR (register) - 32-bit variant on page C6-675 *)
-    | "10  0  10  -    " => ARM_LDRSW_REG (* LDRSW (register) *)
+    | "10  0  00  -    " => ARM_STR_REG Rn Rm Rt option_ 2 S (* STR (register) - 32-bit variant on page C6-873 *)
+    | "10  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 2 S (* LDR (register) - 32-bit variant on page C6-675 *)
+    | "10  0  10  -    " => ARM_LDRSW_REG Rn Rm Rt option_ S (* LDRSW (register) *)
     | "10  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "10  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
-    | "11  0  00  -    " => ARM_STR_REG (* STR (register) - 64-bit variant on page C6-873 *)
+    | "11  0  00  -    " => ARM_STR_REG Rn Rm Rt option_ 3 S (* STR (register) - 64-bit variant on page C6-873 *)
     | "11  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 3 S (* LDR (register) - 64-bit variant on page C6-675 *)
-    | "11  0  10  -    " => ARM_PRFM_REG (* PRFM (register) *)
+    | "11  0  10  -    " => ARM_PRFM_REG Rn Rm Rt option_ S (* PRFM (register) *)
     | "11  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "11  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     else UDF end.
+
+
+  Definition arm_ldraa2il_constr (Xn Xt S imm9:N) (wback wbunknown wbsuppress:bool) :=
+    let offset := <{scast 64 (S#1++imm9#9)}> in
+    let wbunknown := b2exp wbunknown in
+    let wbsuppress := b2exp wbsuppress in
+    let wback := b2exp wback in
+    <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      temp[1000] := Xtemp[1000] + offset;
+      var[Xt] := load[Xtemp[1000],8];
+      if wback & !wbsuppress then
+        temp[1001] := Xtemp[1000];
+        if wbunknown then temp[1001] := unknown 64 else nop end;
+        var[Xn] := Xtemp[1001]
+      else
+        nop
+      end
+    }>.
+
+  Definition arm_ldraa2il (Xn Xt S imm9:N) (wback:bool) :=
+    let wback' := wback in
+    let wback := b2exp wback in
+    let constraint_check := <{ wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
+      if ! constraint_check then {arm_ldraa2il_constr Xn Xt S imm9 wback' false false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      if unknown 1 then {arm_ldraa2il_constr Xn Xt S imm9 wback' true false} else
+      (* Constraint_WBSUPPRESS *)
+      {arm_ldraa2il_constr Xn Xt S imm9 wback' false true}
+      end end end end
+    }>.
 
 (*pac*)
   Definition load_store_reg_pac :=
@@ -2314,15 +2910,22 @@ Section Decoder.
     let v_ := n.[26] in
     let m_ := n.[23] in
     let w_ := n.[11] in
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let imm9 := n.[12,21] in
+    let s_ := n.[22] in
     match[bits] size, v_, m_, w_ with
     | "!=11  -  -  -" => UDF (* Unallocated. - *)
-    | "11    0  0  0" => ARM_LDRAA_OFFSET (* LDRAA, LDRAB - Key A, offset variant on page C6-983 Armv8.3 *)
-    | "11    0  0  1" => ARM_LDRAA_PRE (* LDRAA, LDRAB - Key A, pre-indexed variant on page C6-983 Armv8.3 *)
-    | "11    0  1  0" => ARM_LDRAA_OFFSET (* LDRAA, LDRAB - Key B, offset variant on page C6-983 Armv8.3 *)
-    | "11    0  1  1" => ARM_LDRAA_PRE (* LDRAA, LDRAB - Key B, pre-indexed variant on page C6-983 Armv8.3 *)
+    | "11    0  0  0" => ARM_LDRAA Rn Rt s_ imm9 false (* LDRAA, LDRAB - Key A, offset variant on page C6-983 Armv8.3 *)
+    | "11    0  0  1" => ARM_LDRAA Rn Rt s_ imm9 true (* LDRAA, LDRAB - Key A, pre-indexed variant on page C6-983 Armv8.3 *)
+    | "11    0  1  0" => ARM_LDRAA Rn Rt s_ imm9 false (* LDRAA, LDRAB - Key B, offset variant on page C6-983 Armv8.3 *)
+    | "11    0  1  1" => ARM_LDRAA Rn Rt s_ imm9 true (* LDRAA, LDRAB - Key B, pre-indexed variant on page C6-983 Armv8.3 *)
     | "11    1  -  -" => UDF (* Unallocated. *)
     else UDF end.
 
+  (* The lifters for these and the *_IMM counterparts can be combined but
+     we'd need to add logic for calculating the offset. Might be worth it
+     to cut down on loc. *)
 (*unsigned immediate*)
   Definition load_store_reg_u_imm  :=
     let opc := n.[22,24] in
@@ -2330,33 +2933,33 @@ Section Decoder.
     let v_ := n.[26] in
     let Rt := n.[0,5] in
     let Rn := n.[5,10] in
-    let imm9 := n.[12,21] in
+    let imm12 := n.[10,22] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STRB_IMM (* STRB (immediate) *)
-    | "00  0  01" => ARM_LDRB_IMM (* LDRB (immediate) *)
-    | "00  0  10" => ARM_LDRSB_IMM (* LDRSB (immediate) - 64-bit variant on page C6-996 *)
-    | "00  0  11" => ARM_LDRSB_IMM (* LDRSB (immediate) - 32-bit variant on page C6-996 *)
-    | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-2115 *)
-    | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1801 *)
-    | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-2116 *)
-    | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1802 *)
-    | "01  0  00" => ARM_STRH_IMM (* STRH (immediate) *)
-    | "01  0  01" => ARM_LDRH_IMM (* LDRH (immediate) *)
-    | "01  0  10" => ARM_LDRSH_IMM (* LDRSH (immediate) - 64-bit variant on page C6-1001 *)
-    | "01  0  11" => ARM_LDRSH_IMM (* LDRSH (immediate) - 32-bit variant on page C6-1001 *)
-    | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-2115 *)
-    | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1801 *)
+    | "00  0  00" => ARM_STRB_IMM Rn Rt imm12 false true true (* STRB (immediate) *)
+    | "00  0  01" => ARM_LDRB_IMM Rn Rt imm12 false true true (* LDRB (immediate) *)
+    | "00  0  10" => ARM_LDRSB_IMM Rn Rt imm12 64 false true true (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
+    | "00  0  11" => ARM_LDRSB_IMM Rn Rt imm12 32 false true true (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
+    | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-1631 *)
+    | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1358 *)
+    | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-1631 *)
+    | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1358 *)
+    | "01  0  00" => ARM_STRH_IMM Rn Rt imm12 false true true (* STRH (immediate) *)
+    | "01  0  01" => ARM_LDRH_IMM Rn Rt imm12 false true true (* LDRH (immediate) *)
+    | "01  0  10" => ARM_LDRSH_IMM Rn Rt imm12 64 false true true (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
+    | "01  0  11" => ARM_LDRSH_IMM Rn Rt imm12 32 false true true (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
+    | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-1631 *)
+    | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1358 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STR_IMM (* STR (immediate) - 32-bit variant on page C6-1240 *)
-    | "10  0  01" => ARM_LDR_IMM (* LDR (immediate) - 32-bit variant on page C6-977 *)
-    | "10  0  10" => ARM_LDRSW_IMM (* LDRSW (immediate) *)
-    | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-2115 *)
-    | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1801 *)
-    | "11  0  00" => ARM_STR_IMM (* STR (immediate) - 64-bit variant on page C6-1240 *)
-    | "11  0  01" => ARM_LDR_IMM (* LDR (immediate) - 64-bit variant on page C6-977 *)
-    | "11  0  10" => ARM_PRFM_IMM Rn Rt imm9 (* PRFM (immediate) *)
+    | "10  0  00" => ARM_STR_IMM Rn Rt imm12 32 false true true (* STR (immediate) - 32-bit variant on page C6-870 *)
+    | "10  0  01" => ARM_LDR_IMM Rn Rt imm12 32 false true true (* LDR (immediate) - 32-bit variant on page C6-670 *)
+    | "10  0  10" => ARM_LDRSW_IMM Rn Rt imm12 false true true (* LDRSW (immediate) *)
+    | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-1631 *)
+    | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1358 *)
+    | "11  0  00" => ARM_STR_IMM Rn Rt imm12 64 false true true (* STR (immediate) - 64-bit variant on page C6-870 *)
+    | "11  0  01" => ARM_LDR_IMM Rn Rt imm12 64 false true true (* LDR (immediate) - 64-bit variant on page C6-670 *)
+    | "11  0  10" => ARM_PRFM_IMM Rn Rt imm12 (* PRFM (immediate) *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-2115 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1801 *)
     else UDF end.
