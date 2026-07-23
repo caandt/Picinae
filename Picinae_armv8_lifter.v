@@ -85,101 +85,138 @@ Module Notation.
 End Notation.
 Import Notation.
 
-  Notation "'PCvar'" := (R_PC) (in custom PIL at level 65).
-  Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
+Notation "'PCvar'" := (R_PC) (in custom PIL at level 65).
+Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
+
+(* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
+(*  J1-7341
+    bits(64) sp = SP[];
+    stack_align_check = (SCTLR[].SA0 != '0')
+    if stack_align_check && sp != Align(sp, 16) then SPAlignmentFault()
+    return;
+  *)
+
+Definition XtoVar n := let n := <{n#5}> in <{
+  ite (n = (0#5)) {Var R_X0} ( ite (n = (1#5)) {Var R_X1} ( ite (n = (2#5)) {Var R_X2} ( ite (n = (3#5)) {Var R_X3} (
+  ite (n = (4#5)) {Var R_X4} ( ite (n = (5#5)) {Var R_X5} ( ite (n = (6#5)) {Var R_X6} ( ite (n = (7#5)) {Var R_X7} (
+  ite (n = (8#5)) {Var R_X8} ( ite (n = (9#5)) {Var R_X9} ( ite (n = (10#5)) {Var R_X10} ( ite (n = (11#5)) {Var R_X11} (
+  ite (n = (12#5)) {Var R_X12} ( ite (n = (13#5)) {Var R_X13} ( ite (n = (14#5)) {Var R_X14} ( ite (n = (15#5)) {Var R_X15} (
+  ite (n = (16#5)) {Var R_X16} ( ite (n = (17#5)) {Var R_X17} ( ite (n = (18#5)) {Var R_X18} ( ite (n = (19#5)) {Var R_X19} (
+  ite (n = (20#5)) {Var R_X20} ( ite (n = (21#5)) {Var R_X21} ( ite (n = (22#5)) {Var R_X22} ( ite (n = (23#5)) {Var R_X23} (
+  ite (n = (24#5)) {Var R_X24} ( ite (n = (25#5)) {Var R_X25} ( ite (n = (26#5)) {Var R_X26} ( ite (n = (27#5)) {Var R_X27} (
+  ite (n = (28#5)) {Var R_X28} ( ite (n = (29#5)) {Var R_X29} ( ite (n = (30#5)) {Var R_X30} {Var R_SP}))))))))))))))))))))))))))))))
+}>.
+
+Definition NTovar n :=
+  match n with
+  | 0 => R_X0 | 1 => R_X1 | 2 => R_X2 | 3 => R_X3 | 4 => R_X4 | 5 => R_X5 | 6 => R_X6 | 7 => R_X7
+  | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
+  | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
+  | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
+  end.
+
+Notation "'var[' n ']'" := (NTovar n) (in custom PIL at level 65, no associativity).
+Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
+Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
+Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
+Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
+Notation "'temp[' n ']'" := (V_TEMP n) (at level 65, no associativity).
+Definition SP_read w := <{lcast w {Var R_SP} }>.
+Definition SP_write e : stmt := <{R_SP := ucast 64 e }>.
+Definition b2exp b := match b with true => Word 1 1 | false => Word 0 1 end.
 
 
-  (* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
-  (*  J1-7341
-      bits(64) sp = SP[];
-      stack_align_check = (SCTLR[].SA0 != '0')
-      if stack_align_check && sp != Align(sp, 16) then SPAlignmentFault()
-      return;
-    *)
+Definition AllocationTagFromAddress e := <{e[59:56]}>. (* AArch64.AllocationTagFromAddress *)
+Notation "'AllocTag' e" := (AllocationTagFromAddress e) (in custom PIL at level 65, no associativity).
 
-  Definition XtoVar n := let n := <{n#5}> in <{
-    ite (n = (0#5)) {Var R_X0} ( ite (n = (1#5)) {Var R_X1} ( ite (n = (2#5)) {Var R_X2} ( ite (n = (3#5)) {Var R_X3} (
-    ite (n = (4#5)) {Var R_X4} ( ite (n = (5#5)) {Var R_X5} ( ite (n = (6#5)) {Var R_X6} ( ite (n = (7#5)) {Var R_X7} (
-    ite (n = (8#5)) {Var R_X8} ( ite (n = (9#5)) {Var R_X9} ( ite (n = (10#5)) {Var R_X10} ( ite (n = (11#5)) {Var R_X11} (
-    ite (n = (12#5)) {Var R_X12} ( ite (n = (13#5)) {Var R_X13} ( ite (n = (14#5)) {Var R_X14} ( ite (n = (15#5)) {Var R_X15} (
-    ite (n = (16#5)) {Var R_X16} ( ite (n = (17#5)) {Var R_X17} ( ite (n = (18#5)) {Var R_X18} ( ite (n = (19#5)) {Var R_X19} (
-    ite (n = (20#5)) {Var R_X20} ( ite (n = (21#5)) {Var R_X21} ( ite (n = (22#5)) {Var R_X22} ( ite (n = (23#5)) {Var R_X23} (
-    ite (n = (24#5)) {Var R_X24} ( ite (n = (25#5)) {Var R_X25} ( ite (n = (26#5)) {Var R_X26} ( ite (n = (27#5)) {Var R_X27} (
-    ite (n = (28#5)) {Var R_X28} ( ite (n = (29#5)) {Var R_X29} ( ite (n = (30#5)) {Var R_X30} {Var R_SP}))))))))))))))))))))))))))))))
+Definition AlignPow2 e w pow2 := match pow2 with
+                                | 1 =>      e
+                                | 2 =>   <{ e >> (1 # w) << 1 # w }>
+                                | 4 =>   <{ e >> (2 # w) << 2 # w }>
+                                | 8 =>   <{ e >> (3 # w) << 3 # w }>
+                                | 16 =>  <{ e >> (4 # w) << 4 # w }>
+                                | 32 =>  <{ e >> (5 # w) << 5 # w }>
+                                | 64 =>  <{ e >> (6 # w) << 6 # w }>
+                                | 128 => <{ e >> (7 # w) << 7 # w }>
+                                | 256 => <{ e >> (8 # w) << 8 # w }>
+                                | _ =>      e  (* No good sentinel value *)
+                                end.
+Notation "'Align[' e , w , pow2 ']'" := (AlignPow2 e w pow2) (in custom PIL at level 65, no associativity).
+
+(* Checks whether w-bit e is a multiple of alignment. *)
+Definition AlignCheck e w alignment := <{ e % (alignment # w) = (0 # w) }>.
+Notation "'Aligned[' e , w , alignment ']'" := (AlignCheck e w alignment) (in custom PIL at level 65, no associativity).
+Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custom PIL at level 65, no associativity).
+Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
+
+Definition CheckSPAlignment :=
+  <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
+
+(* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
+Definition AddressWithAllocationTag (Xt tag:exp) := <{
+  (Xt & (! 0x0F00_0000_0000_0000 # 64))
+}>.
+
+(* J1-7339 *)
+Definition MemSingleWrite address size (val:exp) := <{
+  (* assert size in {1, 2, 4, 8, 16} omitted *)
+  if Aligned[ address, 64, size ] then nop else exn 0 end;
+  store[address, val, LittleE, size]
+}>.
+
+(* J1-7342 *)
+Definition MemWrite address size val := MemSingleWrite address size val.
+
+(* J1-7341 *)
+Definition MemRead address size := <{load[address, LittleE, size]}>.
+
+(* Addr - 64bits; tag - 4bits *)
+(* We do not model tag memory, this is a no-op if the address is aligned. *)
+Definition MemTagWrite (addr tag:exp) := <{
+  if ! TagAligned[addr] then exn 0 else nop end
+  (* Assumption: address translation does not abort nor raise a debug exception *)
+}>.
+(* Addr - 64bits *)
+(* We do not model tag memory, this just returns the tagging-disabled value. *)
+Definition MemTagRead (addr:exp) := <{ 0 # 4 }>.
+
+Notation "'Z'" := (Var R_ZR) (in custom PIL at level 0).
+Notation "'N'" := (Var R_NG) (in custom PIL at level 0).
+Notation "'C'" := (Var R_CY) (in custom PIL at level 0).
+Notation "'V'" := (Var R_OV) (in custom PIL at level 0).
+
+Definition ConditionHolds (cond:N) : exp :=
+  let case := <{cond#4[3:1]}> in
+  let EQ_NE := <{case = 0#3}> in
+  let CS_CC := <{case = 1#3}> in 
+  let MI_PL := <{case = 2#3}> in
+  let VS_VC := <{case = 3#3}> in
+  let HI_LS := <{case = 4#3}> in
+  let GE_LT := <{case = 5#3}> in
+  let GT_LE := <{case = 6#3}> in 
+  let AL    := <{case = 7#3}> in
+  <{ite (cond#4 = 0xF#4) 1#0
+      (cond#4[0] ^ (* First bit negates condition *)
+        (ite EQ_NE (Z=1#1) (
+        ite CS_CC (C=1#1) (
+        ite MI_PL (N=1#1) (
+        ite VS_VC (V=1#1) (
+        ite HI_LS (C=1#1 & Z = 0#1) (
+        ite GE_LT (N=V) (N=V & Z=0#1))))))))
   }>.
 
-  Definition NTovar n :=
-    match n with
-    | 0 => R_X0 | 1 => R_X1 | 2 => R_X2 | 3 => R_X3 | 4 => R_X4 | 5 => R_X5 | 6 => R_X6 | 7 => R_X7
-    | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
-    | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
-    | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
-    end.
+Definition havoc := <{ exn 0 }>.
 
-  Notation "'var[' n ']'" := (NTovar n) (in custom PIL at level 65, no associativity).
-  Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
-  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
-  Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
-  Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
-  Notation "'temp[' n ']'" := (V_TEMP n) (at level 65, no associativity).
-  Definition SP_read w := <{lcast w {Var R_SP} }>.
-  Definition SP_write e : stmt := <{R_SP := ucast 64 e }>.
-  Definition b2exp b := match b with true => Word 1 1 | false => Word 0 1 end.
+Definition UsingAArch32 := <{ {Var R_nRW} = 1#1 }>.
+Definition BranchTo w target := <{
+  if (w#w = 32#w) then
+    if UsingAArch32 then jmp (ucast 64 target) else exn 0 end
+  else
+    if (w#w = 64#w) & !UsingAArch32 then jmp target else exn 0 end
+  end
+}>.
 
-
-  Definition AllocationTagFromAddress e := <{e[59:56]}>. (* AArch64.AllocationTagFromAddress *)
-  Notation "'AllocTag' e" := (AllocationTagFromAddress e) (in custom PIL at level 65, no associativity).
-
-  Definition AlignPow2 e w pow2 := match pow2 with
-                                  | 1 =>      e
-                                  | 2 =>   <{ e >> (1 # w) << 1 # w }>
-                                  | 4 =>   <{ e >> (2 # w) << 2 # w }>
-                                  | 8 =>   <{ e >> (3 # w) << 3 # w }>
-                                  | 16 =>  <{ e >> (4 # w) << 4 # w }>
-                                  | 32 =>  <{ e >> (5 # w) << 5 # w }>
-                                  | 64 =>  <{ e >> (6 # w) << 6 # w }>
-                                  | 128 => <{ e >> (7 # w) << 7 # w }>
-                                  | 256 => <{ e >> (8 # w) << 8 # w }>
-                                  | _ =>      e  (* No good sentinel value *)
-                                  end.
-  Notation "'Align[' e , w , pow2 ']'" := (AlignPow2 e w pow2) (in custom PIL at level 65, no associativity).
-
-  (* Checks whether w-bit e is a multiple of alignment. *)
-  Definition AlignCheck e w alignment := <{ e % (alignment # w) = (0 # w) }>.
-  Notation "'Aligned[' e , w , alignment ']'" := (AlignCheck e w alignment) (in custom PIL at level 65, no associativity).
-  Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custom PIL at level 65, no associativity).
-  Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
-
-  Definition CheckSPAlignment :=
-    <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
-
-  (* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
-  Definition AddressWithAllocationTag (Xt tag:exp) := <{
-    (Xt & (! 0x0F00_0000_0000_0000 # 64))
-  }>.
-
-  (* J1-7339 *)
-  Definition MemSingleWrite address size (val:exp) := <{
-    (* assert size in {1, 2, 4, 8, 16} omitted *)
-    if Aligned[ address, 64, size ] then nop else exn 0 end;
-    store[address, val, LittleE, size]
-  }>.
-
-  (* J1-7342 *)
-  Definition MemWrite address size val := MemSingleWrite address size val.
-
-  (* J1-7341 *)
-  Definition MemRead address size := <{load[address, LittleE, size]}>.
-
-  (* Addr - 64bits; tag - 4bits *)
-  (* We do not model tag memory, this is a no-op if the address is aligned. *)
-  Definition MemTagWrite (addr tag:exp) := <{
-    if ! TagAligned[addr] then exn 0 else nop end
-    (* Assumption: address translation does not abort nor raise a debug exception *)
-  }>.
-  (* Addr - 64bits *)
-  (* We do not model tag memory, this just returns the tagging-disabled value. *)
-  Definition MemTagRead (addr:exp) := <{ 0 # 4 }>.
+Notation "'branch' e" := (BranchTo 64 e) (in custom PIL at level 0, e at level 99).
 
 Variant inst :=
 (*DP imm*)
@@ -321,7 +358,7 @@ Variant inst :=
   | ARM_BTI
   | ARM_SB
   (*conditional branch (imm)*)
-  | ARM_B_COND
+  | ARM_B_COND (cond imm19:N)
   (*exception generation*)
   | ARM_SVC
   | ARM_HVC
@@ -355,12 +392,12 @@ Variant inst :=
   | ARM_XAFLAG
   | ARM_AXFLAG
   (*unconditional branch(register)*)
-  | ARM_BR
-  | ARM_BLR
-  | ARM_RET
+  | ARM_BR (Xn:N)
+  | ARM_BLR (Xn:N)
+  | ARM_RET (Xn:N)
   | ARM_ERET
   | ARM_DRPS
-  | ARM_BRAAZ
+  | ARM_BRAAZ (Xn:N)
   | ARM_BRAA_REG
   | ARM_BLRAA_REG
   | ARM_BLRAAZ
@@ -371,7 +408,7 @@ Variant inst :=
   | ARM_BL (imm26:N)
   (*compare and branch(imm)*)
   | ARM_CBZ (Rt imm19 size:N)
-  | ARM_CBNZ
+  | ARM_CBNZ (Rt imm19 size:N)
   (*test and branch(imm)*)
   | ARM_TBZ (Rt imm14 b5 b40:N)
   | ARM_TBNZ (Rt imm14 b5 b40:N)
@@ -958,10 +995,10 @@ Section Decoder.
   | "111" => extract (* Extract on page C4-256 *)
    else UDF end.
 
-  Definition B_cond :=
-    let imm19 := n.[5,24] in
-    let cond := n.[0,4] in
-    UDF.
+  Definition arm_b_cond2il (cond imm19:N) :=
+    let offset := <{scast 64 (imm19#19++0#2)}> in 
+      <{if {ConditionHolds cond} 
+      then jmp PC + offset else nop end}>.
 
   Definition cond_branch :=
     let o1 := n.[24] in
@@ -969,7 +1006,7 @@ Section Decoder.
     let o0 := n.[4] in
     let cond := n.[0,4] in
     match[bits] o1, o0 with
-    | "0  0" => B_cond (* B.cond *)
+    | "0  0" => ARM_B_COND cond imm19 (* B.cond *)
     | "0  1" => UDF (* Unallocated. *)
     | "1  -" => UDF (* Unallocated. *)
     else UDF end.
@@ -1005,6 +1042,16 @@ Section Decoder.
     else UDF end.
 
   Definition arm_nop2il := <{nop}>.
+  Definition arm_yield2il := <{nop}>.
+  Definition arm_wfe2il := <{nop}>.
+  Definition arm_wfi2il := <{nop}>.
+  Definition arm_sev2il := <{nop}>.
+  Definition arm_sevl2il := <{nop}>.
+  Definition arm_esb2il := <{nop}>.
+  Definition arm_psb_csync2il := <{nop}>.
+  Definition arm_tsb_csync2il := <{nop}>.
+  Definition arm_csdb2il := <{nop}>.
+  Definition arm_bti2il := <{nop}>.
 
   Definition hints :=
     let CRm := n.[8,12] in
@@ -1037,6 +1084,14 @@ Section Decoder.
     | "0100  xx0" => ARM_BTI (* BTI Armv8.5 *)
     else UDF end.
 
+  Definition arm_clrex2il := Nop.
+  Definition arm_dmb2il := Nop.
+  Definition arm_isb2il := Nop.
+  Definition arm_sb2il := Nop.
+  Definition arm_dsb2il := Nop.
+  Definition arm_ssbb2il := Nop.
+  Definition arm_pssbb2il := Nop.
+
   Definition barriers :=
     let CRm := n.[8,12] in
     let op2 := n.[5,8] in
@@ -1058,6 +1113,35 @@ Section Decoder.
     | "1xxx    011  -      " => UDF (* Unallocated. *)
     else UDF end.
 
+  (* We do not model the system registers/bits that MSR writes to. *)
+  Definition arm_msr_imm2il := Nop.
+  Definition arm_cfinv2il := Move R_CY (UnOp OP_NOT (Var R_CY)).
+
+  (* XAFLAG and AXFLAG convert to/from flag format to an alternative representation
+     used by some floating point software.  We do not support floating points, but
+     we can support these instructions so we might as well.
+     If we do not want to model the FlagFormatExt then set this to undefined behavior. *)
+  Definition arm_xaflag2il :=
+    <{
+      (*N*) temp[1] := ucast 8 (!C & !Z);
+      (*Z*) temp[2] := ucast 8 ( C &  Z);
+      (*C*) temp[3] := ucast 8 ( C |  Z);
+      (*V*) temp[4] := ucast 8 (!C &  Z);
+      R_NG := Xtemp[1];
+      R_ZR := Xtemp[2];
+      R_CY := Xtemp[3];
+      R_OV := Xtemp[4]
+    }>.
+  Definition arm_axflag2il :=
+    <{
+      (*Z*) temp[2] :=  ucast 8 (Z |  V);
+      (*C*) temp[3] :=  ucast 8 (C & !V);
+      R_NG := 0#8;
+      R_ZR := Xtemp[2];
+      R_CY := Xtemp[3];
+      R_OV := 0#8
+    }>.
+
   Definition pstate :=
     let op1 := n.[16,19] in
     let op2 := n.[5,8] in
@@ -1070,12 +1154,27 @@ Section Decoder.
     | "000  010  11111  " => ARM_AXFLAG (* AXFLAG Armv8.5 *)
     else UDF end.
 
+  (* The system instructions are out of scope. We treat them as undefined
+     although only a subset of the encodings are undefined.
+     See C5-366 for more information. *)
+  Definition arm_sys2il := havoc.
+  Definition arm_sysl2il := havoc.
+
   Definition sys_inst :=
     let L := n.[21] in
     match[bits] L with
     | "0" => ARM_SYS (* SYS *)
     | "1" => ARM_SYSL (* SYSL *)
     else UDF end.
+
+  (* The auxiliary function is undefined:
+     // Read from a system register and return the contents of the register.
+     bits(64) AArch64.SysRegRead(integer op0, integer op1, integer crn, integer crm, integer op2); *)
+  Definition arm_msr_reg2il := havoc.
+  (* The auxiliary function is undefined:
+     // Read from a system register and return the contents of the register.
+     bits(64) AArch64.SysRegRead(integer op0, integer op1, integer crn, integer crm, integer op2); *)
+  Definition arm_mrs2il := havoc.
 
   Definition sys_reg_move :=
     let L := n.[21] in
@@ -1084,27 +1183,44 @@ Section Decoder.
     | "1" => ARM_MRS (* MRS *)
     else UDF end.
 
+
+  (* Undefined behavior when PCA extension is unsupported. *)
+  Definition arm_braaz2il (Xn:N) := havoc.
+  Definition arm_blraaz2il (Xn:N) := havoc.
+  Definition arm_retaa2il := havoc.
+  Definition arm_blraa_reg2il := havoc.
+  Definition arm_braa_reg2il := havoc.
+
+  (* Undefined behavior in EL0 *)
+  Definition arm_eret2il := havoc.
+  Definition arm_eretaa2il := havoc.
+  Definition arm_drps2il := havoc.
+
+  Definition arm_br2il Xn := <{branch X[Xn]}>.
+  Definition arm_blr2il Xn := <{temp[1]:=X[Xn]; var[30] := PC+4#64; branch Xtemp[1]}>.
+  Definition arm_ret2il Xn := <{branch X[Xn]}>.
+
   Definition uncond_b_reg :=
     let opc := n.[21,25] in
     let op2 := n.[16,21] in
     let op3 := n.[10,16] in
-    let rn := n.[5,10] in
+    let Rn := n.[5,10] in
     let op4 := n.[0,5] in
-    match[bits] opc, op2, op3, rn, op4 with
+    match[bits] opc, op2, op3, Rn, op4 with
   | "-     !=11111  -         -        -      " => UDF (* Unallocated. - *)
   | "0000  11111    000000    -        !=00000" => UDF (* Unallocated. - *)
-  | "0000  11111    000000    -        00000  " => ARM_BR (* BR - *)
+  | "0000  11111    000000    -        00000  " => ARM_BR Rn (* BR - *)
   | "0000  11111    000001    -        -      " => UDF (* Unallocated. - *)
   | "0000  11111    000010    -        !=11111" => UDF (* Unallocated. - *)
-  | "0000  11111    000010    -        11111  " => ARM_BRAAZ (* BRAA, BRAAZ, BRAB, BRABZ - Key A, zero modifier variant on page C6-817 Armv8.3 *)
+  | "0000  11111    000010    -        11111  " => ARM_BRAAZ Rn (* BRAA, BRAAZ, BRAB, BRABZ - Key A, zero modifier variant on page C6-817 Armv8.3 *)
   | "0000  11111    000011    -        !=11111" => UDF (* Unallocated. - *)
-  | "0000  11111    000011    -        11111  " => ARM_BRAAZ (* BRAA, BRAAZ, BRAB, BRABZ - Key B, zero modifier variant on page C6-817 Armv8.3 *)
+  | "0000  11111    000011    -        11111  " => ARM_BRAAZ Rn (* BRAA, BRAAZ, BRAB, BRABZ - Key B, zero modifier variant on page C6-817 Armv8.3 *)
   | "0000  11111    0001xx    -        -      " => UDF (* Unallocated. - *)
   | "0000  11111    001xxx    -        -      " => UDF (* Unallocated. - *)
   | "0000  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
   | "0000  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
   | "0001  11111    000000    -        !=00000" => UDF (* Unallocated. - *)
-  | "0001  11111    000000    -        00000  " => ARM_BLR (* BLR - *)
+  | "0001  11111    000000    -        00000  " => ARM_BLR Rn (* BLR - *)
   | "0001  11111    000001    -        -      " => UDF (* Unallocated. - *)
   | "0001  11111    000010    -        !=11111" => UDF (* Unallocated. - *)
   | "0001  11111    000010    -        11111  " => ARM_BLRAAZ (* BLRAA, BLRAAZ, BLRAB, BLRABZ - Key A, zero modifier variant on page C6-814 Armv8.3 *)
@@ -1115,7 +1231,7 @@ Section Decoder.
   | "0001  11111    01xxxx    -        -      " => UDF (* Unallocated. - *)
   | "0001  11111    1xxxxx    -        -      " => UDF (* Unallocated. - *)
   | "0010  11111    000000    -        !=00000" => UDF (* Unallocated. -       *)
-  | "0010  11111    000000    -        00000  " => ARM_RET (* RET - *)
+  | "0010  11111    000000    -        00000  " => ARM_RET Rn (* RET - *)
   | "0010  11111    000001    -        -      " => UDF (* Unallocated. - *)
   | "0010  11111    000010    !=11111  !=11111" => UDF (* Unallocated. - *)
   | "0010  11111    000010    11111    11111  " => ARM_RETAA (* RETAA, RETAB - RETAA variant on page C6-1148 Armv8.3 *)
@@ -1183,19 +1299,16 @@ Section Decoder.
     | "1" => ARM_BL imm26 (* BL *)
     else UDF end.
 
-  Definition UsingAArch32 := <{ {Var R_nRW} = 1#1 }>.
-  Definition Branch w target := <{
-    if (w#w = 32#w) then
-      if UsingAArch32 then PCvar := ucast 64 target else exn 0 end
-    else
-      if (w#w = 64#w) & !UsingAArch32 then PCvar := target else exn 0 end
-    end
-  }>.
-  (* Assumes we're not using Aarch32 *)
   Definition arm_cbz2il Xn imm19 size :=
     let offset := <{scast 64 (imm19#21 << 2#21)}> in
     let target := <{PC + offset}> in <{
-    if lcast size X[Xn] = 0#size then {Branch size target} else nop end
+    if lcast size X[Xn] = 0#size then {BranchTo size target} else nop end
+  }>.
+
+  Definition arm_cbnz2il Xn imm19 size :=
+    let offset := <{scast 64 (imm19#21 << 2#21)}> in
+    let target := <{PC + offset}> in <{
+    if !(lcast size X[Xn] = 0#size) then {BranchTo size target} else nop end
   }>.
 
   Definition comp_and_b :=
@@ -1205,25 +1318,27 @@ Section Decoder.
     let imm19 := n.[5,24] in
     match[bits] sf, op with
     | "0  0" => ARM_CBZ Rt imm19 32 (* CBZ - 32-bit variant *)
-    | "0  1" => ARM_CBNZ (* CBNZ - 32-bit variant *)
+    | "0  1" => ARM_CBNZ Rt imm19 32 (* CBNZ - 32-bit variant *)
     | "1  0" => ARM_CBZ Rt imm19 64 (* CBZ - 64-bit variant *)
-    | "1  1" => ARM_CBNZ (* CBNZ - 64-bit variant *)
+    | "1  1" => ARM_CBNZ Rt imm19 64 (* CBNZ - 64-bit variant *)
     else UDF end.
 
 
 
   (* C6-1341 *)
+  (* Here the position is calculated in Gallina because the Extract expression
+     takes Gallina Ns for the indices, not exps. *)
   Definition arm_tbz2il (Xt imm14 b5 b40:N) :=
     let pos := cbits b5 5 b40 in
     let offset := <{ scast 64 (imm14#16 << 2#16) }> in <{
-      if  X[Xt][pos] = 0#1 then jmp PC + offset else nop end
+      if  X[Xt][pos] = 0#1 then branch (PC + offset) else nop end
   }>.
 
   (* C6-1340 *)
   Definition arm_tbnz2il (Xt imm14 b5 b40:N) :=
     let pos := cbits b5 5 b40 in
     let offset := <{ scast 64 (imm14#16 << 2#16) }> in <{
-      if  X[Xt][pos] = 1#1 then jmp PC + offset else nop end
+      if  X[Xt][pos] = 1#1 then branch (PC + offset) else nop end
   }>.
 
 
@@ -1270,7 +1385,6 @@ Section Decoder.
       temp[3000] := AllocTag Xtemp[2000]
     }>.
 
-  Definition havoc := <{ exn 0 }>.
   (* Store Tag and Zero Multiple C6.2.306-1307
      This instruction's semantics are undefined for EL0. *)
   Definition arm_stzgm2il (t n:N) := havoc.
