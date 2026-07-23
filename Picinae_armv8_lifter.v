@@ -200,14 +200,11 @@ Variant inst :=
   | ARM_ADDG
   | ARM_SUBG
   (*compare*)
-  | ARM_CMP_IMM
-  | ARM_CMN_IMM
   (*logical imm*)
   | ARM_AND_IMM  (Rn Rd immr imms sf n_:N)
   | ARM_ANDS_IMM (Rn Rd immr imms sf n_:N)
   | ARM_EOR_IMM (Rn Rd immr imms sf n_:N)
   | ARM_ORR_IMM (Rn Rd immr imms sf n_:N)
-  | ARM_TST_IMM
   (*move wide*)
   | ARM_MOVZ_IMM (Rd imm16 size shift:N)
   | ARM_MOVN_IMM (Rd imm16 size shift:N)
@@ -220,27 +217,8 @@ Variant inst :=
   | ARM_BFM_IMM (Rn Rd immr imms sf n_:N)
   | ARM_SBFM_IMM (Rn Rd immr imms sf n_:N)
   | ARM_UBFM_IMM (Rn Rd immr imms sf n_:N)
-  (*bitfield insert extract*)
-  | ARM_BFC_IMM
-  | ARM_BFI_IMM
-  | ARM_BFXIL_IMM
-  | ARM_SBFIZ_IMM
-  | ARM_SBFX_IMM
-  | ARM_UBFX_IMM
-  | ARM_UBFIZ_IMM
   (*extract*)
   | ARM_EXTR
-  (*shift imm*)
-  | ARM_ASR_IMM
-  | ARM_LSL_IMM
-  | ARM_LSR_IMM
-  | ARM_ROR_IMM
-  (*sign-extend zero-extend*)
-  | ARM_SXTB_IMM
-  | ARM_SXTH_IMM
-  | ARM_SXTW_IMM
-  | ARM_UXTB_IMM
-  | ARM_UXTH_IMM
   (*conditional comparison*)
   | ARM_CCMN_IMM
   | ARM_CCMP_IMM
@@ -252,29 +230,21 @@ Variant inst :=
   | ARM_SUBS_REG
   | ARM_CMN_REG
   | ARM_CMP_REG
-  | ARM_NEG_REG
-  | ARM_NEGS_REG
   (*arith extended*)
   | ARM_ADD_EXTENDED_REG
   | ARM_ADDS_EXTENDED_REG
   | ARM_SUB_EXTENDED_REG
   | ARM_SUBS_EXTENDED_REG
-  | ARM_CMN_EXTENDED_REG
-  | ARM_CMP_EXTENDED_REG
   (*arith shifted*)
   | ARM_ADD_SHIFTED_REG
   | ARM_ADDS_SHIFTED_REG
   | ARM_SUB_SHIFTED_REG
   | ARM_SUBS_SHIFTED_REG
-  | ARM_CMN_SHIFTED_REG
-  | ARM_CMP_SHIFTED_REG
   (*w carry*)
   | ARM_ADC
   | ARM_ADCS
   | ARM_SBC
   | ARM_SBCS
-  | ARM_NGC
-  | ARM_NGCS
   (*logical - bitwise ops*)
   | ARM_AND_LOG_REG
   | ARM_ANDS_LOG_REG
@@ -298,11 +268,7 @@ Variant inst :=
   | ARM_CSEL
   | ARM_CSINV
   | ARM_CSNEG
-  | ARM_CSET
   | ARM_CSETM
-  | ARM_CINC
-  | ARM_CINV
-  | ARM_CNEG
   (*conditional comparison*)
   | ARM_CCMN_REG
   | ARM_CCMP_REG
@@ -310,17 +276,11 @@ Variant inst :=
   (*mul/div reg*)
   | ARM_MADD
   | ARM_MSUB
-  | ARM_MNEG
-  | ARM_MUL
   | ARM_SMADDL
   | ARM_SMSUBL
-  | ARM_SMNEGL
-  | ARM_SMULL
   | ARM_SMULH
   | ARM_UMADDL
   | ARM_UMSUBL
-  | ARM_UMNEGL
-  | ARM_UMULL
   | ARM_UMULH
   | ARM_SDIV
   | ARM_UDIV
@@ -532,7 +492,6 @@ Variant inst :=
   | ARM_LDADDALB
   | ARM_LDADDLB
   | ARM_STADDB
-  | ARM_STADDLB
   | ARM_STCLRB
   | ARM_STCLRLB
   | ARM_STEORB
@@ -2270,8 +2229,6 @@ Section Decoder.
     else UDF end.
 
 
-  (* This cannot be easily embedded in PIL because we want to
-     scast to a variable length. *)
   (* exttype - 3bit encoding of the type of extension. See J1-7387 and 7388 *)
   (* Assign the extended value ro regt *)
   Definition ExtendReg regt (w regn exttype shift:N) :=
