@@ -188,12 +188,12 @@ Notation "'V'" := (Var R_OV) (in custom PIL at level 0).
 Definition ConditionHolds (cond:N) : exp :=
   let case := <{cond#4[3:1]}> in
   let EQ_NE := <{case = 0#3}> in
-  let CS_CC := <{case = 1#3}> in 
+  let CS_CC := <{case = 1#3}> in
   let MI_PL := <{case = 2#3}> in
   let VS_VC := <{case = 3#3}> in
   let HI_LS := <{case = 4#3}> in
   let GE_LT := <{case = 5#3}> in
-  let GT_LE := <{case = 6#3}> in 
+  let GT_LE := <{case = 6#3}> in
   let AL    := <{case = 7#3}> in
   <{ite (cond#4 = 0xF#4) 1#0
       (cond#4[0] ^ (* First bit negates condition *)
@@ -204,6 +204,14 @@ Definition ConditionHolds (cond:N) : exp :=
         ite HI_LS (C=1#1 & Z = 0#1) (
         ite GE_LT (N=V) (N=V & Z=0#1))))))))
   }>.
+
+(* Assume LittleE only execution. The documentation for Big Endian
+   is a little confusing and sparse (J1-7567). *)
+Definition BigEndian : exp := <{0#0}>.
+
+(* Configure Atomic extension, for now it seems to be supportable.
+   We do not model concurrency so these are just regular operations. *)
+Definition HaveAtomicExt : exp := <{1#1}>.
 
 Definition havoc := <{ exn 0 }>.
 
@@ -415,51 +423,39 @@ Variant inst :=
 
 (*Loads and Stores*)
   (*exclusive/others*)
-  | ARM_STXRB
-  | ARM_STLXRB
-  | ARM_LDXRB
-  | ARM_LDXRH
-  | ARM_LDAXRH
-  | ARM_LDAXRB
-  | ARM_STLLRB
-  | ARM_STLLRH
-  | ARM_STLRH
-  | ARM_STLRB
-  | ARM_STXRH
-  | ARM_STLXRH
-  | ARM_LDLARB
-  | ARM_LDARB
-  | ARM_LDARH
-  | ARM_LDLARH
-  | ARM_STXR
-  | ARM_STLXR
-  | ARM_STXP
-  | ARM_STLXP
-  | ARM_LDXR
-  | ARM_LDAXR
-  | ARM_LDXP
-  | ARM_LDAXP
-  | ARM_STLLR
-  | ARM_STLR
-  | ARM_LDLAR
-  | ARM_LDAR
+  | ARM_STXRB (Xn Xs Xt:N)
+  | ARM_STLXRB (Xn Xs Xt:N)
+  | ARM_LDXRB (Xn Xt:N)
+  | ARM_LDXRH (Xn Xt:N)
+  | ARM_LDAXRH (Xn Xt:N)
+  | ARM_LDAXRB (Xn Xt:N)
+  | ARM_STLLRB (Xn Xt:N)
+  | ARM_STLLRH (Xn Xt:N)
+  | ARM_STLRH (Xn Xt:N)
+  | ARM_STLRB (Xn Xt:N)
+  | ARM_STXRH (Xn Xs Xt:N)
+  | ARM_STLXRH (Xn Xs Xt:N)
+  | ARM_LDLARB (Xn Xt:N)
+  | ARM_LDARB (Xn Xt:N)
+  | ARM_LDARH (Xn Xt:N)
+  | ARM_LDLARH (Xn Xt:N)
+  | ARM_STXR (size Xn Xs Xt:N)
+  | ARM_STLXR (size Xn Xs Xt:N)
+  | ARM_STXP (size Xn Xs Xt Xt2:N)
+  | ARM_STLXP (size Xn Xs Xt Xt2:N)
+  | ARM_LDXR (size Xn Xt:N)
+  | ARM_LDAXR (size Xn Xt:N)
+  | ARM_LDXP (size Xn Xt Xt2:N)
+  | ARM_LDAXP (size Xn Xt Xt2:N)
+  | ARM_STLLR (size Xn Xt:N)
+  | ARM_STLR (size Xn Xt:N)
+  | ARM_LDLAR (size Xn Xt:N)
+  | ARM_LDAR (size Xn Xt:N)
   (*bunch of variants for these, refer to page C4-230*)
-  | ARM_CASP
-  | ARM_CASPA
-  | ARM_CASPAL
-  | ARM_CASPL
-  | ARM_CASB
-  | ARM_CASAB
-  | ARM_CASALB
-  | ARM_CASLB
-  | ARM_CASH
-  | ARM_CASAH
-  | ARM_CASALH
-  | ARM_CASLH
-  | ARM_CAS
-  | ARM_CASA
-  | ARM_CASAL
-  | ARM_CASL
+  | ARM_CASP (Xn Xs Xt size:N)
+  | ARM_CASB (Xn Xs Xt:N)
+  | ARM_CASH (Xn Xs Xt:N)
+  | ARM_CAS (Xn Xs Xt size:N)
   (*LDAPR/STLR unscaled immediate*)
   | ARM_STLURB (Xn Xt imm9:N)
   | ARM_LDAPURB (Xn Xt imm9:N)
@@ -996,8 +992,8 @@ Section Decoder.
    else UDF end.
 
   Definition arm_b_cond2il (cond imm19:N) :=
-    let offset := <{scast 64 (imm19#19++0#2)}> in 
-      <{if {ConditionHolds cond} 
+    let offset := <{scast 64 (imm19#19++0#2)}> in
+      <{if {ConditionHolds cond}
       then jmp PC + offset else nop end}>.
 
   Definition cond_branch :=
@@ -1481,6 +1477,263 @@ Section Decoder.
     | "11  000000000    00" => ARM_LDGM Rn Rt(* LDGM Armv8.5 *)
     else UDF end.
 
+  (* J1-7343
+    // Compares the value stored at the passed-in memory address against the passed-in expected
+    // value. If the comparison is successful, the value at the passed-in memory address is swapped
+    // with the passed-in new_value.
+
+    bits(w) MemAtomicCompareAndSwap(bits(64) addr, bits(w) expectedvalue,
+        bits(w) newvalue, AccType ldacctype, AccType stacctype)*)
+  Definition MemAtomicCampareAndSwap (w t:N) addr expectedvalue newvalue :=
+    let bytes := N.shiftr w 3 in <{
+      (* oldvalue *) temp[t] := ite BigEndian load[addr,BigE,bytes] load[addr,LittleE,bytes];
+      if Xtemp[t] = expectedvalue then
+        if BigEndian then store[addr,newvalue,BigE,bytes] else store[addr,newvalue,LittleE,bytes] end else nop end
+    }>.
+
+  Definition arm_casp2il (Xn Xs Xt size:N) :=
+    let undefined := <{!HaveAtomicExt | Xs#5[0] = 1#1 | Xt#5[0] = 1#1}> in <{
+      if undefined then havoc else
+      (* comparevalue *) temp[1000] := ite BigEndian (lcast size X[Xn] ++ lcast size X[{N.succ Xn}])
+                                                     (lcast size X[{N.succ Xn}] ++ lcast size X[Xn]);
+      (* newvalue *) temp[2000] := ite BigEndian (lcast size X[Xt] ++ lcast size X[{N.succ Xt}])
+                                                 (lcast size X[{N.succ Xt}] ++ lcast size X[Xt]);
+      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
+      {MemAtomicCampareAndSwap (N.shiftl size 2) 334 <{Xtemp[333]}> <{Xtemp[1000]}> <{Xtemp[2000]}>};
+      if BigEndian then
+        var[Xs] := ucast 64 (Xtemp[334][{2*size-1}:size]);
+        var[{N.succ Xs}] := ucast 64 (Xtemp[334][size:0])
+      else
+        var[Xs] := ucast 64 (Xtemp[334][size:0]);
+        var[{N.succ Xs}] := ucast 64 (Xtemp[334][{2*size-1}:size])
+      end
+      end
+    }>.
+
+  Definition arm_casb2il (Xn Xs Xt:N) :=
+    let undefined := <{!HaveAtomicExt}> in
+    let comparevalue := <{lcast 8 X[Xs]}> in
+    let newvalue := <{lcast 8 X[Xt]}> in <{
+      if undefined then havoc else
+      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
+      {MemAtomicCampareAndSwap 8 334 <{Xtemp[333]}> comparevalue newvalue};
+      var[Xs] := ucast 64 Xtemp[334]
+      end
+    }>.
+
+  Definition arm_cash2il (Xn Xs Xt:N) :=
+    let undefined := <{!HaveAtomicExt}> in
+    let comparevalue := <{lcast 16 X[Xs]}> in
+    let newvalue := <{lcast 16 X[Xt]}> in <{
+      if undefined then havoc else
+      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
+      {MemAtomicCampareAndSwap 16 334 <{Xtemp[333]}> comparevalue newvalue};
+      var[Xs] := ucast 64 Xtemp[334]
+      end
+    }>.
+
+  Definition arm_cas2il (Xn Xs Xt size:N) :=
+    let undefined := <{!HaveAtomicExt}> in
+    let comparevalue := <{lcast size X[Xs]}> in
+    let newvalue := <{lcast size X[Xt]}> in <{
+      if undefined then havoc else
+      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
+      {MemAtomicCampareAndSwap 32 334 <{Xtemp[333]}> comparevalue newvalue};
+      var[Xs] := ucast 64 Xtemp[334]
+      end
+    }>.
+
+  (* Exclusive operations are Nops when the PE does not have exclusive access
+     to memory.  We model this by using an unknown value, thus necessitating
+     exploring both possible branches during symbolic execution.
+
+      We use exp to effect the unknown behavior to let the symbolic executor handle
+     the case analysis instead of duplicating code paths. *)
+  Definition arm_stxr2il_constr (size Xn Xs Xt:N) (rtunknown rnunknown:exp) :=
+    let bytes := N.shiftr size 3 in
+    <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      temp[1000] := ite rnunknown X[Xn] (unknown 64);
+      temp[2000] := ite rtunknown (lcast size X[Xt]) (unknown size);
+      if unknown 1 then
+        (* Store not attempted, returns error bit. *)
+        var[Xs] := 1#64
+      else
+        if unknown 1 then
+          (* Store succeeded, but returned status may still indicate failure *)
+          store[Xtemp[1000],Xtemp[2000],bytes];
+          var[Xs] := ucast 64 (unknown 1)
+        else
+          (* Store attempted but failed. *)
+          var[Xs] := 0#64
+        end
+      end
+    }>.
+
+  Definition arm_stxr2il_size (size Xn Xs Xt:N) :=
+    let constraint1 := <{Xs#5 = Xt#5}> in
+    let constraint2 := <{Xs#5 = Xn#5 & Xn#5 <> 31#5}> in <{
+      if ! constraint1 & ! constraint2 then {arm_stxr2il_constr size Xn Xs Xt (Word 0 1) (Word 0 1)} else
+      if constraint1 then
+        if unknown 1 then
+          (* Constraint_UNDEFINED *) havoc
+        else if unknown 1 then
+          (* Constraint_NOP *) nop
+        else (* Constraint_UNKNOWN or Constraint_NONE *)
+        if constraint2 then
+          (* Reached Constraint_UNDEFINED and Constraint_NOP above, so don't need to repeat *)
+          {arm_stxr2il_constr size Xn Xs Xt (Unknown 1) (Unknown 1)}
+        else
+          {arm_stxr2il_constr size Xn Xs Xt (Unknown 1) (Word 0 1)}
+        end (* End of constraint1 + constraint2 *)
+      end end else
+      (* !constraint1 + constraint2 *)
+        if unknown 1 then
+          (* Constraint_UNDEFINED *) havoc
+        else if unknown 1 then
+          (* Constraint_NOP *) nop
+        else (* Constraint_UNKNOWN or Constraint_NONE *)
+          {arm_stxr2il_constr size Xn Xs Xt (Word 0 1) (Unknown 1)}
+        end end end end}>.
+
+    Definition arm_stxrb2il := arm_stxr2il_size 8.
+    Definition arm_stxrh2il := arm_stxr2il_size 16.
+    Definition arm_stxr2il := arm_stxr2il_size.
+
+    Definition arm_stlxrb2il := arm_stxr2il_size 8.
+    Definition arm_stlxrh2il := arm_stxr2il_size 16.
+    Definition arm_stlxr2il := arm_stxr2il_size.
+
+    Definition arm_stllr2il_size (size Xn Xt:N) :=
+      let bytes := N.shiftr size 3 in
+      <{ if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+         store[X[Xn],(ucast 64 (lcast size X[Xt])),bytes]
+      }>.
+
+    Definition arm_stllrb2il := arm_stllr2il_size 8.
+    Definition arm_stllrh2il := arm_stllr2il_size 16.
+    Definition arm_stllr2il := arm_stllr2il_size.
+
+    Definition arm_stlrb2il := arm_stllr2il_size 8.
+    Definition arm_stlrh2il := arm_stllr2il_size 16.
+    Definition arm_stlr2il := arm_stllr2il_size.
+
+  (* TODO: Documentation say the address must be aligned on an element-size boundary,
+     but the operation pseudocode does not seem to have it. I did not implement
+     it on the first pass. Decide whether or not to add it. *)
+  Definition arm_stxp2il_constr (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:exp) :=
+    let bytes := N.shiftr size 2 in
+    let el1 := <{Xtemp[2000]}> in
+    let el2 := <{Xtemp[3000]}> in
+    <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      (* address *) temp[1000] := ite rnunknown X[Xn] (unknown 64);
+      (* element1 *) temp[2000] := lcast size X[Xt];
+      (* element2 *) temp[3000] := lcast size X[Xt2];
+      if rtunknown then temp[2000] := unknown size; temp[3000] := unknown size else nop end;
+      (* data *) temp[4000] := ite BigEndian (el1++el2) (el2++el1);
+      if unknown 1 then
+        (* Store not attempted, returns error bit. *)
+        var[Xs] := 1#64
+      else
+        if unknown 1 then
+          (* Store succeeded, but returned status may still indicate failure *)
+          store[Xtemp[1000],Xtemp[4000],bytes];
+          var[Xs] := ucast 64 (unknown 1)
+        else
+          (* Store attempted but failed. *)
+          var[Xs] := 0#64
+        end
+      end
+    }>.
+
+  Definition arm_stxp2il_size (size Xn Xs Xt Xt2:N) :=
+    let constraint1 := <{Xs#5 = Xt#5 | Xs#5 = Xt2#5}> in
+    let constraint2 := <{Xs#5 = Xn#5 & Xn#5 <> 31#5}> in <{
+      if ! constraint1 & ! constraint2 then {arm_stxp2il_constr size Xn Xs Xt Xt2 (Word 0 1) (Word 0 1)} else
+      if constraint1 then
+        if unknown 1 then
+          (* Constraint_UNDEFINED *) havoc
+        else if unknown 1 then
+          (* Constraint_NOP *) nop
+        else (* Constraint_UNKNOWN or Constraint_NONE *)
+        if constraint2 then
+          (* Reached Constraint_UNDEFINED and Constraint_NOP above, so don't need to repeat *)
+          {arm_stxp2il_constr size Xn Xs Xt Xt2 (Unknown 1) (Unknown 1)}
+        else
+          {arm_stxp2il_constr size Xn Xs Xt Xt2 (Unknown 1) (Word 0 1)}
+        end (* End of constraint1 + constraint2 *)
+      end end else
+      (* !constraint1 + constraint2 *)
+        if unknown 1 then
+          (* Constraint_UNDEFINED *) havoc
+        else if unknown 1 then
+          (* Constraint_NOP *) nop
+        else (* Constraint_UNKNOWN or Constraint_NONE *)
+          {arm_stxp2il_constr size Xn Xs Xt Xt2 (Word 0 1) (Unknown 1)}
+        end end end end}>.
+
+  Definition arm_stxp2il := arm_stxp2il_size.
+  Definition arm_stlxp2il := arm_stxp2il_size.
+
+  Definition arm_ldxr2il_size (size Xn Xt:N) :=
+    let bytes := N.shiftr size 3 in <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      var[Xt] := ucast 64 load[X[Xn],bytes]
+    }>.
+
+  Definition arm_ldxrb2il := arm_ldxr2il_size 8.
+  Definition arm_ldxrh2il := arm_ldxr2il_size 16.
+  Definition arm_ldxr2il := arm_ldxr2il_size.
+
+  Definition arm_ldaxrb2il := arm_ldxr2il_size 8.
+  Definition arm_ldaxrh2il := arm_ldxr2il_size 16.
+  Definition arm_ldaxr2il := arm_ldxr2il_size.
+
+  Definition arm_ldarb2il := arm_ldxr2il_size 8.
+  Definition arm_ldarh2il := arm_ldxr2il_size 16.
+  Definition arm_ldar2il := arm_ldxr2il_size.
+
+  Definition arm_ldlarb2il := arm_ldxr2il_size 8.
+  Definition arm_ldlarh2il := arm_ldxr2il_size 16.
+  Definition arm_ldlar2il := arm_ldxr2il_size.
+
+  Definition arm_ldxp2il_constr (size Xn Xt Xt2:N) (rtunknown:bool) :=
+    let bytes := N.shiftr size 2 in
+    let datasize := N.shiftl size 1 in
+    <{
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      if {b2exp rtunknown} then var[Xt] := unknown 64 else
+      if size#7 = 32#7 then
+      (* data *) temp[2000] := load[Xtemp[1000],bytes];
+        if BigEndian then
+          var[Xt] := ucast 64 (Xtemp[2000][{N.pred datasize}:size]);
+          var[Xt2] := ucast 64 (Xtemp[2000][{N.pred size}:0])
+        else
+          var[Xt] := ucast 64 (Xtemp[2000][{N.pred size}:0]);
+          var[Xt2] := ucast 64 (Xtemp[2000][{N.pred datasize}:size])
+        end
+      else
+        if !Aligned[Xtemp[1000],bytes] then exn 0
+        else
+          var[Xt] := load[Xtemp[1000],8];
+          var[Xt2] := load[Xtemp[1000]+8#64,8]
+        end
+      end
+      end
+    }>.
+
+  Definition arm_ldxp2il (size Xn Xt Xt2:N) :=
+    let constraint_check := <{ Xt#5 = Xt2#5 }> in <{
+      if ! constraint_check then {arm_ldxp2il_constr size Xn Xt Xt2 false} else
+      (* Constraint_NOP *)
+      if unknown 1 then nop else
+      (* Constraint_UNDEF *)
+      if unknown 1 then havoc else
+      (* Constraint_UNKNOWN *)
+      {arm_ldxp2il_constr size Xn Xt Xt2 true}
+      end end end
+    }>.
 
   Definition load_store_exclusive :=
     let size := n.[30,32] in
@@ -1488,74 +1741,77 @@ Section Decoder.
     let l_ := n.[22] in
     let o1 := n.[21] in
     let o0 := n.[15] in
-    let rt2 := n.[10,15] in
-    match[bits] size, o2, l_, o1, o0, rt2 with
+    let Rt2 := n.[10,15] in
+    let Rt := n.[0,5] in
+    let Rs := n.[16,21] in
+    let Rn := n.[5,10] in
+    match[bits] size, o2, l_, o1, o0, Rt2 with
     | "-   1  -  1  -  !=11111" => UDF (* Unallocated. - *)
     | "0x  0  -  1  -  !=11111" => UDF (* Unallocated. - *)
-    | "00  0  0  0  0  -      " => ARM_STXRB (* STXRB - *)
-    | "00  0  0  0  1  -      " => ARM_STLXRB (* STLXRB - *)
-    | "00  0  0  1  0  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 32-bit, no memory ordering variant on page C6-568 ARMv8.1 *)
-    | "00  0  0  1  1  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 32-bit, release variant on page C6-568 ARMv8.1 *)
-    | "00  0  1  0  0  -      " => ARM_LDXRB (* LDXRB - *)
-    | "00  0  1  0  1  -      " => ARM_LDAXRB (* LDAXRB - *)
-    | "00  0  1  1  0  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire variant on page C6-568 ARMv8.1 *)
-    | "00  0  1  1  1  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire and release variant on page C6-568 ARMv8.1 *)
-    | "00  1  0  0  0  -      " => ARM_STLLRB (* STLLRB ARMv8.1 *)
-    | "00  1  0  0  1  -      " => ARM_STLRB (* STLRB - *)
-    | "00  1  0  1  0  11111  " => ARM_CASB (* CASB, CASAB, CASALB, CASLB - No memory ordering variant on page C6-564 ARMv8.1 *)
-    | "00  1  0  1  1  11111  " => ARM_CASB (* CASB, CASAB, CASALB, CASLB - Release variant on page C6-564 ARMv8.1 *)
-    | "00  1  1  0  0  -      " => ARM_LDLARB (* LDLARB ARMv8.1 *)
-    | "00  1  1  0  1  -      " => ARM_LDARB (* LDARB - *)
-    | "00  1  1  1  0  11111  " => ARM_CASB (* CASB, CASAB, CASALB, CASLB - Acquire variant on page C6-564 ARMv8.1 *)
-    | "00  1  1  1  1  11111  " => ARM_CASB (* CASB, CASAB, CASALB, CASLB - Acquire and release variant on page C6-564 ARMv8.1 *)
-    | "01  0  0  0  0  -      " => ARM_STXRH (* STXRH - *)
-    | "01  0  0  0  1  -      " => ARM_STLXRH (* STLXRH - *)
-    | "01  0  0  1  0  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 64-bit, no memory ordering variant on page C6-569 ARM *)
-    | "01  0  0  1  1  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 64-bit, release variant on page C6-569 ARMv8.1 *)
-    | "01  0  1  0  0  -      " => ARM_LDXRH (* LDXRH - *)
-    | "01  0  1  0  1  -      " => ARM_LDAXRH (* LDAXRH - *)
-    | "01  0  1  1  0  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire variant on *)
-    | "01  0  1  1  1  11111  " => ARM_CASP (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire and *)
-    | "01  1  0  0  0  -      " => ARM_STLLRH (* STLLRH ARMv8.1 *)
-    | "01  1  0  0  1  -      " => ARM_STLRH (* STLRH - *)
-    | "01  1  0  1  0  11111  " => ARM_CASH (* CASH, CASAH, CASALH, CASLH - No memory ordering *)
-    | "01  1  0  1  1  11111  " => ARM_CASH (* CASH, CASAH, CASALH, CASLH - Release variant on *)
-    | "01  1  1  0  0  -      " => ARM_LDLARH (* LDLARH ARMv8.1 *)
-    | "01  1  1  0  1  -      " => ARM_LDARH (* LDARH - *)
-    | "01  1  1  1  0  11111  " => ARM_CASH (* CASH, CASAH, CASALH, CASLH - Acquire variant on *)
-    | "01  1  1  1  1  11111  " => ARM_CASH (* CASH, CASAH, CASALH, CASLH - Acquire and release *)
-    | "10  0  0  0  0  -      " => ARM_STXR (* STXR - 32-bit variant on page C6-922 - *)
-    | "10  0  0  0  1  -      " => ARM_STLXR (* STLXR - 32-bit variant on page C6-859 - *)
-    | "10  0  0  1  0  -      " => ARM_STXP (* STXP - 32-bit variant on page C6-920 - *)
-    | "10  0  0  1  1  -      " => ARM_STLXP (* STLXP - 32-bit variant on page C6-856 - *)
-    | "10  0  1  0  0  -      " => ARM_LDXR (* LDXR - 32-bit variant on page C6-750 - *)
-    | "10  0  1  0  1  -      " => ARM_LDAXR (* LDAXR - 32-bit variant on page C6-643 - *)
-    | "10  0  1  1  0  -      " => ARM_LDXP (* LDXP - 32-bit variant on page C6-748 - *)
-    | "10  0  1  1  1  -      " => ARM_LDAXP (* LDAXP - 32-bit variant on page C6-641 - *)
-    | "10  1  0  0  0  -      " => ARM_STLLR (* STLLR - 32-bit variant on page C6-852 ARMv8.1 *)
-    | "10  1  0  0  1  -      " => ARM_STLR (* STLR - 32-bit variant on page C6-853 - *)
-    | "10  1  0  1  0  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 32-bit, no memory ordering *)
-    | "10  1  0  1  1  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 32-bit, release variant on *)
-    | "10  1  1  0  0  -      " => ARM_LDLAR (* LDLAR - 32-bit variant on page C6-661 *)
-    | "10  1  1  0  1  -      " => ARM_LDAR (* LDAR - 32-bit variant on page C6-638 - *)
-    | "10  1  1  1  0  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 32-bit, acquire variant on *)
-    | "10  1  1  1  1  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 32-bit, acquire and release *)
-    | "11  0  0  0  0  -      " => ARM_STXR (* STXR - 64-bit variant on page C6-922 - *)
-    | "11  0  0  0  1  -      " => ARM_STLXR (* STLXR - 64-bit variant on page C6-859 - *)
-    | "11  0  0  1  0  -      " => ARM_STXP (* STXP - 64-bit variant on page C6-920 - *)
-    | "11  0  0  1  1  -      " => ARM_STLXP (* STLXP - 64-bit variant on page C6-856 - *)
-    | "11  0  1  0  0  -      " => ARM_LDXR (* LDXR - 64-bit variant on page C6-750 - *)
-    | "11  0  1  0  1  -      " => ARM_LDAXR (* LDAXR - 64-bit variant on page C6-643 - *)
-    | "11  0  1  1  0  -      " => ARM_LDXP (* LDXP - 64-bit variant on page C6-748 - *)
-    | "11  0  1  1  1  -      " => ARM_LDAXP (* LDAXP - 64-bit variant on page C6-641 - *)
-    | "11  1  0  0  0  -      " => ARM_STLLR (* STLLR - 64-bit variant on page C6-852 ARMv8.1 *)
-    | "11  1  0  0  1  -      " => ARM_STLR (* STLR - 64-bit variant on page C6-853 - *)
-    | "11  1  0  1  0  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 64-bit, no memory ordering *)
-    | "11  1  0  1  1  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 64-bit, release variant on *)
-    | "11  1  1  0  0  -      " => ARM_LDLAR (* LDLAR - 64-bit variant on page C6-661 ARMv8.1 *)
-    | "11  1  1  0  1  -      " => ARM_LDAR (* LDAR - 64-bit variant on page C6-638 - *)
-    | "11  1  1  1  0  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 64-bit, acquire variant on *)
-    | "11  1  1  1  1  11111  " => ARM_CAS (* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
+    | "00  0  0  0  0  -      " => ARM_STXRB Rn Rs Rt (* STXRB - *)
+    | "00  0  0  0  1  -      " => ARM_STLXRB Rn Rs Rt (* STLXRB - *)
+    | "00  0  0  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, no memory ordering variant on page C6-568 ARMv8.1 *)
+    | "00  0  0  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, release variant on page C6-568 ARMv8.1 *)
+    | "00  0  1  0  0  -      " => ARM_LDXRB Rn Rt(* LDXRB - *)
+    | "00  0  1  0  1  -      " => ARM_LDAXRB Rn Rt(* LDAXRB - *)
+    | "00  0  1  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire variant on page C6-568 ARMv8.1 *)
+    | "00  0  1  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire and release variant on page C6-568 ARMv8.1 *)
+    | "00  1  0  0  0  -      " => ARM_STLLRB Rn Rt (* STLLRB ARMv8.1 *)
+    | "00  1  0  0  1  -      " => ARM_STLRB Rn Rt (* STLRB - *)
+    | "00  1  0  1  0  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - No memory ordering variant on page C6-564 ARMv8.1 *)
+    | "00  1  0  1  1  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - Release variant on page C6-564 ARMv8.1 *)
+    | "00  1  1  0  0  -      " => ARM_LDLARB Rn Rt (* LDLARB ARMv8.1 *)
+    | "00  1  1  0  1  -      " => ARM_LDARB Rn Rt (* LDARB - *)
+    | "00  1  1  1  0  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - Acquire variant on page C6-564 ARMv8.1 *)
+    | "00  1  1  1  1  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - Acquire and release variant on page C6-564 ARMv8.1 *)
+    | "01  0  0  0  0  -      " => ARM_STXRH Rn Rs Rt (* STXRH - *)
+    | "01  0  0  0  1  -      " => ARM_STLXRH Rn Rs Rt (* STLXRH - *)
+    | "01  0  0  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, no memory ordering variant on page C6-569 ARM *)
+    | "01  0  0  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, release variant on page C6-569 ARMv8.1 *)
+    | "01  0  1  0  0  -      " => ARM_LDXRH Rn Rt (* LDXRH - *)
+    | "01  0  1  0  1  -      " => ARM_LDAXRH Rn Rt (* LDAXRH - *)
+    | "01  0  1  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire variant on *)
+    | "01  0  1  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire and *)
+    | "01  1  0  0  0  -      " => ARM_STLLRH Rn Rt (* STLLRH ARMv8.1 *)
+    | "01  1  0  0  1  -      " => ARM_STLRH Rn Rt (* STLRH - *)
+    | "01  1  0  1  0  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - No memory ordering *)
+    | "01  1  0  1  1  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - Release variant on *)
+    | "01  1  1  0  0  -      " => ARM_LDLARH Rn Rt (* LDLARH ARMv8.1 *)
+    | "01  1  1  0  1  -      " => ARM_LDARH Rn Rt (* LDARH - *)
+    | "01  1  1  1  0  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - Acquire variant on *)
+    | "01  1  1  1  1  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - Acquire and release *)
+    | "10  0  0  0  0  -      " => ARM_STXR 32 Rn Rs Rt (* STXR - 32-bit variant on page C6-922 - *)
+    | "10  0  0  0  1  -      " => ARM_STLXR 32 Rn Rs Rt (* STLXR - 32-bit variant on page C6-859 - *)
+    | "10  0  0  1  0  -      " => ARM_STXP 32 Rn Rs Rt Rt2 (* STXP - 32-bit variant on page C6-920 - *)
+    | "10  0  0  1  1  -      " => ARM_STLXP 64 Rn Rs Rt Rt2 (* STLXP - 32-bit variant on page C6-856 - *)
+    | "10  0  1  0  0  -      " => ARM_LDXR 32 Rn Rt (* LDXR - 32-bit variant on page C6-750 - *)
+    | "10  0  1  0  1  -      " => ARM_LDAXR 32 Rn Rt (* LDAXR - 32-bit variant on page C6-643 - *)
+    | "10  0  1  1  0  -      " => ARM_LDXP 32 Rn Rt Rt2 (* LDXP - 32-bit variant on page C6-748 - *)
+    | "10  0  1  1  1  -      " => ARM_LDAXP 32 Rn Rt Rt2 (* LDAXP - 32-bit variant on page C6-641 - *)
+    | "10  1  0  0  0  -      " => ARM_STLLR 64 Rn Rt(* STLLR - 32-bit variant on page C6-852 ARMv8.1 *)
+    | "10  1  0  0  1  -      " => ARM_STLR 64 Rn Rt (* STLR - 32-bit variant on page C6-853 - *)
+    | "10  1  0  1  0  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, no memory ordering *)
+    | "10  1  0  1  1  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, release variant on *)
+    | "10  1  1  0  0  -      " => ARM_LDLAR 32 Rn Rt (* LDLAR - 32-bit variant on page C6-661 *)
+    | "10  1  1  0  1  -      " => ARM_LDAR 32 Rn Rt (* LDAR - 32-bit variant on page C6-638 - *)
+    | "10  1  1  1  0  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, acquire variant on *)
+    | "10  1  1  1  1  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, acquire and release *)
+    | "11  0  0  0  0  -      " => ARM_STXR 64 Rn Rs Rt (* STXR - 64-bit variant on page C6-922 - *)
+    | "11  0  0  0  1  -      " => ARM_STLXR 64 Rn Rs Rt (* STLXR - 64-bit variant on page C6-859 - *)
+    | "11  0  0  1  0  -      " => ARM_STXP 64 Rn Rs Rt Rt2 (* STXP - 64-bit variant on page C6-920 - *)
+    | "11  0  0  1  1  -      " => ARM_STLXP 64 Rn Rs Rt Rt2 (* STLXP - 64-bit variant on page C6-856 - *)
+    | "11  0  1  0  0  -      " => ARM_LDXR 64 Rn Rt (* LDXR - 64-bit variant on page C6-750 - *)
+    | "11  0  1  0  1  -      " => ARM_LDAXR 64 Rn Rt (* LDAXR - 64-bit variant on page C6-643 - *)
+    | "11  0  1  1  0  -      " => ARM_LDXP 64 Rn Rt Rt2 (* LDXP - 64-bit variant on page C6-748 - *)
+    | "11  0  1  1  1  -      " => ARM_LDAXP 64 Rn Rt Rt2 (* LDAXP - 64-bit variant on page C6-641 - *)
+    | "11  1  0  0  0  -      " => ARM_STLLR 64 Rn Rt(* STLLR - 64-bit variant on page C6-852 ARMv8.1 *)
+    | "11  1  0  0  1  -      " => ARM_STLR 64 Rn Rt (* STLR - 64-bit variant on page C6-853 - *)
+    | "11  1  0  1  0  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, no memory ordering *)
+    | "11  1  0  1  1  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, release variant on *)
+    | "11  1  1  0  0  -      " => ARM_LDLAR 64 Rn Rt (* LDLAR - 64-bit variant on page C6-661 ARMv8.1 *)
+    | "11  1  1  0  1  -      " => ARM_LDAR 64 Rn Rt (* LDAR - 64-bit variant on page C6-638 - *)
+    | "11  1  1  1  0  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, acquire variant on *)
+    | "11  1  1  1  1  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
     else UDF end.
 
   Definition arm_stlurb2il Xn Xt imm9 :=
