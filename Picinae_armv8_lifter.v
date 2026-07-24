@@ -226,6 +226,27 @@ Definition BranchTo w target := <{
 
 Notation "'branch' e" := (BranchTo 64 e) (in custom PIL at level 0, e at level 99).
 
+(* ARM does not provide a bit encoding for these atomic operations, but 9 are
+    listed in the MemAtomic auxiliary function. We just use 0-8, but it is arbitrary. *)
+Notation "'MemAtomicOp_ADD'" := (<{0#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_BIC'" := (<{1#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_EOR'" := (<{2#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_ORR'" := (<{3#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_SMAX'" := (<{4#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_SMIN'" := (<{5#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_UMAX'" := (<{6#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_UMIN'" := (<{7#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_SWP'" := (<{8#5}>) (in custom PIL at level 0).
+Notation "'MemAtomicOp_ADD'" := (<{0#5}>) (at level 0).
+Notation "'MemAtomicOp_BIC'" := (<{1#5}>) (at level 0).
+Notation "'MemAtomicOp_EOR'" := (<{2#5}>) (at level 0).
+Notation "'MemAtomicOp_ORR'" := (<{3#5}>) (at level 0).
+Notation "'MemAtomicOp_SMAX'" := (<{4#5}>) (at level 0).
+Notation "'MemAtomicOp_SMIN'" := (<{5#5}>) (at level 0).
+Notation "'MemAtomicOp_UMAX'" := (<{6#5}>) (at level 0).
+Notation "'MemAtomicOp_UMIN'" := (<{7#5}>) (at level 0).
+Notation "'MemAtomicOp_SWP'" := (<{8#5}>) (at level 0).
+
 Variant inst :=
 (*DP imm*)
   | ARM_ADD_IMM
@@ -468,6 +489,9 @@ Variant inst :=
   | ARM_STLUR (Xn Xt imm9 size:N)
   | ARM_PRFM (Xn Xt imm9:N)
   | ARM_PRFM_IMM (Xn Xt imm9:N)
+  | ARM_LDAPRB (Xn Xt:N)
+  | ARM_LDAPRH (Xn Xt:N)
+  | ARM_LDAPR (size Xn Xt:N)
   (*load/store memory tags*)
   | ARM_STG (Xn Xt imm9:N) (writeback printindex:bool)
   | ARM_STZG (Xn Xt imm9:N) (writeback printindex:bool)
@@ -521,68 +545,33 @@ Variant inst :=
   | ARM_LDTR (Rn Rt imm9 size:N)
   | ARM_LDTRSW (Rn Rt imm9:N)
   (*atomic memory ops*)
-  | ARM_LDADDB
-  | ARM_LDADDAB
-  | ARM_LDADDALB
-  | ARM_LDADDLB
-  | ARM_STADDB
-  | ARM_STCLRB
-  | ARM_STCLRLB
-  | ARM_STEORB
-  | ARM_STEORLB
-  | ARM_LDCLRB
-  | ARM_LDCLRAB
-  | ARM_LDCLRALB
-  | ARM_LDCLRLB
-  | ARM_LDEORB
-  | ARM_LDEORAB
-  | ARM_LDEORALB
-  | ARM_LDEORLB
-  | ARM_LDSETB
-  | ARM_STSETB
-  | ARM_LDSMAXB
-  | ARM_STSMAXB
-  | ARM_LDSMINB
-  | ARM_STSMINB
-  | ARM_LDUMAXB
-  | ARM_STUMAXB
-  | ARM_LDUMINB
-  | ARM_STUMINB
-  | ARM_SWPB
-  | ARM_LDADDH
-  | ARM_STADDH
-  | ARM_LDCLRH
-  | ARM_STCLRH
-  | ARM_LDEORH
-  | ARM_STEORH
-  | ARM_LDSETH
-  | ARM_STSETH
-  | ARM_LDSMAXH
-  | ARM_STSMAXH
-  | ARM_LDSMINH
-  | ARM_STSMINH
-  | ARM_LDUMAXH
-  | ARM_STUMAXH
-  | ARM_LDUMINH
-  | ARM_STUMINH
-  | ARM_SWPH
-  | ARM_LDADD
-  | ARM_STADD
-  | ARM_LDCLR
-  | ARM_STCLR
-  | ARM_LDEOR
-  | ARM_STEOR
-  | ARM_LDSET
-  | ARM_STSET
-  | ARM_LDSMAX
-  | ARM_STSMAX
-  | ARM_STSMIN
-  | ARM_LDSMIN
-  | ARM_LDUMAX
-  | ARM_LDUMIN
-  | ARM_STUMAX
-  | ARM_STUMIN
-  | ARM_SWP
+  | ARM_LDADDB (Xn Xs Xt:N)
+  | ARM_LDCLRB (Xn Xs Xt:N)
+  | ARM_LDEORB (Xn Xs Xt:N)
+  | ARM_LDSETB (Xn Xs Xt:N)
+  | ARM_LDSMAXB (Xn Xs Xt:N)
+  | ARM_LDSMINB (Xn Xs Xt:N)
+  | ARM_LDUMAXB (Xn Xs Xt:N)
+  | ARM_LDUMINB (Xn Xs Xt:N)
+  | ARM_SWPB (Xn Xs Xt:N)
+  | ARM_LDADDH (Xn Xs Xt:N)
+  | ARM_LDCLRH (Xn Xs Xt:N)
+  | ARM_LDEORH (Xn Xs Xt:N)
+  | ARM_LDSETH (Xn Xs Xt:N)
+  | ARM_LDSMAXH (Xn Xs Xt:N)
+  | ARM_LDSMINH (Xn Xs Xt:N)
+  | ARM_LDUMAXH (Xn Xs Xt:N)
+  | ARM_LDUMINH (Xn Xs Xt:N)
+  | ARM_SWPH (Xn Xs Xt:N)
+  | ARM_LDADD (size Xn Xs Xt:N)
+  | ARM_LDCLR (size Xn Xs Xt:N)
+  | ARM_LDEOR (size Xn Xs Xt:N)
+  | ARM_LDSET (size Xn Xs Xt:N)
+  | ARM_LDSMAX (size Xn Xs Xt:N)
+  | ARM_LDSMIN (size Xn Xs Xt:N)
+  | ARM_LDUMAX (size Xn Xs Xt:N)
+  | ARM_LDUMIN (size Xn Xs Xt:N)
+  | ARM_SWP (size Xn Xs Xt:N)
   (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
   (*pac*)
   | ARM_LDRAA (Xn Xt S imm9:N) (wback:bool)
@@ -2845,6 +2834,97 @@ Section Decoder.
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1359 *)
     else UDF end.
 
+  (* We assume address translation succeed and is apparent. That is, we do not
+     model it. *)
+
+  Definition MemAtomic (op:exp) (w:N) (value address:exp) (rettemp:N):=
+    let bytes := N.shiftr w 3 in
+    let oldvalue := <{Xtemp[rettemp]}> in
+    let nvtemp := N.succ rettemp in
+    let newvalue := <{Xtemp[nvtemp]}> in
+    <{
+      temp[rettemp] := ucast 64 {MemRead address bytes};
+      if op = MemAtomicOp_ADD  then temp[nvtemp] := oldvalue + value  else
+      if op = MemAtomicOp_BIC  then temp[nvtemp] := oldvalue & !value else
+      if op = MemAtomicOp_EOR  then temp[nvtemp] := oldvalue ^ value  else
+      if op = MemAtomicOp_ORR  then temp[nvtemp] := oldvalue | value  else
+      if op = MemAtomicOp_SMAX then temp[nvtemp] := ite (oldvalue s> value) oldvalue value else
+      if op = MemAtomicOp_SMIN then temp[nvtemp] := ite (oldvalue s> value) value oldvalue else
+      if op = MemAtomicOp_UMAX then temp[nvtemp] := ite (oldvalue  > value) oldvalue value else
+      if op = MemAtomicOp_UMIN then temp[nvtemp] := ite (oldvalue  > value) value oldvalue else
+      (* op = MemAtomicOP_SWP  *)   temp[nvtemp] := value
+      end end end end end end end end;
+      store[address,newvalue,bytes]
+    }>.
+
+  Definition arm_ldatomic2il_size (op:exp) (size Xn Xs Xt:N) :=
+    let address := <{Xtemp[1000]}> in
+    let value := <{Xtemp[2000]}> in
+    <{
+      (* value *) temp[2000]:= ucast 64 (lcast size X[Xs]);
+      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      {MemAtomic op size address value 4000};
+      if Xt#5 <> 31#5 then var[Xt] := Xtemp[4000] else nop end
+    }>.
+
+  Definition arm_ldaddb2il := arm_ldatomic2il_size MemAtomicOp_ADD 8.
+  Definition arm_ldaddh2il := arm_ldatomic2il_size MemAtomicOp_ADD 16.
+  Definition arm_ldadd2il := arm_ldatomic2il_size MemAtomicOp_ADD.
+
+  Definition arm_ldumaxb2il := arm_ldatomic2il_size MemAtomicOp_UMAX 8.
+  Definition arm_ldumaxh2il := arm_ldatomic2il_size MemAtomicOp_UMAX 16.
+  Definition arm_ldumax2il := arm_ldatomic2il_size MemAtomicOp_UMAX.
+
+  Definition arm_lduminb2il := arm_ldatomic2il_size MemAtomicOp_UMIN 8.
+  Definition arm_lduminh2il := arm_ldatomic2il_size MemAtomicOp_UMIN 16.
+  Definition arm_ldumin2il := arm_ldatomic2il_size MemAtomicOp_UMIN.
+
+  Definition arm_ldsmaxb2il := arm_ldatomic2il_size MemAtomicOp_SMAX 8.
+  Definition arm_ldsmaxh2il := arm_ldatomic2il_size MemAtomicOp_SMAX 16.
+  Definition arm_ldsmax2il := arm_ldatomic2il_size MemAtomicOp_SMAX.
+
+  Definition arm_ldsminb2il := arm_ldatomic2il_size MemAtomicOp_SMIN 8.
+  Definition arm_ldsminh2il := arm_ldatomic2il_size MemAtomicOp_SMIN 16.
+  Definition arm_ldsmin2il := arm_ldatomic2il_size MemAtomicOp_SMIN.
+
+  Definition arm_ldclrb2il := arm_ldatomic2il_size MemAtomicOp_BIC 8.
+  Definition arm_ldclrh2il := arm_ldatomic2il_size MemAtomicOp_BIC 16.
+  Definition arm_ldclr2il := arm_ldatomic2il_size MemAtomicOp_BIC.
+
+  Definition arm_ldsetb2il := arm_ldatomic2il_size MemAtomicOp_ORR 8.
+  Definition arm_ldseth2il := arm_ldatomic2il_size MemAtomicOp_ORR 16.
+  Definition arm_ldset2il := arm_ldatomic2il_size MemAtomicOp_ORR.
+
+  Definition arm_ldeorb2il := arm_ldatomic2il_size MemAtomicOp_EOR 8.
+  Definition arm_ldeorh2il := arm_ldatomic2il_size MemAtomicOp_EOR 16.
+  Definition arm_ldeor2il := arm_ldatomic2il_size MemAtomicOp_EOR.
+
+  (* Unlike the other ld atomic operations, swap can write to SP (C6-1331). *)
+  Definition arm_swp2il_size (op:exp) (size Xn Xs Xt:N) :=
+    let address := <{Xtemp[1000]}> in
+    let value := <{Xtemp[2000]}> in
+    <{
+      (* value *) temp[2000]:= ucast 64 (lcast size X[Xs]);
+      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      {MemAtomic op size address value 4000};
+      var[Xt] := Xtemp[4000]
+    }>.
+
+  Definition arm_swpb2il := arm_swp2il_size MemAtomicOp_SWP 8.
+  Definition arm_swph2il := arm_swp2il_size MemAtomicOp_SWP 16.
+  Definition arm_swp2il := arm_swp2il_size MemAtomicOp_SWP.
+
+  Definition arm_ldapr2il_size (size Xn Xt:N) :=
+    let bytes := N.shiftr size 3 in  <{
+      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
+      var[Xt] := {MemRead <{Xtemp[1000]}> bytes}
+    }>.
+
+  Definition arm_ldaprb2il := arm_ldapr2il_size 8.
+  Definition arm_ldaprh2il := arm_ldapr2il_size 16.
+  Definition arm_ldapr2il := arm_ldapr2il_size.
+
+
   (*atomic memory ops*)
   Definition atomic  :=
     let size := n.[30,32] in
@@ -2853,223 +2933,165 @@ Section Decoder.
     let r_ := n.[22] in
     let o3 := n.[15] in
     let opc := n.[12,15] in
-    let rt := n.[0,5] in
-    match[bits] size, v_, a_, r_, o3, opc, rt with
-    | "-   0  -  -  1  001  -      " => UDF (* Unallocated. - *)
-    | "-   0  -  -  1  01x  -      " => UDF (* Unallocated. - *)
-    | "-   0  -  -  1  101  -      " => UDF (* Unallocated. - *)
-    | "-   0  -  -  1  11x  -      " => UDF (* Unallocated. - *)
-    | "-   0  0  -  1  100  -      " => UDF (* Unallocated. - *)
-    | "-   0  1  1  1  100  -      " => UDF (* Unallocated. - *)
-    | "-   1  -  -  -  -    -      " => UDF (* Unallocated. - *)
-    | "00  0  0  0  0  000  !=11111" => ARM_LDADDB (* LDADDB, LDADDAB, LDADDALB, LDADDLB - No memory ordering variant on page C6-632 ARMv8.1 *)
-    | "00  0  0  0  0  000  11111  " => ARM_STADDB (* STADDB, STADDLB - No memory ordering variant on *)
-    | "00  0  0  0  0  001  !=11111" => ARM_LDCLRB (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB -  *)
-    | "00  0  0  0  0  001  11111  " => ARM_STCLRB (* STCLRB, STCLRLB - ARMv8.1 *)
-    | "00  0  0  0  0  010  !=11111" => ARM_LDEORB (* LDEORB, LDEORAB, LDEORALB, LDEORLB - No *)
-    | "00  0  0  0  0  010  11111  " => ARM_STEORB (* STEORB, STEORLB - ARMv8.1 *)
-    | "00  0  0  0  0  011  !=11111" => ARM_LDSETB (* LDSETB, LDSETAB, LDSETALB, LDSETLB - No *)
-    | "00  0  0  0  0  011  11111  " => ARM_STSETB (* STSETB, STSETLB - ARMv8.1 *)
-    | "00  0  0  0  0  100  !=11111" => ARM_LDSMAXB (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - ARMv8.1 *)
-    | "00  0  0  0  0  100  11111  " => ARM_STSMAXB (* STSMAXB, STSMAXLB - No memory ordering *)
-    | "00  0  0  0  0  101  !=11111" => ARM_LDSMINB (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
-    | "00  0  0  0  0  101  11111  " => ARM_STSMINB (* STSMINB, STSMINLB - No memory ordering variant on page C6-895 *)
-    | "00  0  0  0  0  110  !=11111" => ARM_LDUMAXB (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - ARMv8.1 *)
-    | "00  0  0  0  0  110  11111  " => ARM_STUMAXB (* STUMAXB, STUMAXLB - No memory ordering *)
-    | "00  0  0  0  0  111  !=11111" => ARM_LDUMINB (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - ARMv8.1 *)
-    | "00  0  0  0  0  111  11111  " => ARM_STUMINB (* STUMINB, STUMINLB - No memory ordering variant *)
-    | "00  0  0  0  1  000  -      " => ARM_SWPB (* SWPB, SWPAB, SWPALB, SWPLB - No memory ordering variant on page C6-941 *)
-    | "00  0  0  1  0  000  !=11111" => ARM_LDADDB (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Release variant on page C6-632 *)
-    | "00  0  0  1  0  000  11111  " => ARM_STADDB (* STADDB, STADDLB - Release variant on page C6-832 *)
-    | "00  0  0  1  0  001  !=11111" => ARM_LDCLRB (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Release variant on page C6-647 *)
-    | "00  0  0  1  0  001  11111  " => ARM_STCLRB (* STCLRB, STCLRLB - Release variant on page C6-838  *)
-    | "00  0  0  1  0  010  !=11111" => ARM_LDEORB (* LDEORB, LDEORAB, LDEORALB, LDEORLB - *)
-    | "00  0  0  1  0  010  11111  " => ARM_STEORB (* STEORB, STEORLB - Release variant on page C6-844 ARMv8.1 *)
-    | "00  0  0  1  0  011  !=11111" => ARM_LDSETB (* LDSETB, LDSETAB, LDSETALB, LDSETLB - *)
-    | "00  0  0  1  0  011  11111  " => ARM_STSETB (* STSETB, STSETLB - Release variant on page C6-883 ARMv8.1 *)
-    | "00  0  0  1  0  100  !=11111" => ARM_LDSMAXB (* LDSMAXB, LDSMAXAB, LDSMAXALB, *)
-    | "00  0  0  1  0  100  11111  " => ARM_STSMAXB (* STSMAXB, STSMAXLB - Release variant on *)
-    | "00  0  0  1  0  101  !=11111" => ARM_LDSMINB (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
-    | "00  0  0  1  0  101  11111  " => ARM_STSMINB (* STSMINB, STSMINLB - Release variant on *)
-    | "00  0  0  1  0  110  !=11111" => ARM_LDUMAXB (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Release variant on page C6-727 *)
-    | "00  0  0  1  0  110  11111  " => ARM_STUMAXB (* STUMAXB, STUMAXLB - Release variant on page C6-905 ARMv8.1 *)
-    | "00  0  0  1  0  111  !=11111" => ARM_LDUMINB (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Release variant on page C6-733 ARMv8.1 *)
-    | "00  0  0  1  0  111  11111  " => ARM_STUMINB (* STUMINB, STUMINLB - Release variant on page C6-911 ARMv8.1 *)
-    | "00  0  0  1  1  000  -      " => ARM_SWPB (* SWPB, SWPAB, SWPALB, SWPLB - Release variant on page C6-941 ARMv8.1 *)
-    | "00  0  1  0  0  000  -      " => ARM_LDADDB (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Acquire variant on page C6-632 ARMv8.1 *)
-    | "00  0  1  0  0  001  -      " => ARM_LDCLRB (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Acquire variant on page C6-647 ARMv8.1 *)
-    | "00  0  1  0  0  010  -      " => ARM_LDEORB (* LDEORB, LDEORAB, LDEORALB, LDEORLB - Acquire variant on page C6-653 ARMv8.1 *)
-    | "00  0  1  0  0  011  -      " => ARM_LDSETB (* LDSETB, LDSETAB, LDSETALB, LDSETLB - Acquire variant on page C6-700 ARMv8.1 *)
-    | "00  0  1  0  0  100  -      " => ARM_LDSMAXB (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - Acquire variant on page C6-706 ARMv8.1 *)
-    | "00  0  1  0  0  101  -      " => ARM_LDSMINB (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB - Acquire variant on page C6-712 ARMv8.1 *)
-    | "00  0  1  0  0  110  -      " => ARM_LDUMAXB (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Acquire variant on page C6-727 ARMv8.1 *)
-    | "00  0  1  0  0  111  -      " => ARM_LDUMINB (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Acquire variant on page C6-733 *)
-    | "00  0  1  0  1  000  -      " => ARM_SWPB (* SWPB, SWPAB, SWPALB, SWPLB - Acquire varianton page C6-941 *)
-    | "00  0  1  1  0  000  -      " => ARM_LDADDB (* LDADDB, LDADDAB, LDADDALB, LDADDLB - and release variant on page C6-632 *)
-    | "00  0  1  1  0  001  -      " => ARM_LDCLRB (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - and release variant on page C6-647 *)
-    | "00  0  1  1  0  010  -      " => ARM_LDEORB (* LDEORB, LDEORAB, LDEORALB, LDEORLB - and release variant on page C6-653 *)
-    | "00  0  1  1  0  011  -      " => ARM_LDSETB (* LDSETB, LDSETAB, LDSETALB, LDSETLB - and release variant on page C6-700 *)
-    | "00  0  1  1  0  100  -      " => ARM_LDSMAXB (* LDSMAXB, LDSMAXAB, LDSMAXALB,LDSMAXLB - Acquire and release variant on C6-706 *)
-    | "00  0  1  1  0  101  -      " => ARM_LDSMINB (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB- Acquire and release variant on page C6-712 *)
-    | "00  0  1  1  0  110  -      " => ARM_LDUMAXB (* LDUMAXB, LDUMAXAB, LDUMAXALB,LDUMAXLB - Acquire and release variant on C6-727 *)
-    | "00  0  1  1  0  111  -      " => ARM_LDUMINB (* LDUMINB, LDUMINAB, LDUMINALB,LDUMINLB - Acquire and release variant on C6-733 *)
-    | "00  0  1  1  1  000  -      " => ARM_SWPB (* SWPB, SWPAB, SWPALB, SWPLB - Acquire and variant on page C6-941 *)
-    | "01  0  0  0  0  000  !=11111" => ARM_LDADDH (* LDADDH, LDADDAH, LDADDALH, LDADDLH - memory ordering variant on page C6-634 *)
-    | "01  0  0  0  0  000  11111  " => ARM_STADDH (* STADDH, STADDLH - No memory ordering variant on C6-834 *)
-    | "01  0  0  0  0  001  !=11111" => ARM_LDCLRH (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - No ordering variant on page C6-649 *)
-    | "01  0  0  0  0  001  11111  " => ARM_STCLRH (* STCLRH, STCLRLH - No memory ordering variant on page C6-840 *)
-    | "01  0  0  0  0  010  !=11111" => ARM_LDEORH (* LDEORH, LDEORAH, LDEORALH, LDEORLH - No memory ordering variant on page C6-655 *)
-    | "01  0  0  0  0  010  11111  " => ARM_STEORH (* STEORH, STEORLH - No memory ordering variant on *)
-    | "01  0  0  0  0  011  !=11111" => ARM_LDSETH (* LDSETH, LDSETAH, LDSETALH, LDSETLH - No *)
-    | "01  0  0  0  0  011  11111  " => ARM_STSETH (* STSETH, STSETLH -  *)
-    | "01  0  0  0  0  100  !=11111" => ARM_LDSMAXH (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - No memory ordering variant on *)
-    | "01  0  0  0  0  100  11111  " => ARM_STSMAXH (* STSMAXH, STSMAXLH - No memory ordering *)
-    | "01  0  0  0  0  101  !=11111" => ARM_LDSMINH (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
-    | "01  0  0  0  0  101  11111  " => ARM_STSMINH (* STSMINH, STSMINLH - No memory ordering variantpage C6-897 *)
-    | "01  0  0  0  0  110  !=11111" => ARM_LDUMAXH (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - No memory ordering variant on *)
-    | "01  0  0  0  0  110  11111  " => ARM_STUMAXH (* STUMAXH, STUMAXLH - No memory ordering *)
-    | "01  0  0  0  0  111  !=11111" => ARM_LDUMINH (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - No memory ordering variant on *)
-    | "01  0  0  0  0  111  11111  " => ARM_STUMINH (* STUMINH, STUMINLH - No memory ordering varianton .* *)
-    | "01  0  0  0  1  000  -      " => ARM_SWPH (* SWPH, SWPAH, SWPALH, SWPLH - No memory ordering variant on page C6-943 *)
-    | "01  0  0  1  0  000  !=11111" => ARM_LDADDH (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
-    | "01  0  0  1  0  000  11111  " => ARM_STADDH (* STADDH, STADDLH - Release variant on *)
-    | "01  0  0  1  0  001  !=11111" => ARM_LDCLRH (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
-    | "01  0  0  1  0  001  11111  " => ARM_STCLRH (* STCLRH, STCLRLH - Release variant on page C6-840 ARMv8.1 *)
-    | "01  0  0  1  0  010  !=11111" => ARM_LDEORH (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
-    | "01  0  0  1  0  010  11111  " => ARM_STEORH (* STEORH, STEORLH - Release variant on *)
-    | "01  0  0  1  0  011  !=11111" => ARM_LDSETH (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
-    | "01  0  0  1  0  011  11111  " => ARM_STSETH (* STSETH, STSETLH - Release variant on page C6-885 ARMv8.1 *)
-    | "01  0  0  1  0  100  !=11111" => ARM_LDSMAXH (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH - Release variant on page C6-708 *)
-    | "01  0  0  1  0  100  11111  " => ARM_STSMAXH (* STSMAXH, STSMAXLH - Release variant on *)
-    | "01  0  0  1  0  101  !=11111" => ARM_LDSMINH (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
-    | "01  0  0  1  0  101  11111  " => ARM_STSMINH (* STSMINH, STSMINLH - Release variant on *)
-    | "01  0  0  1  0  110  !=11111" => ARM_LDUMAXH (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Release variant on page C6-729 *)
-    | "01  0  0  1  0  110  11111  " => ARM_STUMAXH (* STUMAXH, STUMAXLH - Release variant on *)
-    | "01  0  0  1  0  111  !=11111" => ARM_LDUMINH (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Release variant on page C6-735 *)
-    | "01  0  0  1  0  111  11111  " => ARM_STUMINH (* STUMINH, STUMINLH - Release variant on *)
-    | "01  0  0  1  1  000  -      " => ARM_SWPH (* SWPH, SWPAH, SWPALH, SWPLH - Release variant *)
-    | "01  0  1  0  0  000  -      " => ARM_LDADDH (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
-    | "01  0  1  0  0  001  -      " => ARM_LDCLRH (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
-    | "01  0  1  0  0  010  -      " => ARM_LDEORH (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
-    | "01  0  1  0  0  011  -      " => ARM_LDSETH (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
-    | "01  0  1  0  0  100  -      " => ARM_LDSMAXH (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - Acquire variant on page C6-708 *)
-    | "01  0  1  0  0  101  -      " => ARM_LDSMINH (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
-    | "01  0  1  0  0  110  -      " => ARM_LDUMAXH (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire variant on page C6-729 *)
-    | "01  0  1  0  0  111  -      " => ARM_LDUMINH (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire variant on page C6-735 *)
-    | "01  0  1  0  1  000  -      " => ARM_SWPH (* SWPH, SWPAH, SWPALH, SWPLH - Acquire variant *)
-    | "01  0  1  1  0  000  -      " => ARM_LDADDH (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
-    | "01  0  1  1  0  001  -      " => ARM_LDCLRH (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
-    | "01  0  1  1  0  010  -      " => ARM_LDEORH (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
-    | "01  0  1  1  0  011  -      " => ARM_LDSETH (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
-    | "01  0  1  1  0  100  -      " => ARM_LDSMAXH (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH  *)
-    | "01  0  1  1  0  101  -      " => ARM_LDSMINH (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH- Acquire and release variant on page C6-714 *)
-    | "01  0  1  1  0  110  -      " => ARM_LDUMAXH (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire and release variant on *)
-    | "01  0  1  1  0  111  -      " => ARM_LDUMINH (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire and release variant on *)
-    | "01  0  1  1  1  000  -      " => ARM_SWPH (* SWPH, SWPAH, SWPALH, SWPLH - Acquire and *)
-    | "10  0  0  0  0  000  !=11111" => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
-    | "10  0  0  0  0  000  11111  " => ARM_STADD (* STADD, STADDL - 32-bit, no memory ordering *)
-    | "10  0  0  0  0  001  !=11111" => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, no *)
-    | "10  0  0  0  0  001  11111  " => ARM_STCLR (* STCLR, STCLRL - 32-bit, no memory ordering variant *)
-    | "10  0  0  0  0  010  !=11111" => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, no *)
-    | "10  0  0  0  0  010  11111  " => ARM_STEOR (* STEOR, STEORL - 32-bit, no memory ordering variant *)
-    | "10  0  0  0  0  011  !=11111" => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, no *)
-    | "10  0  0  0  0  011  11111  " => ARM_STSET (* STSET, STSETL - 32-bit, no memory ordering variant *)
-    | "10  0  0  0  0  100  !=11111" => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, no memory ordering variant on page C6-710 *)
-    | "10  0  0  0  0  100  11111  " => ARM_STSMAX (* STSMAX, STSMAXL - 32-bit, no memory ordering *)
-    | "10  0  0  0  0  101  !=11111" => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, no memory ordering variant on page C6-716 *)
-    | "10  0  0  0  0  101  11111  " => ARM_STSMIN (* STSMIN, STSMINL - 32-bit, no memory ordering *)
-    | "10  0  0  0  0  110  !=11111" => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, no memory ordering variant on page C6-731 *)
-    | "10  0  0  0  0  110  11111  " => ARM_STUMAX (* STUMAX, STUMAXL - 32-bit, no memory ordering *)
-    | "10  0  0  0  0  111  !=11111" => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL  *)
-    | "10  0  0  0  0  111  11111  " => ARM_STUMIN (* STUMIN, STUMINL - 32-bit, no memory ordering variant on page C6-915 ARMv8.1 *)
-    | "10  0  0  0  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 32-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
-    | "10  0  0  1  0  000  !=11111" => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, release variant on page C6-636 ARMv8.1 *)
-    | "10  0  0  1  0  000  11111  " => ARM_STADD (* STADD, STADDL - 32-bit, release variant on page C6-836 ARMv8.1 *)
-    | "10  0  0  1  0  001  !=11111" => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, release variant on page C6-651 ARMv8.1 *)
-    | "10  0  0  1  0  001  11111  " => ARM_STCLR (* STCLR, STCLRL - 32-bit, release variant on page C6-842 ARMv8.1 *)
-    | "10  0  0  1  0  010  !=11111" => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, release variant on page C6-657 ARMv8.1 *)
-    | "10  0  0  1  0  010  11111  " => ARM_STEOR (* STEOR, STEORL - 32-bit, release variant on page C6-848 ARMv8.1 *)
-    | "10  0  0  1  0  011  !=11111" => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, release variant on page C6-704 ARMv8.1 *)
-    | "10  0  0  1  0  011  11111  " => ARM_STSET (* STSET, STSETL - 32-bit, release variant on page C6-887 ARMv8.1 *)
-    | "10  0  0  1  0  100  !=11111" => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, release variant on page C6-710 ARMv8.1 *)
-    | "10  0  0  1  0  100  11111  " => ARM_STSMAX (* STSMAX, STSMAXL - 32-bit, release variant on page C6-893 ARMv8.1 *)
-    | "10  0  0  1  0  101  !=11111" => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, release variant on page C6-716 ARMv8.1 *)
-    | "10  0  0  1  0  101  11111  " => ARM_STSMIN (* STSMIN, STSMINL - 32-bit, release variant on page C6-899 ARMv8.1 *)
-    | "10  0  0  1  0  110  !=11111" => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, release variant on page C6-731 ARMv8.1 *)
-    | "10  0  0  1  0  110  11111  " => ARM_STUMAX (* STUMAX, STUMAXL - 32-bit, release variant on page C6-909 ARMv8.1 *)
-    | "10  0  0  1  0  111  !=11111" => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, release variant on page C6-737 ARMv8.1 *)
-    | "10  0  0  1  0  111  11111  " => ARM_STUMIN (* STUMIN, STUMINL - 32-bit, release variant on page C6-915 ARMv8.1 *)
-    | "10  0  0  1  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 32-bit, release variant on page C6-945 ARMv8.1 *)
-    | "10  0  1  0  0  000  -      " => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
-    | "0   0  1  0  0  001  -      " => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire variant on page C6-651 ARMv8.1 *)
-    | "10  0  1  0  0  010  -      " => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire variant on page C6-657 ARMv8.1 *)
-    | "10  0  1  0  0  011  -      " => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire variant on page C6-704 ARMv8.1 *)
-    | "10  0  1  0  0  100  -      " => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire variant on page C6-710 ARMv8.1 *)
-    | "10  0  1  0  0  101  -      " => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire variant on page C6-716 ARMv8.1 *)
-    | "10  0  1  0  0  110  -      " => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire variant on page C6-731 ARMv8.1 *)
-    | "10  0  1  0  0  111  -      " => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire variant on page C6-737 ARMv8.1 *)
-    | "10  0  1  0  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire variant on page C6-945 ARMv8.1 *)
-    | "10  0  1  1  0  000  -      " => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, acquire and release variant on page C6-636 ARMv8.1 *)
-    | "10  0  1  1  0  001  -      " => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire and release variant on page C6-651 ARMv8.1 *)
-    | "10  0  1  1  0  010  -      " => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire and release variant on page C6-657 ARMv8.1 *)
-    | "10  0  1  1  0  011  -      " => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire and release variant on page C6-704 ARMv8.1 *)
-    | "10  0  1  1  0  100  -      " => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire and release variant on page C6-710 ARMv8.1 *)
-    | "10  0  1  1  0  101  -      " => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire and release variant on page C6-716 ARMv8.1 *)
-    | "10  0  1  1  0  110  -      " => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire and release variant on page C6-731 ARMv8.1 *)
-    | "10  0  1  1  0  111  -      " => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire and release variant on page C6-737 ARMv8.1 *)
-    | "10  0  1  1  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire and release variant on page C6-945 ARMv8.1 *)
-    | "11  0  0  0  0  000  !=11111" => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, no memory ordering variant on page C6-636 ARMv8.1 *)
-    | "11  0  0  0  0  000  11111  " => ARM_STADD (* STADD, STADDL - 64-bit, no memory ordering variant on page C6-836 ARMv8.1 *)
-    | "11  0  0  0  0  001  !=11111" => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, no memory ordering variant on page C6-651 *)
-    | "1   0  0  0  0  001  11111  " => ARM_STCLR (* STCLR, STCLRL - 64-bit, no memory ordering variant on page C6-842 ARMv8.1 *)
-    | "11  0  0  0  0  010  !=11111" => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, no memory ordering variant on page C6-657 ARMv8.1 *)
-    | "11  0  0  0  0  010  11111  " => ARM_STEOR (* STEOR, STEORL - 64-bit, no memory ordering variant on page C6-848 ARMv8.1 *)
-    | "11  0  0  0  0  011  !=11111" => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit, no memory ordering variant on page C6-704 ARMv8.1 *)
-    | "11  0  0  0  0  011  11111  " => ARM_STSET (* STSET, STSETL - 64-bit, no memory ordering variant on page C6-887 ARMv8.1 *)
-    | "11  0  0  0  0  100  !=11111" => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 64-bit, no memory ordering variant on page C6-710 ARMv8.1 *)
-    | "11  0  0  0  0  100  11111  " => ARM_STSMAX (* STSMAX, STSMAXL - 64-bit, no memory ordering variant on page C6-893 ARMv8.1 *)
-    | "11  0  0  0  0  101  !=11111" => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 64-bit, no memory ordering variant on page C6-716 ARMv8.1 *)
-    | "11  0  0  0  0  101  11111  " => ARM_STSMIN (* STSMIN, STSMINL - 64-bit, no memory ordering variant on page C6-899 ARMv8.1 *)
-    | "11  0  0  0  0  110  !=11111" => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 64-bit, no memory ordering variant on page C6-731 ARMv8.1 *)
-    | "11  0  0  0  0  110  11111  " => ARM_STUMAX (* STUMAX, STUMAXL - 64-bit, no memory ordering variant on page C6-909 ARMv8.1 *)
-    | "11  0  0  0  0  111  !=11111" => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, no memory ordering variant on page C6-737 ARMv8.1 *)
-    | "11  0  0  0  0  111  11111  " => ARM_STUMIN (* STUMIN, STUMINL - 64-bit, no memory ordering variant on page C6-915 ARMv8.1 *)
-    | "11  0  0  0  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 64-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
-    | "11  0  0  1  0  000  !=11111" => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, release variant on page C6-637 ARMv8.1 *)
-    | "11  0  0  1  0  000  11111  " => ARM_STADD (* STADD, STADDL - 64-bit, release variant on page C6-836 ARMv8.1 *)
-    | "11  0  0  1  0  001  !=11111" => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, release variant on page C6-652 ARMv8.1 *)
-    | "11  0  0  1  0  001  11111  " => ARM_STCLR (* STCLR, STCLRL - 64-bit, release variant on page C6-842 ARMv8.1 *)
-    | "11  0  0  1  0  010  !=11111" => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,release variant on page C6-658 ARMv8.1 *)
-    | "11  0  0  1  0  010  11111  " => ARM_STEOR (* STEOR, STEORL - 64-bit, release variant on page C6-848 *)
-    | "11  0  0  1  0  011  !=11111" => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,release variant on page C6-705 ARMv8.1 *)
-    | "11  0  0  1  0  011  11111  " => ARM_STSET (* STSET, STSETL - 64-bit, release variant on page C6-887 ARMv8.1 *)
-    | "11  0  0  1  0  100  !=11111" => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, release variant on page C6-711 ARMv8.1 *)
-    | "11  0  0  1  0  100  11111  " => ARM_STSMAX (* STSMAX, STSMAXL - 64-bit, release variant onpage C6-893 ARMv8.1 *)
-    | "11  0  0  1  0  101  !=11111" => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, release variant on page C6-717 ARMv8.1 *)
-    | "11  0  0  1  0  101  11111  " => ARM_STSMIN (* STSMIN, STSMINL - 64-bit, release variant on page C6-899 ARMv8.1 *)
-    | "11  0  0  1  0  110  !=11111" => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, release variant on page C6-732 ARMv8.1 *)
-    | "11  0  0  1  0  110  11111  " => ARM_STUMAX (* STUMAX, STUMAXL - 64-bit, release variant onpage C6-909 ARMv8.1 *)
-    | "11  0  0  1  0  111  !=11111" => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, release variant on page C6-738ARMv8.1 *)
-    | "11  0  0  1  0  111  11111  " => ARM_STUMIN (* STUMIN, STUMINL - 64-bit, release variant on page C6-915 ARMv8.1 *)
-    | "11  0  0  1  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 64-bit, release variant on page C6-946 ARMv8.1 *)
-    | "11  0  1  0  0  000  -      " => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, acquire variant on page C6-636 ARMv8.1 *)
-    | "11  0  1  0  0  001  -      " => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire variant on page C6-651 ARMv8.1 *)
-    | "11  0  1  0  0  010  -      " => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, acquire variant on page C6-657 ARMv8.1 *)
-    | "11  0  1  0  0  011  -      " => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire variant on page C6-704 ARMv8.1 *)
-    | "11  0  1  0  0  100  -      " => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire variant on page C6-710 ARMv8.1 *)
-    | "11  0  1  0  0  101  -      " => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire variant on page C6-716 ARMv8.1 *)
-    | "11  0  1  0  0  110  -      " => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire variant on page C6-731 ARMv8.1 *)
-    | "11  0  1  0  0  111  -      " => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, acquire variant on page C6-737 ARMv8.1 *)
-    | "11  0  1  0  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire varia *)
-    | "1   0  1  1  0  000  -      " => ARM_LDADD (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit,acquire and release variant on page C6-636 ARMv8.1 *)
-    | "11  0  1  1  0  001  -      " => ARM_LDCLR (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire and release variant on page C6-651 ARMv8.1 *)
-    | "11  0  1  1  0  010  -      " => ARM_LDEOR (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,acquire and release variant on page C6-657 ARMv8.1 *)
-    | "11  0  1  1  0  011  -      " => ARM_LDSET (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire and release variant on page C6-704 ARMv8.1 *)
-    | "11  0  1  1  0  100  -      " => ARM_LDSMAX (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire and release variant on page C6-710 ARMv8.1 *)
-    | "11  0  1  1  0  101  -      " => ARM_LDSMIN (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire and release variant on page C6-716 ARMv8.1 *)
-    | "11  0  1  1  0  110  -      " => ARM_LDUMAX (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire and release variant on page C6-731 ARMv8.1 *)
-    | "11  0  1  1  0  111  -      " => ARM_LDUMIN (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL -64-bit, acquire and release variant on page C6-737 ARMv8.1 *)
-    | "11  0  1  1  1  000  -      " => ARM_SWP (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire and release variant on page C6-945 *)
+    let Rt := n.[0,5] in
+    let Rn := n.[5,10] in
+    let Rs := n.[16,21] in
+    match[bits] size, v_, a_, r_, o3, opc with
+    | "-   0  -  -  1  001" => UDF (* Unallocated. - *)
+    | "-   0  -  -  1  01x" => UDF (* Unallocated. - *)
+    | "-   0  -  -  1  101" => UDF (* Unallocated. - *)
+    | "-   0  -  -  1  11x" => UDF (* Unallocated. - *)
+    | "-   0  0  -  1  100" => UDF (* Unallocated. - *)
+    | "-   0  1  1  1  100" => UDF (* Unallocated. - *)
+    | "-   1  -  -  -  -  " => UDF (* Unallocated. - *)
+    | "00  0  0  0  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - No memory ordering variant on page C6-632 ARMv8.1 *)
+    | "00  0  0  0  0  001" => ARM_LDCLRB  Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB -  *)
+    | "00  0  0  0  0  010" => ARM_LDEORB  Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - No *)
+    | "00  0  0  0  0  011" => ARM_LDSETB  Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - No *)
+    | "00  0  0  0  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - ARMv8.1 *)
+    | "00  0  0  0  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
+    | "00  0  0  0  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - ARMv8.1 *)
+    | "00  0  0  0  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - ARMv8.1 *)
+    | "00  0  0  0  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - No memory ordering variant on page C6-941 *)
+    | "00  0  0  1  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Release variant on page C6-632 *)
+    | "00  0  0  1  0  001" => ARM_LDCLRB Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Release variant on page C6-647 *)
+    | "00  0  0  1  0  010" => ARM_LDEORB Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - *)
+    | "00  0  0  1  0  011" => ARM_LDSETB Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - *)
+    | "00  0  0  1  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, *)
+    | "00  0  0  1  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
+    | "00  0  0  1  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Release variant on page C6-727 *)
+    | "00  0  0  1  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Release variant on page C6-733 ARMv8.1 *)
+    | "00  0  0  1  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Release variant on page C6-941 ARMv8.1 *)
+    | "00  0  1  0  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Acquire variant on page C6-632 ARMv8.1 *)
+    | "00  0  1  0  0  001" => ARM_LDCLRB Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Acquire variant on page C6-647 ARMv8.1 *)
+    | "00  0  1  0  0  010" => ARM_LDEORB Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - Acquire variant on page C6-653 ARMv8.1 *)
+    | "00  0  1  0  0  011" => ARM_LDSETB Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - Acquire variant on page C6-700 ARMv8.1 *)
+    | "00  0  1  0  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - Acquire variant on page C6-706 ARMv8.1 *)
+    | "00  0  1  0  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB - Acquire variant on page C6-712 ARMv8.1 *)
+    | "00  0  1  0  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Acquire variant on page C6-727 ARMv8.1 *)
+    | "00  0  1  0  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Acquire variant on page C6-733 *)
+    | "00  0  1  0  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Acquire varianton page C6-941 *)
+    | "00  0  1  0  1  100" => ARM_LDAPR Rn Rs Rt (* Manually added, what is this LDAPRB doing in the atomic table? Its encoding matches. *)
+    | "00  0  1  1  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - and release variant on page C6-632 *)
+    | "00  0  1  1  0  001" => ARM_LDCLRB Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - and release variant on page C6-647 *)
+    | "00  0  1  1  0  010" => ARM_LDEORB Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - and release variant on page C6-653 *)
+    | "00  0  1  1  0  011" => ARM_LDSETB Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - and release variant on page C6-700 *)
+    | "00  0  1  1  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB,LDSMAXLB - Acquire and release variant on C6-706 *)
+    | "00  0  1  1  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB- Acquire and release variant on page C6-712 *)
+    | "00  0  1  1  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB,LDUMAXLB - Acquire and release variant on C6-727 *)
+    | "00  0  1  1  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB,LDUMINLB - Acquire and release variant on C6-733 *)
+    | "00  0  1  1  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Acquire and variant on page C6-941 *)
+    | "01  0  0  0  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - memory ordering variant on page C6-634 *)
+    | "01  0  0  0  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - No ordering variant on page C6-649 *)
+    | "01  0  0  0  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - No memory ordering variant on page C6-655 *)
+    | "01  0  0  0  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - No *)
+    | "01  0  0  0  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - No memory ordering variant on *)
+    | "01  0  0  0  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
+    | "01  0  0  0  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - No memory ordering variant on *)
+    | "01  0  0  0  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - No memory ordering variant on *)
+    | "01  0  0  0  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - No memory ordering variant on page C6-943 *)
+    | "01  0  0  1  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
+    | "01  0  0  1  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
+    | "01  0  0  1  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
+    | "01  0  0  1  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
+    | "01  0  0  1  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH - Release variant on page C6-708 *)
+    | "01  0  0  1  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
+    | "01  0  0  1  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Release variant on page C6-729 *)
+    | "01  0  0  1  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Release variant on page C6-735 *)
+    | "01  0  0  1  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Release variant *)
+    | "01  0  1  0  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
+    | "01  0  1  0  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
+    | "01  0  1  0  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
+    | "01  0  1  0  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
+    | "01  0  1  0  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - Acquire variant on page C6-708 *)
+    | "01  0  1  0  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
+    | "01  0  1  0  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire variant on page C6-729 *)
+    | "01  0  1  0  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire variant on page C6-735 *)
+    | "01  0  1  0  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Acquire variant *)
+    | "01  0  1  0  1  100" => ARM_LDAPRH Rn Rt (* LDAPR... *)
+    | "01  0  1  1  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
+    | "01  0  1  1  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
+    | "01  0  1  1  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
+    | "01  0  1  1  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
+    | "01  0  1  1  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH  *)
+    | "01  0  1  1  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH- Acquire and release variant on page C6-714 *)
+    | "01  0  1  1  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire and release variant on *)
+    | "01  0  1  1  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire and release variant on *)
+    | "01  0  1  1  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Acquire and *)
+    | "10  0  0  0  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
+    | "10  0  0  0  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, no *)
+    | "10  0  0  0  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, no *)
+    | "10  0  0  0  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, no *)
+    | "10  0  0  0  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, no memory ordering variant on page C6-710 *)
+    | "10  0  0  0  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, no memory ordering variant on page C6-716 *)
+    | "10  0  0  0  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, no memory ordering variant on page C6-731 *)
+    | "10  0  0  0  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL  *)
+    | "10  0  0  0  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
+    | "10  0  0  1  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, release variant on page C6-636 ARMv8.1 *)
+    | "10  0  0  1  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, release variant on page C6-651 ARMv8.1 *)
+    | "10  0  0  1  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, release variant on page C6-657 ARMv8.1 *)
+    | "10  0  0  1  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, release variant on page C6-704 ARMv8.1 *)
+    | "10  0  0  1  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, release variant on page C6-710 ARMv8.1 *)
+    | "10  0  0  1  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, release variant on page C6-716 ARMv8.1 *)
+    | "10  0  0  1  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, release variant on page C6-731 ARMv8.1 *)
+    | "10  0  0  1  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, release variant on page C6-737 ARMv8.1 *)
+    | "10  0  0  1  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, release variant on page C6-945 ARMv8.1 *)
+    | "10  0  1  0  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
+    | "0   0  1  0  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire variant on page C6-651 ARMv8.1 *)
+    | "10  0  1  0  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire variant on page C6-657 ARMv8.1 *)
+    | "10  0  1  0  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire variant on page C6-704 ARMv8.1 *)
+    | "10  0  1  0  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire variant on page C6-710 ARMv8.1 *)
+    | "10  0  1  0  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire variant on page C6-716 ARMv8.1 *)
+    | "10  0  1  0  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire variant on page C6-731 ARMv8.1 *)
+    | "10  0  1  0  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire variant on page C6-737 ARMv8.1 *)
+    | "10  0  1  0  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire variant on page C6-945 ARMv8.1 *)
+    | "10  0  1  0  1  100" => ARM_LDAPR 32 Rn Rt (* LDAPR... *)
+    | "10  0  1  1  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, acquire and release variant on page C6-636 ARMv8.1 *)
+    | "10  0  1  1  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire and release variant on page C6-651 ARMv8.1 *)
+    | "10  0  1  1  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire and release variant on page C6-657 ARMv8.1 *)
+    | "10  0  1  1  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire and release variant on page C6-704 ARMv8.1 *)
+    | "10  0  1  1  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire and release variant on page C6-710 ARMv8.1 *)
+    | "10  0  1  1  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire and release variant on page C6-716 ARMv8.1 *)
+    | "10  0  1  1  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire and release variant on page C6-731 ARMv8.1 *)
+    | "10  0  1  1  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire and release variant on page C6-737 ARMv8.1 *)
+    | "10  0  1  1  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire and release variant on page C6-945 ARMv8.1 *)
+    | "11  0  0  0  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, no memory ordering variant on page C6-636 ARMv8.1 *)
+    | "11  0  0  0  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, no memory ordering variant on page C6-651 *)
+    | "11  0  0  0  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, no memory ordering variant on page C6-657 ARMv8.1 *)
+    | "11  0  0  0  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit, no memory ordering variant on page C6-704 ARMv8.1 *)
+    | "11  0  0  0  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 64-bit, no memory ordering variant on page C6-710 ARMv8.1 *)
+    | "11  0  0  0  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 64-bit, no memory ordering variant on page C6-716 ARMv8.1 *)
+    | "11  0  0  0  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 64-bit, no memory ordering variant on page C6-731 ARMv8.1 *)
+    | "11  0  0  0  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, no memory ordering variant on page C6-737 ARMv8.1 *)
+    | "11  0  0  0  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
+    | "11  0  0  1  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, release variant on page C6-637 ARMv8.1 *)
+    | "11  0  0  1  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, release variant on page C6-652 ARMv8.1 *)
+    | "11  0  0  1  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,release variant on page C6-658 ARMv8.1 *)
+    | "11  0  0  1  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,release variant on page C6-705 ARMv8.1 *)
+    | "11  0  0  1  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, release variant on page C6-711 ARMv8.1 *)
+    | "11  0  0  1  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, release variant on page C6-717 ARMv8.1 *)
+    | "11  0  0  1  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, release variant on page C6-732 ARMv8.1 *)
+    | "11  0  0  1  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, release variant on page C6-738ARMv8.1 *)
+    | "11  0  0  1  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, release variant on page C6-946 ARMv8.1 *)
+    | "11  0  1  0  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, acquire variant on page C6-636 ARMv8.1 *)
+    | "11  0  1  0  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire variant on page C6-651 ARMv8.1 *)
+    | "11  0  1  0  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, acquire variant on page C6-657 ARMv8.1 *)
+    | "11  0  1  0  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire variant on page C6-704 ARMv8.1 *)
+    | "11  0  1  0  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire variant on page C6-710 ARMv8.1 *)
+    | "11  0  1  0  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire variant on page C6-716 ARMv8.1 *)
+    | "11  0  1  0  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire variant on page C6-731 ARMv8.1 *)
+    | "11  0  1  0  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, acquire variant on page C6-737 ARMv8.1 *)
+    | "11  0  1  0  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire varia *)
+    | "11  0  1  0  1  100" => ARM_LDAPR 64 Rn Rt (* LDAPR... *)
+    | "1   0  1  1  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit,acquire and release variant on page C6-636 ARMv8.1 *)
+    | "11  0  1  1  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire and release variant on page C6-651 ARMv8.1 *)
+    | "11  0  1  1  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,acquire and release variant on page C6-657 ARMv8.1 *)
+    | "11  0  1  1  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire and release variant on page C6-704 ARMv8.1 *)
+    | "11  0  1  1  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire and release variant on page C6-710 ARMv8.1 *)
+    | "11  0  1  1  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire and release variant on page C6-716 ARMv8.1 *)
+    | "11  0  1  1  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire and release variant on page C6-731 ARMv8.1 *)
+    | "11  0  1  1  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL -64-bit, acquire and release variant on page C6-737 ARMv8.1 *)
+    | "11  0  1  1  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire and release variant on page C6-945 *)
     else UDF end.
 
 

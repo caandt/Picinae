@@ -65,11 +65,13 @@ Notation "x | y"  := (BinOp OP_OR  x y) (in custom PIL at level 70, y at level 6
 Notation "x = y"   := (BinOp OP_EQ  x y) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x <> y"  := (BinOp OP_NEQ x y) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x < y"   := (BinOp OP_LT  x y) (in custom PIL at level 75, y at level 75, no associativity).
-Notation "x > y"   := (BinOp OP_LE  y x) (in custom PIL at level 75, y at level 75, no associativity).
+Notation "x > y"   := (BinOp OP_LT  y x) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x <= y"  := (BinOp OP_LE  x y) (in custom PIL at level 75, y at level 75, no associativity).
-Notation "x >= y"   := (BinOp OP_LT  y x) (in custom PIL at level 75, y at level 75, no associativity).
+Notation "x >= y"   := (BinOp OP_LE  y x) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x 's<' y"  := (BinOp OP_SLT x y) (in custom PIL at level 75, y at level 75, no associativity).
 Notation "x 's<=' y" := (BinOp OP_SLE x y) (in custom PIL at level 75, y at level 75, no associativity).
+Notation "x 's>' y"  := (BinOp OP_SLT y x) (in custom PIL at level 75, y at level 75, no associativity).
+Notation "x 's>=' y" := (BinOp OP_SLE y x) (in custom PIL at level 75, y at level 75, no associativity).
 
 
 Notation "'ucast' w e" := (Cast CAST_UNSIGNED w e) (in custom PIL at level 0, w at level 0, e at level 89).
