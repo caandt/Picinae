@@ -107,20 +107,44 @@ Definition XtoVar n := let n := <{n#5}> in <{
   ite (n = (28#5)) {Var R_X28} ( ite (n = (29#5)) {Var R_X29} ( ite (n = (30#5)) {Var R_X30} {Var R_SP}))))))))))))))))))))))))))))))
 }>.
 
-Definition NTovar n :=
+Definition arm_varid n :=
   match n with
   | 0 => R_X0 | 1 => R_X1 | 2 => R_X2 | 3 => R_X3 | 4 => R_X4 | 5 => R_X5 | 6 => R_X6 | 7 => R_X7
   | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
   | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
-  | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 | _ => R_SP
+  | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30 
+  | _ => R_SP
   end.
 
-Notation "'var[' n ']'" := (NTovar n) (in custom PIL at level 65, no associativity).
+  Definition Unpack_NZCV (flags : exp) : exp * exp * exp * exp :=
+  (* Shift each bit down to the 0th position and mask it out with 1 *)
+  let n := BinOp OP_AND (BinOp OP_RSHIFT flags (Word 3 64)) (Word 1 64) in
+  let z := BinOp OP_AND (BinOp OP_RSHIFT flags (Word 2 64)) (Word 1 64) in
+  let c := BinOp OP_AND (BinOp OP_RSHIFT flags (Word 1 64)) (Word 1 64) in
+  let v := BinOp OP_AND flags (Word 1 64) in
+  
+  (* Return them as a 4-tuple tuple of expressions *)
+  (n, z, c, v).
+
+
+Notation "'var[' n ']'" := (arm_varid n) (in custom PIL at level 65, no associativity).
 Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
 Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
 Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
 Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
 Notation "'temp[' n ']'" := (V_TEMP n) (at level 65, no associativity).
+
+Definition arm_assign_R n val := Move (arm_varid n) val. (*TODO: Need to fix this*)
+Definition arm_assign_flags flags := 
+    let '(n, z, c, v) := Unpack_NZCV flags in
+    (Seq (Move R_NG n) (Seq (Move R_ZR z) (Seq (Move R_CY c) (Move R_OV v)))).
+
+Definition arm64_R n N := 
+     if (N =? 32) then Cast CAST_LOW 32 (Var (arm_varid n))
+     else Var (arm_varid n).
+(*x is data size := 32/64*)
+Notation "R[ n , x ]" := (arm64_R n x) (at level 0).
+
 Definition SP_read w := <{lcast w {Var R_SP} }>.
 Definition SP_write e : stmt := <{R_SP := ucast 64 e }>.
 Definition b2exp b := match b with true => Word 1 1 | false => Word 0 1 end.
@@ -291,12 +315,6 @@ Variant inst :=
   | ARM_CCMP_IMM
 
 (*DP reg*)
-  | ARM_ADD_REG
-  | ARM_ADDS_REG
-  | ARM_SUB_REG
-  | ARM_SUBS_REG
-  | ARM_CMN_REG
-  | ARM_CMP_REG
   (*arith extended*)
   | ARM_ADD_EXTENDED_REG
   | ARM_ADDS_EXTENDED_REG
@@ -361,13 +379,13 @@ Variant inst :=
   | ARM_CRC32CW
   | ARM_CRC32CX
   (*bit_ops*)
-  | ARM_CLS
-  | ARM_CLZ
-  | ARM_RBIT
-  | ARM_REV
-  | ARM_REV16
-  | ARM_REV32
-  | ARM_REV64
+  | ARM_CLS   (sf Rn Rd:N)
+  | ARM_CLZ   (sf Rn Rd:N)
+  | ARM_RBIT  (sf Rn Rd:N)
+  | ARM_REV   (sf Rn Rd:N)
+  | ARM_REV16 (sf Rn Rd:N)
+  | ARM_REV32 (sf Rn Rd:N)
+  | ARM_REV64 (sf Rn Rd:N)
 
 (*Branches*)
   (* decoding not implemented yet, treat as unpredictable *)
@@ -751,7 +769,7 @@ Section Decoder.
       {DecodeBitMasks n imms immr 1 datasize};
       (* imm: temp[980] *)
       (* operand1 *) temp[1000] := lcast datasize X[Xn];
-      (* result *) {NTovar Xd} := Xtemp[1000] & imm;
+      (* result *) {arm_varid Xd} := Xtemp[1000] & imm;
       R_NG := X[Xd][{datasize-1}];
       R_ZR := X[Xd] = 0#64;
       R_CY := 0#1;
@@ -768,7 +786,7 @@ Section Decoder.
       {DecodeBitMasks n imms immr 1 datasize};
       (* imm: temp[980] *)
       (* operand1 *) temp[1000] := lcast datasize X[Xn];
-       {NTovar Xd} := Xtemp[1000] & imm
+       {arm_varid Xd} := Xtemp[1000] & imm
     }>.
 
   Definition arm_eor_imm2il (Xn Xd immr imms sf n:N) :=
@@ -780,7 +798,7 @@ Section Decoder.
       if UNDEF then exn 0 else nop end;
       {DecodeBitMasks n imms immr 1 datasize};
       (* imm: temp[980] *)
-      {NTovar Xd} := X[Xn] ^ imm
+      {arm_varid Xd} := X[Xn] ^ imm
     }>.
 
   Definition arm_orr_imm2il (Xn Xd immr imms sf n:N) :=
@@ -792,7 +810,7 @@ Section Decoder.
       if UNDEF then exn 0 else nop end;
       {DecodeBitMasks n imms immr 1 datasize};
       (* imm: temp[980] *)
-      {NTovar Xd} := X[Xn] | imm
+      {arm_varid Xd} := X[Xn] | imm
     }>.
 
   (*logical imm*)
@@ -822,7 +840,7 @@ Section Decoder.
       (* Clip the shift to 16 if using 32-bit variant *)
       if (Xtemp[100] > 16#64) & (size#64=32#64) then temp[100] := 16#64 else nop end;
       (* mask *) (temp[101] := {Ones 64 (Word 16 64)} << Xtemp[100]);
-      {NTovar Xd} := X[Xd] & (! Xtemp[101]) | (imm16#64 << Xtemp[100])
+      {arm_varid Xd} := X[Xd] & (! Xtemp[101]) | (imm16#64 << Xtemp[100])
     }>.
 
   Definition arm_movn_imm2il Xd imm16 size shift :=
@@ -831,7 +849,7 @@ Section Decoder.
       (* Clip the shift to 16 if using 32-bit variant *)
       if (Xtemp[100] > 16#64) & (size#64=32#64) then temp[100] := 16#64 else nop end;
       (* mask *) (temp[101] := {Ones 64 (Word 16 64)} << Xtemp[100]);
-      {NTovar Xd} := ! (imm16#64 << Xtemp[100])
+      {arm_varid Xd} := ! (imm16#64 << Xtemp[100])
     }>.
 
 
@@ -841,7 +859,7 @@ Section Decoder.
       (* Clip the shift to 16 if using 32-bit variant *)
       if (Xtemp[100] > 16#64) & (size#64=32#64) then temp[100] := 16#64 else nop end;
       (* mask *) (temp[101] := {Ones 64 (Word 16 64)} << Xtemp[100]);
-      {NTovar Xd} := (imm16#64 << Xtemp[100])
+      {arm_varid Xd} := (imm16#64 << Xtemp[100])
     }>.
 
 
@@ -884,7 +902,7 @@ Section Decoder.
       (* wmask: temp[980]; tmask: temp[990] *)
       (* src *) temp[1000] := X[Xn];
       (* bot *) temp[1001] := {ROR datasize <{Xtemp[1000]}> immr} & wmask;
-      {NTovar Xd} := Xtemp[1001] & tmask
+      {arm_varid Xd} := Xtemp[1001] & tmask
     }>.
 
   Definition arm_bfm_imm2il (Xn Xd immr imms sf n:N) :=
@@ -903,7 +921,7 @@ Section Decoder.
       (* dst *) temp[1000] := lcast datasize X[Xd];
       (* src *) temp[2000] := lcast datasize X[Xn];
       (* bot *) temp[3000] := (dst & !wmask) | ({ROR datasize <{Xtemp[2000]}> immr} & wmask);
-      {NTovar Xd} := ucast 64 ((dst * !tmask) | (bot & tmask))
+      {arm_varid Xd} := ucast 64 ((dst * !tmask) | (bot & tmask))
     }>.
 
   Print Replicate.
@@ -928,7 +946,7 @@ Section Decoder.
       (* src *) temp[2000] := lcast datasize X[Xn];
       (* bot *) temp[3000] := {ROR datasize src immr} & wmask;
       (* top *) {Replicate 4000 4001 1 64 (pilxbits datasize src (Word 0 datasize) (Word 1 datasize))};
-      {NTovar Xd} := ucast 64 ((top & !tmask) | (bot & tmask))
+      {arm_varid Xd} := ucast 64 ((top & !tmask) | (bot & tmask))
     }>.
 
   Definition bitfield :=
@@ -1274,7 +1292,7 @@ Section Decoder.
 
   Definition arm_bl2il imm26 :=
     let offset := <{scast 64 (imm26#28 << 2#28)}> in
-    <{{NTovar 30} := PC + 4#64; jmp PC+offset}>.
+    <{{arm_varid 30} := PC + 4#64; jmp PC+offset}>.
 
   Definition uncond_b_imm :=
     let op := n.[31] in
@@ -1382,7 +1400,7 @@ Section Decoder.
       temp[1000] := Xtemp[1000] + offset;
       temp[1000] := Align[Xtemp[1000],64,16];
       (* Skip tag access *)
-      {NTovar Xt} := Xtemp[1000]
+      {arm_varid Xt} := Xtemp[1000]
   }>.
 
   (* Load Allocation Tag C6.2.122-962 *)
@@ -1396,7 +1414,7 @@ Section Decoder.
       temp[2001] := AllocTag (Xtemp[2000]);
       if {b2exp writeback} then
         if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-        {NTovar Xn} := Xtemp[1000]
+        {arm_varid Xn} := Xtemp[1000]
       else
         nop
       end
@@ -1411,7 +1429,7 @@ Section Decoder.
       if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
       if {b2exp writeback} then
         if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-        {NTovar Xn} := Xtemp[1000]
+        {arm_varid Xn} := Xtemp[1000]
       else
         nop
       end
@@ -1428,7 +1446,7 @@ Section Decoder.
       store[Xtemp[1000], (0#256), LittleE, 32];
       if {b2exp writeback} then
         if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-        {NTovar Xn} := Xtemp[1000]
+        {arm_varid Xn} := Xtemp[1000]
       else
         nop
       end
@@ -1817,7 +1835,7 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000],LittleE,1];
-      {NTovar Xt} := ucast 64 Xtemp[2000]
+      {arm_varid Xt} := ucast 64 Xtemp[2000]
     }>.
 
   Definition arm_ldapursb2il Xn Xt imm9 (size:N) :=
@@ -1826,7 +1844,7 @@ Section Decoder.
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000],LittleE,1];
       (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {NTovar Xt} := scast 64 Xtemp[2000]
+      {arm_varid Xt} := scast 64 Xtemp[2000]
     }>.
 
   Definition arm_stlurh2il Xn Xt imm9 :=
@@ -1843,7 +1861,7 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000],LittleE,1];
-      {NTovar Xt} := ucast 64 Xtemp[2000]
+      {arm_varid Xt} := ucast 64 Xtemp[2000]
     }>.
 
   Definition arm_ldapursh2il Xn Xt imm9 (size:N) :=
@@ -1852,7 +1870,7 @@ Section Decoder.
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000],LittleE,2];
       (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {NTovar Xt} := ucast 64 Xtemp[2000]
+      {arm_varid Xt} := ucast 64 Xtemp[2000]
     }>.
 
   Definition arm_stlur2il Xn Xt imm9 (size:N) :=
@@ -1870,7 +1888,7 @@ Section Decoder.
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000],LittleE,{N.shiftr size 3}];
       (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {NTovar Xt} := Xtemp[2000]
+      {arm_varid Xt} := Xtemp[2000]
     }>.
 
   Definition arm_ldapursw2il Xn Xt imm9 (size:N) :=
@@ -1879,7 +1897,7 @@ Section Decoder.
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000],LittleE,4];
       (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {NTovar Xt} := scast 64 Xtemp[2000]
+      {arm_varid Xt} := scast 64 Xtemp[2000]
     }>.
 
   (*LDAPR/STLR unscaled immediate C4-279*)
@@ -1912,13 +1930,13 @@ Section Decoder.
   Definition arm_ldrsw_lit2il Xt imm19 :=
     let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
     <{temp[1000]:= PC + offset;
-    {NTovar Xt} := scast 64 {MemRead (Xtemp[1000]) 4}}>.
+    {arm_varid Xt} := scast 64 {MemRead (Xtemp[1000]) 4}}>.
 
   (* C6-979 *)
   Definition arm_ldr_lit2il Xt imm19 size :=
     let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
     <{temp[1000]:= PC + offset;
-    {NTovar Xt} := ucast 64 {MemRead (Xtemp[1000]) size}}>.
+    {arm_varid Xt} := ucast 64 {MemRead (Xtemp[1000]) size}}>.
 
   (* C6-1138; The effects of PRFM is implementation defined. *)
   Definition arm_prfm_lit2il (Xt imm19:N) := <{havoc}>.
@@ -1961,8 +1979,8 @@ Section Decoder.
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := load[Xtemp[1000], LittleE, dbytes];
       temp[3000] := load[Xtemp[1000]+(dbytes#64), LittleE, dbytes];
-      {NTovar Xt} := Xtemp[2000];
-      {NTovar Xt2} := Xtemp[3000]
+      {arm_varid Xt} := Xtemp[2000];
+      {arm_varid Xt2} := Xtemp[3000]
     }>.
 
   Definition arm_ldnp2il Xn Xt Xt2 imm7 scale :=
@@ -1974,8 +1992,8 @@ Section Decoder.
       if unknown 1 then havoc else
       (* Constraint_UNKNOWN *)
       {arm_ldnp2il_happy Xn Xt Xt2 imm7 scale};
-      {NTovar Xt} := unknown 64;
-      {NTovar Xt2} := unknown 64
+      {arm_varid Xt} := unknown 64;
+      {arm_varid Xt2} := unknown 64
       end end end
     }>.
 
@@ -1992,7 +2010,7 @@ Section Decoder.
       if {b2exp wback} then
         temp[1001] := Xtemp[1000];
         if {b2exp postindex} then temp[1001] := Xtemp[1001] + offset else nop end;
-        {NTovar Xn} := Xtemp[1001]
+        {arm_varid Xn} := Xtemp[1001]
       else
         nop
       end
@@ -2023,8 +2041,8 @@ Section Decoder.
       temp[2000] := load[Xtemp[1000],LittleE,dbytes];
       temp[3000] := load[Xtemp[1000]+dbytes#64,LittleE,dbytes];
       if rt_unknown then temp[2000] := unknown size; temp[3000] := unknown size else nop end;
-      {NTovar Xt} := ucast 64 Xtemp[2000];
-      {NTovar Xt2} := ucast 64 Xtemp[3000];
+      {arm_varid Xt} := ucast 64 Xtemp[2000];
+      {arm_varid Xt2} := ucast 64 Xtemp[3000];
       if wback then
         if wb_unknown then
           temp[1000] := unknown 64
@@ -2032,7 +2050,7 @@ Section Decoder.
               else nop
               end
         end;
-        {NTovar Xn} := Xtemp[1000]
+        {arm_varid Xn} := Xtemp[1000]
       else nop
       end
     }>.
@@ -2080,7 +2098,7 @@ Section Decoder.
       store[Xtemp[1000]+8#64,Xtemp[3000],LittleE,8];
       if {b2exp wback} then
         if {b2exp postindex} then temp[1000]:=Xtemp[1000]+offset else nop end;
-        {NTovar Xn} := Xtemp[1000]
+        {arm_varid Xn} := Xtemp[1000]
       else nop end}>.
 
   Definition arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex :=
@@ -2090,8 +2108,8 @@ Section Decoder.
       temp[2000] := load[Xtemp[1000],LittleE,4];
       temp[3000] := load[Xtemp[1000]+4#64,LittleE,4];
       if rt_unknown then temp[2000] := unknown 32; temp[3000] := unknown 32 else nop end;
-      {NTovar Xt} := scast 64 Xtemp[2000];
-      {NTovar Xt2} := scast 64 Xtemp[3000];
+      {arm_varid Xt} := scast 64 Xtemp[2000];
+      {arm_varid Xt2} := scast 64 Xtemp[3000];
       if wback then
         if wb_unknown then
           temp[1000] := unknown 64
@@ -2099,7 +2117,7 @@ Section Decoder.
               else nop
               end
         end;
-        {NTovar Xn} := Xtemp[1000]
+        {arm_varid Xn} := Xtemp[1000]
       else nop
       end
     }>.
@@ -3450,8 +3468,9 @@ Section Decoder.
     let s_ := n.[29] in
     let opcode := n.[10,16] in
     let opcode2 := n.[16,21] in
-    let rn := n.[5,10] in
-    match[bits] sf, s_, opcode2, opcode, rn with
+    let Rn := n.[5,10] in
+    let Rd := n.[0,5] in
+    match[bits] sf, s_, opcode2, opcode, Rn with
     | "-  -  -      1xxxxx  -    " => UDF (* Unallocated. - *)
     | "-  -  xxx1x  -       -    " => UDF (* Unallocated. - *)
     | "-  -  xx1xx  -       -    " => UDF (* Unallocated. - *)
@@ -3462,18 +3481,18 @@ Section Decoder.
     | "-  0  00000  01xxxx  -    " => UDF (* Unallocated. - *)
     | "-  1  -      -       -    " => UDF (* Unallocated. - *)
     | "0  -  00001  -       -    " => UDF (* Unallocated. - *)
-    | "0  0  00000  000000  -    " => ARM_RBIT (* RBIT - 32-bit variant on page C6-1146 - *)
-    | "0  0  00000  000001  -    " => ARM_REV16 (* REV16 - 32-bit variant on page C6-1151 - *)
-    | "0  0  00000  000010  -    " => ARM_REV (* REV - 32-bit variant on page C6-1149 - *)
+    | "0  0  00000  000000  -    " => ARM_RBIT sf Rn Rd (* RBIT - 32-bit variant on page C6-1146 - *)
+    | "0  0  00000  000001  -    " => ARM_REV16 sf Rn Rd (* REV16 - 32-bit variant on page C6-1151 - *)
+    | "0  0  00000  000010  -    " => ARM_REV sf Rn Rd (* REV - 32-bit variant on page C6-1149 - *)
     | "0  0  00000  000011  -    " => UDF (* Unallocated. *)
-    | "0  0  00000  000100  -    " => ARM_CLZ (* CLZ - 32-bit variant on page C6-849 - *)
-    | "0  0  00000  000101  -    " => ARM_CLS (* CLS - 32-bit variant on page C6-848 - *)
-    | "1  0  00000  000000  -    " => ARM_RBIT (* RBIT - 64-bit variant on page C6-1146 - *)
-    | "1  0  00000  000001  -    " => ARM_REV16 (* REV16 - 64-bit variant on page C6-1151 - *)
-    | "1  0  00000  000010  -    " => ARM_REV32 (* REV32 - *)
-    | "1  0  00000  000011  -    " => ARM_REV (* REV - 64-bit variant on page C6-1149 - *)
-    | "1  0  00000  000100  -    " => ARM_CLZ (* CLZ - 64-bit variant on page C6-849 - *)
-    | "1  0  00000  000101  -    " => ARM_CLS (* CLS - 64-bit variant on page C6-848 - *)
+    | "0  0  00000  000100  -    " => ARM_CLZ sf Rn Rd(* CLZ - 32-bit variant on page C6-849 - *)
+    | "0  0  00000  000101  -    " => ARM_CLS sf Rn Rd(* CLS - 32-bit variant on page C6-848 - *)
+    | "1  0  00000  000000  -    " => ARM_RBIT sf Rn Rd(* RBIT - 64-bit variant on page C6-1146 - *)
+    | "1  0  00000  000001  -    " => ARM_REV16 sf Rn Rd(* REV16 - 64-bit variant on page C6-1151 - *)
+    | "1  0  00000  000010  -    " => ARM_REV32 sf Rn Rd(* REV32 - *)
+    | "1  0  00000  000011  -    " => ARM_REV sf Rn Rd(* REV - 64-bit variant on page C6-1149 - *)
+    | "1  0  00000  000100  -    " => ARM_CLZ sf Rn Rd(* CLZ - 64-bit variant on page C6-849 - *)
+    | "1  0  00000  000101  -    " => ARM_CLS sf Rn Rd(* CLS - 64-bit variant on page C6-848 - *)
     | "1  0  00001  000000  -    " => ARM_PACIA (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIA variant on page C6-1132 Armv8.3 *)
     | "1  0  00001  000001  -    " => ARM_PACIB (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIB variant on page C6-1134 Armv8.3 *)
     | "1  0  00001  000010  -    " => ARM_PACDA (* PACDA, PACDZA - PACDA variant on page C6-1129 Armv8.3 *)
@@ -3725,6 +3744,201 @@ Section Decoder.
   else UDF end.
 
   Definition dp_fp_simd := UDF.
+
+  Definition Pack_NZCV (n z c v : exp) : exp :=
+  (* Shift each flag into its proper architectural position *)
+  let n_shifted := BinOp OP_LSHIFT n (Word 3 64) in
+  let z_shifted := BinOp OP_LSHIFT z (Word 2 64) in
+  let c_shifted := BinOp OP_LSHIFT c (Word 1 64) in
+  
+  (* Merge all positions together into one expression using bitwise OR *)
+  BinOp OP_OR (BinOp OP_OR n_shifted z_shifted) (BinOp OP_OR c_shifted v).
+
+
+  (*Shared Functions for Shift, Extend, AddWCarry*)
+  Definition AddWithCarry x y carry_in:=
+    let unsigned_sum := BinOp OP_PLUS (BinOp OP_PLUS x y) (Cast CAST_UNSIGNED 64 carry_in) in
+    let signed_sum := BinOp OP_PLUS (BinOp OP_PLUS x y) (Cast CAST_SIGNED 64 carry_in) in 
+    let result := unsigned_sum in
+    let n := result in
+    let z :=  (UnOp OP_NOT (BinOp OP_EQ (Word 0 64) result)) in 
+    let c := BinOp OP_OR (BinOp OP_LT result x) (BinOp OP_AND (BinOp OP_EQ (Word 0xffff_ffff_ffff_ffff 64) result) carry_in) in
+    let v := BinOp OP_OR 
+            (BinOp OP_SLT 
+            (BinOp OP_AND (BinOp OP_XOR x result)(BinOp OP_XOR y result))(Word 0 64)) 
+            (BinOp OP_AND (BinOp OP_EQ (Word 0xffff_ffff_ffff_ffff 64) result) carry_in) in
+    
+    let nzcv := Pack_NZCV n z c v in
+    (result, nzcv).
+
+  (*Not doing UDIV because we might need floating values..?*)
+  Definition RoundTowardsZero x := x.
+
+
+  (*shift type*)
+  Variant armsrtype :=
+  | ARM_LSL | ARM_LSR | ARM_ASR | ARM_ROR.
+
+  Variant ExtendType :=
+  | ExtendType_SXTB | ExtendType_SXTH | ExtendType_SXTW | ExtendType_SXTX | ExtendType_UXTB 
+  | ExtendType_UXTH | ExtendType_UXTW | ExtendType_UXTX.
+
+  
+  Definition DecodeRegExtend op :=
+  match op with 
+  | 0 => ExtendType_UXTB
+  | 1 => ExtendType_UXTH
+  | 2 => ExtendType_UXTW
+  | 3 => ExtendType_UXTX
+  | 4 => ExtendType_SXTB
+  | 5 => ExtendType_SXTH
+  | 6 => ExtendType_SXTW
+  | _ => ExtendType_SXTX
+  end.
+
+  (*returns signed/unsigned extended value*)
+  Definition ExtendReg2 reg exttype shift datasize:=
+  let (unsigned, len) := match exttype with
+  | ExtendType_SXTB => (false, 8)
+  | ExtendType_SXTH => (false, 16)
+  | ExtendType_SXTW => (false, 32)
+  | ExtendType_SXTX => (false, 64)
+  | ExtendType_UXTB => (true, 8)
+  | ExtendType_UXTH => (true, 16)
+  | ExtendType_UXTW => (true, 32)
+  | ExtendType_UXTX => (true, 64)
+  end in
+  let min := N.min len (datasize-shift) in
+  let cast := if unsigned then CAST_UNSIGNED else CAST_SIGNED in
+  let slice := Extract (min - 1) 0 (R[ reg , datasize ]) in  (* X reg N: read reg as an N-bit register value *)
+  BinOp OP_LSHIFT (Cast cast datasize slice) (Word shift datasize).
+
+  Definition ShiftC value shiftype amount datasize:= 
+  let result := 
+  match shiftype with
+  | ARM_LSL =>  BinOp OP_LSHIFT value amount 
+  | ARM_LSR =>  BinOp OP_RSHIFT value amount 
+  | ARM_ASR =>  BinOp OP_ARSHIFT value amount 
+  | ARM_ROR => let x := BinOp OP_RSHIFT value amount in
+               let y := BinOp OP_LSHIFT value (BinOp OP_MINUS (Word datasize datasize) amount) in
+               BinOp OP_OR x y
+  end in
+  Ite (BinOp OP_EQ amount (Word 0 datasize)) value result.
+
+  Definition ShiftReg reg shiftype amount datasize :=
+  let value := R[ reg ,datasize ] in
+  ShiftC value shiftype amount datasize.
+
+  Definition DecodeShift op :=
+  match op with 
+  | 0 => ARM_LSL
+  | 1 => ARM_LSR
+  | 2 => ARM_ASR
+  | _ => ARM_ROR
+  end.
+
+  Definition arm_data_il (assign assign_flags:bool) (Rn:N) (result flags: exp):=
+  let assign_check := if assign then arm_assign_R Rn result else Nop in
+  let assign_flag := if assign_flags then arm_assign_flags flags else assign_check in
+  assign_flag.
+
+  (*Returns an exp*)
+  Definition arm_data_r_shiftc (sf s shift Rm:N) imm6 (Rn Rd:N) (assign assign_flags: bool) (op:exp -> exp -> exp) :=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  let shift_type := DecodeShift shift in
+  match (sf, (N.testbit imm6 5)) with
+  |(0, true) => Nop 
+  | _ => let operand2 := ShiftReg Rm shift_type (Word imm6 datasize) datasize in
+         let operand1 := R[ Rn , datasize] in
+  let result := op operand1 operand2 in
+  arm_data_il assign assign_flags Rn result (Unknown datasize)
+  end. 
+
+  (*op : the actual AddWithCarry
+  instr : for ANDS and BICS*)
+  Definition arm_data_r_addwithcarry (cond:bool) (sf s shift Rm:N) imm6 (Rn:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  let shift_type := DecodeShift shift in
+  match (sf, (N.testbit imm6 5)) with
+  |(0, true) => Nop 
+  |(3,_) => Nop
+  | _ =>  let operand2 := ShiftReg Rm shift_type (Word imm6 datasize) datasize in
+          let operand1 := R[ Rn , datasize] in
+  let (result, nzcv) := op operand1 operand2 (Unknown datasize) in
+  (*assign=assign to register, assign_flag=set flag values*)
+  arm_data_il assign assign_flag Rn result nzcv
+  end.
+
+  (*only for arith functions, this is the "addwcarry"*)
+  Definition arm_data_r_extended (cond:bool) (sf s Rm:N) option_ imm3 Rn Rd (assign assign_flag:bool) (op: exp -> exp -> exp->exp*exp) :=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  let extend_type := DecodeRegExtend option_ in
+  if 4 <? imm3 then (Exn 4) else (*Undefined*)
+  let (operand1,reg_n) := if Rn=? 31 then ((Var R_SP),32) else ((R[ Rn , datasize]),Rd) in
+  let operand2 := ExtendReg2 Rm extend_type imm3 datasize in
+  let (result,nzcv) := op operand1 operand2 (Unknown datasize)in
+  (*operand1 is the thing to set.*)
+  arm_data_il assign assign_flag reg_n result nzcv.
+  
+  Definition arm_data_rev_il op sf (Rd:N) :=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  match op with
+  | ARM_RBIT sf Rn Rd |ARM_REV sf Rn Rd |ARM_CLZ sf Rn Rd |ARM_CLS sf Rn Rd => arm_assign_R Rd (Unknown datasize)
+  | ARM_REV16 sf Rn Rd => arm_assign_R Rd (Unknown 16)
+  | ARM_REV32 sf Rn Rd => arm_assign_R Rd (Unknown 32)
+  | ARM_REV64 sf Rn Rd => arm_assign_R Rd (Unknown 64)
+  | _=> Nop (*TODO: need to get rid of this later*)
+  end.
+
+  Definition arm_data_op_il op (shiftc: bool -> bool -> (exp -> exp -> exp) -> stmt)
+  (addwcarry: bool -> bool -> (exp -> exp -> exp -> exp * exp) -> stmt) :=
+  match op with 
+  | ARM_ADD_SHIFTED_REG => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_SHIFTED_REG => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1)) 
+  | ARM_SUB_SHIFTED_REG => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
+  | ARM_SUBS_SHIFTED_REG => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_AND_LOG_REG => shiftc true false (fun a b => BinOp OP_AND a b) 
+  | ARM_ANDS_LOG_REG => shiftc true true (fun a b => BinOp OP_AND a b) 
+  | ARM_BIC_LOG_REG => shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
+  | ARM_ORR_LOG_REG => shiftc true false (fun a b => BinOp OP_OR a b)
+  | ARM_ORN_LOG_REG => shiftc true false (fun a b => BinOp OP_OR a (UnOp OP_NOT b))
+  | ARM_EOR_LOG_REG => shiftc true false (fun a b => BinOp OP_XOR a b) (*TODO: EORS?*)
+  | ARM_EON_LOG_REG => shiftc true false (fun a b => BinOp OP_XOR a (UnOp OP_NOT b))
+  (*With carry operations*)
+  | ARM_ADC => addwcarry true false (fun a b _ => AddWithCarry a b (Var R_CY)) 
+  | ARM_ADCS => addwcarry true true (fun a b _ => AddWithCarry a b (Var R_CY)) 
+  | ARM_SBC => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
+  | ARM_SBCS => addwcarry true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
+  (*Extended operations*)
+  | ARM_ADD_EXTENDED_REG => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_EXTENDED_REG => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_SUB_EXTENDED_REG => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_SUBS_EXTENDED_REG => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
+  (**| ARM_CMN_EXTENDED_REG -> ADDS ext alias| ARM_CMP_EXTENDED_REG -> SUBS ext*)
+  (*Conditional Comparisons*)
+  | ARM_CCMN_REG => addwcarry false true (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_CCMP_REG => addwcarry false true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | _ => havoc
+  end.
+
+  Definition arm_data_r_il_shft op (cond:bool) (sf s shift Rm Rd:N) imm6 (Rn:N) (assign assign_flag:bool) :=
+    let arm_addwithcarry := arm_data_r_addwithcarry cond sf s shift Rm imm6 Rn in
+    let arm_shiftc := arm_data_r_shiftc sf s shift Rm imm6 Rn Rd in
+    arm_data_op_il op arm_shiftc arm_addwithcarry.
+
+  Definition arm_data_r_il_ext op (cond:bool) (sf s Rm:N) option_ imm3 Rn Rd :=
+    let arm_addwithcarry := arm_data_r_extended cond sf s Rm option_ imm3 Rn Rd in
+    let dummy_shiftc (asgn set_flags : bool) (operation : exp -> exp -> exp) : stmt := Nop in
+    arm_data_op_il op dummy_shiftc arm_addwithcarry.
+  
+  
+  
+
+
+  
+
+
+
 
   Definition decode :=
     let op0 := n.[25,29] in
