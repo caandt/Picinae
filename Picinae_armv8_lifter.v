@@ -277,11 +277,6 @@ Variant inst :=
   | ARM_ADDS_IMM
   | ARM_SUB_IMM
   | ARM_SUBS_IMM
-  (*shifted*)
-  | ARM_ADD_SHIFTED
-  | ARM_ADDS_SHIFTED
-  | ARM_SUB_SHIFTED
-  | ARM_SUBS_SHIFTED
   (*extended*)
   | ARM_ADD_EXTENDED
   | ARM_ADDS_EXTENDED
@@ -3961,10 +3956,34 @@ Section Decoder.
     |_ =>  ZeroExtend (ZeroExtend imm12 12) datasize 
     end in
     let operand1 := if Rn=?31 then (Var R_SP) else R[Rn, 64] in
-    let (result, nzcv) := op operand1 (Word imm_ext datasize) (Word 0 datasize) in
+    let (result, nzcv) := op operand1 (Word imm_ext datasize) (Unknown datasize) in
     (*assign=assign to register, assign_flag=set flag values*)
     arm_data_il assign assign_flag Rn result nzcv
     .
+
+  Definition arm_data_op_il op (shiftc: bool -> bool -> (exp -> exp -> exp) -> stmt)
+  (addwcarry: bool -> bool -> (exp -> exp -> exp -> exp * exp) -> stmt) :=
+  match op with 
+  | ARM_ADD_SHIFTED_IMM => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_SHIFTED_IMM => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1)) 
+  | ARM_SUB_SHIFTED_IMM => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
+  | ARM_SUBS_SHIFTED_IMM => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  (*With carry operations*)
+  | ARM_ADC => addwcarry true false (fun a b _ => AddWithCarry a b (Var R_CY)) 
+  | ARM_ADCS => addwcarry true true (fun a b _ => AddWithCarry a b (Var R_CY)) 
+  | ARM_SBC => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
+  | ARM_SBCS => addwcarry true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
+  (*Extended operations*)
+  | ARM_ADD_EXTENDED_IMM => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_EXTENDED_IMM => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_SUB_EXTENDED_IMM => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_SUBS_EXTENDED_IMM => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
+  (**| ARM_CMN_EXTENDED_REG -> ADDS ext alias| ARM_CMP_EXTENDED_REG -> SUBS ext*)
+  (*Conditional Comparisons*)
+  | ARM_CCMN_REG => addwcarry false true (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_CCMP_REG => addwcarry false true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | _ => havoc
+  end.
 
   Definition decode :=
     let op0 := n.[25,29] in
@@ -3979,4 +3998,21 @@ Section Decoder.
     | "x101" => dp_reg (* Data Processing -- Register on page C4-299 *)
     | "x111" => dp_fp_simd (* Data Processing -- Scalar Floating-Point and Advanced SIMD on page C4-309 *)
     else UDF end.
+
+  (*final arm2il-C6.2.5*)
+  Definition arm2il inst:=
+  let il := match inst with
+  (*logical imm*)
+  | ARM_AND_IMM  (Rn Rd immr imms sf n_:N) => arm_and_imm2il Rn Rd immr imms sf n_
+  | ARM_ANDS_IMM (Rn Rd immr imms sf n_:N) => arm_ands_imm2il Rn Rd immr imms sf n_
+  | ARM_EOR_IMM (Rn Rd immr imms sf n_:N) => arm_eor_imm2il Rn Rd immr imms sf n_
+  | ARM_ORR_IMM (Rn Rd immr imms sf n_:N) => arm_orr_imm2il Rn Rd immr imms sf n_
+  (*move wide*)
+  | ARM_MOVZ_IMM (Rd imm16 size shift:N) => arm_movz_imm2il Rd imm16 size shift
+  | ARM_MOVN_IMM (Rd imm16 size shift:N) => arm_movn_imm2il Rd imm16 size shift
+  | ARM_MOVK_IMM (Rd imm16 size shift:N) => arm_movk_imm2il Rd imm16 size shift
+  | ARM_UNDEFINED => Exn 4
+    (*Data processing immediate*)  
+  |_ => Exn 4 end
+  .
 End Decoder.
