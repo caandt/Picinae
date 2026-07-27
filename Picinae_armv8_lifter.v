@@ -368,7 +368,7 @@ Variant inst :=
   | ARM_UMSUBL
   | ARM_UMULH
   | ARM_SDIV
-  | ARM_UDIV
+  | ARM_UDIV (*Not implemented bc of Reals*)
   (*crc32*)
   | ARM_CRC32B
   | ARM_CRC32H
@@ -3771,8 +3771,8 @@ Section Decoder.
     let nzcv := Pack_NZCV n z c v in
     (result, nzcv).
 
-  (*Not doing UDIV because we might need floating values..?*)
-  Definition RoundTowardsZero x := x.
+  (*Not doing UDIV because we might need floating values?*)
+  (*Definition RoundTowardsZero x := x.*)
 
 
   (*shift type*)
@@ -3887,8 +3887,17 @@ Section Decoder.
   | ARM_REV16 sf Rn Rd => arm_assign_R Rd (Unknown 16)
   | ARM_REV32 sf Rn Rd => arm_assign_R Rd (Unknown 32)
   | ARM_REV64 sf Rn Rd => arm_assign_R Rd (Unknown 64)
-  | _=> Nop (*TODO: need to get rid of this later*)
+  | _=> Nop 
   end.
+
+  (*asrv, lsrv, etc.*)
+  Definition arm_data_r_shift_il (sf Rm op2 Rn Rd:N) (assign assign_flags: bool) :=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  let shift_type := DecodeShift op2 in
+  let operand2 := R[ Rm , datasize] in
+  let result := ShiftReg Rn shift_type (BinOp OP_MOD operand2 (Word datasize datasize)) datasize in
+  arm_data_il assign assign_flags Rd result (Unknown datasize)
+  . 
 
   Definition arm_data_op_il op (shiftc: bool -> bool -> (exp -> exp -> exp) -> stmt)
   (addwcarry: bool -> bool -> (exp -> exp -> exp -> exp * exp) -> stmt) :=
@@ -3931,14 +3940,31 @@ Section Decoder.
     let dummy_shiftc (asgn set_flags : bool) (operation : exp -> exp -> exp) : stmt := Nop in
     arm_data_op_il op dummy_shiftc arm_addwithcarry.
   
-  
-  
+  (*SUBP/S: only for 64 bit*)
+  Definition arm_subp_to_il (op Xn Xm Xd:N) (flag:bool ):stmt:=
+    let operand1 := if Xn=?31 then (Var R_SP) else R[Xn, 64] in
+    let operand2 := if Xm=?31 then (Var R_SP) else R[Xn, 64] in
+    let op1_55 := Cast CAST_LOW 56 operand1 in
+    let op2_55 := Cast CAST_LOW 56 operand2 in
+    let op1_ext := Cast CAST_SIGNED 64 op1_55 in
+    let op2_ext := Cast CAST_SIGNED 64 op2_55 in 
+    let (result,flags) := AddWithCarry op1_ext op2_ext (Word 1 1) in
+    arm_data_il true flag Xd result flags.
 
-
-  
-
-
-
+    (*to do*)
+    Definition ZeroExtend (x n:N) := 0.
+    (*Immediate*)
+    Definition arm_data_i_addwithcarry (cond:bool) (sf s sh imm12 Rn Rd:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
+    let datasize := match sf with 1 => 64 |_ => 32 end in 
+    let imm_ext := match sh with
+    |0 =>  ZeroExtend imm12 datasize
+    |_ =>  ZeroExtend (ZeroExtend imm12 12) datasize 
+    end in
+    let operand1 := if Rn=?31 then (Var R_SP) else R[Rn, 64] in
+    let (result, nzcv) := op operand1 (Word imm_ext datasize) (Word 0 datasize) in
+    (*assign=assign to register, assign_flag=set flag values*)
+    arm_data_il assign assign_flag Rn result nzcv
+    .
 
   Definition decode :=
     let op0 := n.[25,29] in
