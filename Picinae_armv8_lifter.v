@@ -273,16 +273,11 @@ Notation "'MemAtomicOp_SWP'" := (<{8#5}>) (at level 0).
 
 Variant inst :=
 (*DP imm*)
-  | ARM_ADD_IMM
-  | ARM_ADDS_IMM
-  | ARM_SUB_IMM
-  | ARM_SUBS_IMM
-  (*extended*)
-  | ARM_ADD_EXTENDED
-  | ARM_ADDS_EXTENDED
-  | ARM_SUB_EXTENDED
-  | ARM_SUBS_EXTENDED
-  (*8.5*)
+  | ARM_ADD_IMM (sf s sh imm12 Rn Rd : N)
+  | ARM_ADDS_IMM (sf s sh imm12 Rn Rd : N)
+  | ARM_SUB_IMM (sf s sh imm12 Rn Rd : N)
+  | ARM_SUBS_IMM (sf s sh imm12 Rn Rd : N)
+  (*8.5: with tag, not implemented*)
   | ARM_ADDG
   | ARM_SUBG
   (*compare*)
@@ -306,55 +301,56 @@ Variant inst :=
   (*extract*)
   | ARM_EXTR
   (*conditional comparison*)
-  | ARM_CCMN_IMM
-  | ARM_CCMP_IMM
+  | ARM_CCMN_IMM (sf Rn imm nzcv cond:N)
+  | ARM_CCMP_IMM (sf Rn imm nzcv cond:N)
 
 (*DP reg*)
   (*arith extended*)
-  | ARM_ADD_EXTENDED_REG
-  | ARM_ADDS_EXTENDED_REG
-  | ARM_SUB_EXTENDED_REG
-  | ARM_SUBS_EXTENDED_REG
+  | ARM_ADD_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
+  | ARM_ADDS_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
+  | ARM_SUB_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
+  | ARM_SUBS_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
   (*arith shifted*)
-  | ARM_ADD_SHIFTED_REG
-  | ARM_ADDS_SHIFTED_REG
-  | ARM_SUB_SHIFTED_REG
-  | ARM_SUBS_SHIFTED_REG
+  | ARM_ADD_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
+  | ARM_ADDS_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
+  | ARM_SUB_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
+  | ARM_SUBS_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
   (*w carry*)
-  | ARM_ADC
-  | ARM_ADCS
-  | ARM_SBC
-  | ARM_SBCS
+  | ARM_ADC (sf s Rm Rn Rd :N)
+  | ARM_ADCS (sf s Rm Rn Rd :N)
+  | ARM_SBC (sf s Rm Rn Rd :N)
+  | ARM_SBCS (sf s Rm Rn Rd :N)
   (*logical - bitwise ops*)
-  | ARM_AND_LOG_REG
-  | ARM_ANDS_LOG_REG
-  | ARM_BIC_LOG_REG
-  | ARM_BICS_LOG_REG
-  | ARM_EON_LOG_REG
-  | ARM_EOR_LOG_REG
-  | ARM_ORR_LOG_REG
-  | ARM_MVN_LOG_REG
-  | ARM_ORN_LOG_REG
-  | ARM_TST_LOG_REG
-  | ARM_MOV_LOG_REG (*mov register/mov register SP <-> reg*)
+  | ARM_AND_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_ANDS_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_BIC_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_BICS_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_EON_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_EOR_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_ORR_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_MVN_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_ORN_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_TST_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  | ARM_MOV_LOG_REG (sf shift Rm imm6 Rn Rd :N)
+  (*mov register/mov register SP <-> reg*)
   (*rotate*)
   | ARM_RMIF
   (*shift register*)
-  | ARM_ASRV_REG
-  | ARM_LSLV_REG
-  | ARM_LSRV_REG
-  | ARM_RORV_REG
+  | ARM_ASRV_REG (sf Rm op2 Rn Rd :N)
+  | ARM_LSLV_REG (sf Rm op2 Rn Rd :N)
+  | ARM_LSRV_REG (sf Rm op2 Rn Rd :N)
+  | ARM_RORV_REG (sf Rm op2 Rn Rd :N)
   (*conditional select*)
   | ARM_CSEL
   | ARM_CSINV
   | ARM_CSNEG
   | ARM_CSETM
   (*conditional comparison*)
-  | ARM_CCMN_REG
-  | ARM_CCMP_REG
+  | ARM_CCMN_REG (sf Rm cond Rn nzcv:N)
+  | ARM_CCMP_REG (sf Rm cond Rn nzcv:N)
   | ARM_CSINC
   (*mul/div reg*)
-  | ARM_MADD
+  | ARM_MADD (*TODO: mults only*)
   | ARM_MSUB
   | ARM_SMADDL
   | ARM_SMSUBL
@@ -362,7 +358,7 @@ Variant inst :=
   | ARM_UMADDL
   | ARM_UMSUBL
   | ARM_UMULH
-  | ARM_SDIV
+  | ARM_SDIV (*Not implemented bc of Reals*)
   | ARM_UDIV (*Not implemented bc of Reals*)
   (*crc32*)
   | ARM_CRC32B
@@ -730,16 +726,19 @@ Section Decoder.
   Definition add_sub_imm :=
     let sf := n.[31] in
     let op := n.[30] in
-    let s_ := n.[29] in
-    match[bits] sf, op, s_ with
-    | "0  0  0" => ARM_ADD_IMM (* ADD (immediate) - 32-bit variant on page C6-761 *)
-    | "0  0  1" => ARM_ADDS_IMM (* ADDS (immediate) - 32-bit variant on page C6-769 *)
-    | "0  1  0" => ARM_SUB_IMM (* SUB (immediate) - 32-bit variant on page C6-1311 *)
-    | "0  1  1" => ARM_SUBS_IMM (* SUBS (immediate) - 32-bit variant on page C6-1321 *)
-    | "1  0  0" => ARM_ADD_IMM (* ADD (immediate) - 64-bit variant on page C6-761 *)
-    | "1  0  1" => ARM_ADDS_IMM (* ADDS (immediate) - 64-bit variant on page C6-769 *)
-    | "1  1  0" => ARM_SUB_IMM (* SUB (immediate) - 64-bit variant on page C6-1311 *)
-    | "1  1  1" => ARM_SUBS_IMM (* SUBS (immediate) - 64-bit variant on page C6-1321 *)
+    let s := n.[29] in
+    let sh := n.[22] in
+    let imm12 := n.[10,22] in
+    let Rn := n.[5,10] in let Rd := n.[0,5] in
+    match[bits] sf, op, s with
+    | "0  0  0" => ARM_ADD_IMM sf s sh imm12 Rn Rd (* ADD (immediate) - 32-bit variant on page C6-761 *)
+    | "0  0  1" => ARM_ADDS_IMM sf s sh imm12 Rn Rd(* ADDS (immediate) - 32-bit variant on page C6-769 *)
+    | "0  1  0" => ARM_SUB_IMM sf s sh imm12 Rn Rd(* SUB (immediate) - 32-bit variant on page C6-1311 *)
+    | "0  1  1" => ARM_SUBS_IMM sf s sh imm12 Rn Rd(* SUBS (immediate) - 32-bit variant on page C6-1321 *)
+    | "1  0  0" => ARM_ADD_IMM sf s sh imm12 Rn Rd(* ADD (immediate) - 64-bit variant on page C6-761 *)
+    | "1  0  1" => ARM_ADDS_IMM sf s sh imm12 Rn Rd(* ADDS (immediate) - 64-bit variant on page C6-769 *)
+    | "1  1  0" => ARM_SUB_IMM sf s sh imm12 Rn Rd(* SUB (immediate) - 64-bit variant on page C6-1311 *)
+    | "1  1  1" => ARM_SUBS_IMM sf s sh imm12 Rn Rd(* SUBS (immediate) - 64-bit variant on page C6-1321 *)
     else UDF end.
 
   (*immediate, with tags*)
@@ -2849,7 +2848,6 @@ Section Decoder.
 
   (* We assume address translation succeed and is apparent. That is, we do not
      model it. *)
-
   Definition MemAtomic (op:exp) (w:N) (value address:exp) (rettemp:N):=
     let bytes := N.shiftr w 3 in
     let oldvalue := <{Xtemp[rettemp]}> in
@@ -2861,8 +2859,8 @@ Section Decoder.
       if op = MemAtomicOp_BIC  then temp[nvtemp] := oldvalue & !value else
       if op = MemAtomicOp_EOR  then temp[nvtemp] := oldvalue ^ value  else
       if op = MemAtomicOp_ORR  then temp[nvtemp] := oldvalue | value  else
-      if op = MemAtomicOp_SMAX then temp[nvtemp] := ite (oldvalue s> value) oldvalue value else
-      if op = MemAtomicOp_SMIN then temp[nvtemp] := ite (oldvalue s> value) value oldvalue else
+      if op = MemAtomicOp_SMAX then temp[nvtemp] := ite (<{oldvalue s> value}>) oldvalue value else
+      if op = MemAtomicOp_SMIN then temp[nvtemp] := ite (<{oldvalue s> value}>) value oldvalue else
       if op = MemAtomicOp_UMAX then temp[nvtemp] := ite (oldvalue  > value) oldvalue value else
       if op = MemAtomicOp_UMIN then temp[nvtemp] := ite (oldvalue  > value) value oldvalue else
       (* op = MemAtomicOP_SWP  *)   temp[nvtemp] := value
@@ -3517,25 +3515,26 @@ Section Decoder.
     let sf := n.[31] in
     let opc := n.[29,31] in
     let n_ := n.[21] in
-    let imm6 := n.[10,16] in
+    let imm6 := n.[10,16] in let shift := n.[22,24] in
+    let Rn := n.[5,10] in let Rm := n.[16,21] in let Rd := n.[0,5] in
     match[bits] sf, opc, n_, imm6 with
     | "0  -   -  1xxxxx" => UDF (* Unallocated. *)
-    | "0  00  0  -     " => ARM_AND_LOG_REG (* AND (shifted register) - 32-bit variant on page C6-538 *)
-    | "0  00  1  -     " => ARM_BIC_LOG_REG (* BIC (shifted register) - 32-bit variant on page C6-556 *)
-    | "0  01  0  -     " => ARM_ORR_LOG_REG (* ORR (shifted register) - 32-bit variant on page C6-792 *)
-    | "0  01  1  -     " => ARM_ORN_LOG_REG (* ORN (shifted register) - 32-bit variant on page C6-788 *)
-    | "0  10  0  -     " => ARM_EOR_LOG_REG (* EOR (shifted register) - 32-bit variant on page C6-620 *)
-    | "0  10  1  -     " => ARM_EON_LOG_REG (* EON (shifted register) - 32-bit variant on page C6-617 *)
-    | "0  11  0  -     " => ARM_ANDS_LOG_REG (* ANDS (shifted register) - 32-bit variant on page C6-542 *)
-    | "0  11  1  -     " => ARM_BICS_LOG_REG (* BICS (shifted register) - 32-bit variant on page C6-558 *)
-    | "1  00  0  -     " => ARM_AND_LOG_REG (* AND (shifted register) - 64-bit variant on page C6-538 *)
-    | "1  00  1  -     " => ARM_BIC_LOG_REG (* BIC (shifted register) - 64-bit variant on page C6-556 *)
-    | "1  01  0  -     " => ARM_ORR_LOG_REG (* ORR (shifted register) - 64-bit variant on page C6-792 *)
-    | "1  01  1  -     " => ARM_ORN_LOG_REG (* ORN (shifted register) - 64-bit variant on page C6-788 *)
-    | "1  10  0  -     " => ARM_EOR_LOG_REG (* EOR (shifted register) - 64-bit variant on page C6-620 *)
-    | "1  10  1  -     " => ARM_EON_LOG_REG (* EON (shifted register) - 64-bit variant on page C6-617 *)
-    | "1  11  0  -     " => ARM_ANDS_LOG_REG (* ANDS (shifted register) - 64-bit variant on page C6-542 *)
-    | "1  11  1  -     " => ARM_BICS_LOG_REG (* BICS (shifted register) - 64-bit variant on page C6-558 *)
+    | "0  00  0  -     " => ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd(* AND (shifted register) - 32-bit variant on page C6-538 *)
+    | "0  00  1  -     " => ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd(* BIC (shifted register) - 32-bit variant on page C6-556 *)
+    | "0  01  0  -     " => ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd(* ORR (shifted register) - 32-bit variant on page C6-792 *)
+    | "0  01  1  -     " => ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd(* ORN (shifted register) - 32-bit variant on page C6-788 *)
+    | "0  10  0  -     " => ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd(* EOR (shifted register) - 32-bit variant on page C6-620 *)
+    | "0  10  1  -     " => ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd(* EON (shifted register) - 32-bit variant on page C6-617 *)
+    | "0  11  0  -     " => ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd (* ANDS (shifted register) - 32-bit variant on page C6-542 *)
+    | "0  11  1  -     " => ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd (* BICS (shifted register) - 32-bit variant on page C6-558 *)
+    | "1  00  0  -     " => ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd(* AND (shifted register) - 64-bit variant on page C6-538 *)
+    | "1  00  1  -     " => ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd(* BIC (shifted register) - 64-bit variant on page C6-556 *)
+    | "1  01  0  -     " => ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd(* ORR (shifted register) - 64-bit variant on page C6-792 *)
+    | "1  01  1  -     " => ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd(* ORN (shifted register) - 64-bit variant on page C6-788 *)
+    | "1  10  0  -     " => ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd(* EOR (shifted register) - 64-bit variant on page C6-620 *)
+    | "1  10  1  -     " => ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd(* EON (shifted register) - 64-bit variant on page C6-617 *)
+    | "1  11  0  -     " => ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd(* ANDS (shifted register) - 64-bit variant on page C6-542 *)
+    | "1  11  1  -     " => ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd(* BICS (shifted register) - 64-bit variant on page C6-558 *)
     else UDF end.
 
 
@@ -3543,58 +3542,63 @@ Section Decoder.
   Definition add_sub_shifted  :=
     let sf := n.[31] in
     let opc := n.[30] in
-    let s_ := n.[29] in
+    let s := n.[29] in
     let shift := n.[22,24] in
     let imm6 := n.[10,16] in
-    match[bits] sf, opc, s_, shift, imm6 with
+    let Rm := n.[16,21] in let Rn := n.[5,10] in let Rd := n.[0,5] in
+    match[bits] sf, opc, s, shift, imm6 with
     | "-  -  -  11  -     " => UDF (* Unallocated. *)
     | "0  -  -  -   1xxxxx" => UDF (* Unallocated. *)
-    | "0  0  0  -   -     " => ARM_ADD_SHIFTED_REG (* ADD (shifted register) - 32-bit variant on page C6-527 *)
-    | "0  0  1  -   -     " => ARM_ADDS_SHIFTED_REG (* ADDS (shifted register) - 32-bit variant on page C6-533 *)
-    | "0  1  0  -   -     " => ARM_SUB_SHIFTED_REG (* SUB (shifted register) - 32-bit variant on page C6-932 *)
-    | "0  1  1  -   -     " => ARM_SUBS_SHIFTED_REG (* SUBS (shifted register) - 32-bit variant on page C6-938 *)
-    | "1  0  0  -   -     " => ARM_ADD_SHIFTED_REG (* ADD (shifted register) - 64-bit variant on page C6-527 *)
-    | "1  0  1  -   -     " => ARM_ADDS_SHIFTED_REG (* ADDS (shifted register) - 64-bit variant on page C6-533 *)
-    | "1  1  0  -   -     " => ARM_SUB_SHIFTED_REG (* SUB (shifted register) - 64-bit variant on page C6-932 *)
-    | "1  1  1  -   -     " => ARM_SUBS_SHIFTED_REG (* SUBS (shifted register) - 64-bit variant on page C6-938 *)
+    | "0  0  0  -   -     " => ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADD (shifted register) - 32-bit variant on page C6-527 *)
+    | "0  0  1  -   -     " => ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADDS (shifted register) - 32-bit variant on page C6-533 *)
+    | "0  1  0  -   -     " => ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUB (shifted register) - 32-bit variant on page C6-932 *)
+    | "0  1  1  -   -     " => ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUBS (shifted register) - 32-bit variant on page C6-938 *)
+    | "1  0  0  -   -     " => ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADD (shifted register) - 64-bit variant on page C6-527 *)
+    | "1  0  1  -   -     " => ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADDS (shifted register) - 64-bit variant on page C6-533 *)
+    | "1  1  0  -   -     " => ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUB (shifted register) - 64-bit variant on page C6-932 *)
+    | "1  1  1  -   -     " => ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd (* SUBS (shifted register) - 64-bit variant on page C6-938 *)
     else UDF end.
 
   (*add/sub - extended reg*)
   Definition add_sub_extended  :=
     let sf := n.[31] in
     let op := n.[30] in
-    let s_ := n.[29] in
+    let s := n.[29] in
     let opt := n.[22,24] in
     let imm3 := n.[10,13] in
-    match[bits] sf, op, s_, opt, imm3 with
+    let Rn := n.[5,10] in let Rd:= n.[0,5] in
+    let option_ := n.[13,16] in
+    let Rm := n.[16,21] in
+    match[bits] sf, op, s, opt, imm3 with
     | "-  -  -  -   1x1" => UDF (* Unallocated. *)
     | "-  -  -  -   11x" => UDF (* Unallocated. *)
     | "-  -  -  x1  -  " => UDF (* Unallocated. *)
     | "-  -  -  1x  -  " => UDF (* Unallocated. *)
-    | "0  0  0  00  -  " => ARM_ADD_EXTENDED_REG (* ADD (extended register) - 32-bit variant on page C6-523 *)
-    | "0  0  1  00  -  " => ARM_ADDS_EXTENDED_REG (* ADDS (extended register) - 32-bit variant on page C6-529 *)
-    | "0  1  0  00  -  " => ARM_SUB_EXTENDED_REG (* SUB (extended register) - 32-bit variant on page C6-928 *)
-    | "0  1  1  00  -  " => ARM_SUBS_EXTENDED_REG (* SUBS (extended register) - 32-bit variant on page C6-934 *)
-    | "1  0  0  00  -  " => ARM_ADD_EXTENDED_REG(* ADD (extended register) - 64-bit variant on page C6-523 *)
-    | "1  0  1  00  -  " => ARM_ADDS_EXTENDED_REG(* ADDS (extended register) - 64-bit variant on page C6-529 *)
-    | "1  1  0  00  -  " => ARM_SUB_EXTENDED_REG (* SUB (extended register) - 64-bit variant on page C6-928 *)
-    | "1  1  1  00  -  " => ARM_SUBS_EXTENDED_REG (* SUBS (extended register) - 64-bit variant on page C6-934 *)
+    | "0  0  0  00  -  " => ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADD (extended register) - 32-bit variant on page C6-523 *)
+    | "0  0  1  00  -  " => ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADDS (extended register) - 32-bit variant on page C6-529 *)
+    | "0  1  0  00  -  " => ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUB (extended register) - 32-bit variant on page C6-928 *)
+    | "0  1  1  00  -  " => ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUBS (extended register) - 32-bit variant on page C6-934 *)
+    | "1  0  0  00  -  " => ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADD (extended register) - 64-bit variant on page C6-523 *)
+    | "1  0  1  00  -  " => ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADDS (extended register) - 64-bit variant on page C6-529 *)
+    | "1  1  0  00  -  " => ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUB (extended register) - 64-bit variant on page C6-928 *)
+    | "1  1  1  00  -  " => ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUBS (extended register) - 64-bit variant on page C6-934 *)
     else UDF end.
 
   (*add/sub - with carry*)
   Definition add_sub_carry  :=
     let sf := n.[31] in
     let op := n.[30] in
-    let s_ := n.[29] in
-    match[bits] sf, op, s_ with
-      | "0  0  0" => ARM_ADC (* ADC - 32-bit variant on page C6-754 *)
-      | "0  0  1" => ARM_ADCS (* ADCS - 32-bit variant on page C6-756 *)
-      | "0  1  0" => ARM_SBC (* SBC - 32-bit variant on page C6-1164 *)
-      | "0  1  1" => ARM_SBCS (* SBCS - 32-bit variant on page C6-1166 *)
-      | "1  0  0" => ARM_ADC (* ADC - 64-bit variant on page C6-754 *)
-      | "1  0  1" => ARM_ADCS (* ADCS - 64-bit variant on page C6-756 *)
-      | "1  1  0" => ARM_SBC (* SBC - 64-bit variant on page C6-1164 *)
-      | "1  1  1" => ARM_SBCS (* SBCS - 64-bit variant on page C6-1166 *)
+    let s := n.[29] in
+    let Rm := n.[16,21] in let Rn := n.[5,10] in let Rd := n.[0,5] in
+    match[bits] sf, op, s with
+      | "0  0  0" => ARM_ADC sf s Rm Rn Rd(* ADC - 32-bit variant on page C6-754 *)
+      | "0  0  1" => ARM_ADCS sf s Rm Rn Rd(* ADCS - 32-bit variant on page C6-756 *)
+      | "0  1  0" => ARM_SBC sf s Rm Rn Rd(* SBC - 32-bit variant on page C6-1164 *)
+      | "0  1  1" => ARM_SBCS sf s Rm Rn Rd(* SBCS - 32-bit variant on page C6-1166 *)
+      | "1  0  0" => ARM_ADC sf s Rm Rn Rd(* ADC - 64-bit variant on page C6-754 *)
+      | "1  0  1" => ARM_ADCS sf s Rm Rn Rd(* ADCS - 64-bit variant on page C6-756 *)
+      | "1  1  0" => ARM_SBC sf s Rm Rn Rd(* SBC - 64-bit variant on page C6-1164 *)
+      | "1  1  1" => ARM_SBCS sf s Rm Rn Rd(* SBCS - 64-bit variant on page C6-1166 *)
       else UDF end.
 
   (*rotate right into flags*)
@@ -3631,21 +3635,25 @@ Section Decoder.
     | "1  -  -  -         -  -  -     " => UDF (* Unallocated. *)
     else UDF end.
 
-  (*conditional compare immediate*)
+  (*TODO:conditional compare immediate*)
   Definition cond_compare_imm :=
     let sf := n.[31] in
     let op := n.[30] in
     let s_ := n.[29] in
     let o2 := n.[10] in
     let o3 := n.[4] in
+    let Rn := n.[5,10] in
+    let cond := n.[12,16] in
+    let imm := n.[16,21] in
+    let nzcv := n.[0,4] in
     match[bits] sf, op, s_, o2, o3 with
     | "-  -  -  -  1" => UDF (* Unallocated. *)
     | "-  -  -  1  -" => UDF (* Unallocated. *)
     | "-  -  0  -  -" => UDF (* Unallocated. *)
-    | "0  0  1  0  0" => ARM_CCMN_IMM (* CCMN (immediate) - 32-bit variant on page C6-833 *)
-    | "0  1  1  0  0" => ARM_CCMP_IMM (* CCMP (immediate) - 32-bit variant on page C6-837 *)
-    | "1  0  1  0  0" => ARM_CCMN_IMM (* CCMN (immediate) - 64-bit variant on page C6-833 *)
-    | "1  1  1  0  0" => ARM_CCMP_IMM (* CCMP (immediate) - 64-bit variant on page C6-837 *)
+    | "0  0  1  0  0" => ARM_CCMN_IMM sf Rn imm nzcv cond(* CCMN (immediate) - 32-bit variant on page C6-833 *)
+    | "0  1  1  0  0" => ARM_CCMP_IMM sf Rn imm nzcv cond(* CCMP (immediate) - 32-bit variant on page C6-837 *)
+    | "1  0  1  0  0" => ARM_CCMN_IMM sf Rn imm nzcv cond(* CCMN (immediate) - 64-bit variant on page C6-833 *)
+    | "1  1  1  0  0" => ARM_CCMP_IMM sf Rn imm nzcv cond(* CCMP (immediate) - 64-bit variant on page C6-837 *)
     else UDF end.
 
   (*conditional compare immediate*)
@@ -3655,17 +3663,17 @@ Section Decoder.
     let s_ := n.[29] in
     let o2 := n.[10] in
     let o3 := n.[4] in
+    let Rm := n.[16,21] in let Rn := n.[5,10] 
+    in let cond := n.[12,16] in let nzcv := n.[0,4] in
     match[bits] sf, op, s_, o2, o3 with
   | "-  -  -  -  1" => UDF (* Unallocated. *)
   | "-  -  -  1  -" => UDF (* Unallocated. *)
   | "-  -  0  -  -" => UDF (* Unallocated. *)
-  | "0  0  1  0  0" => ARM_CCMN_REG (* CCMN (register) - 32-bit variant on page C6-835 *)
-  | "0  1  1  0  0" => ARM_CCMP_REG (* CCMP (register) - 32-bit variant on page C6-839 *)
-  | "1  0  1  0  0" => ARM_CCMN_REG (* CCMN (register) - 64-bit variant on page C6-835 *)
-  | "1  1  1  0  0" => ARM_CCMP_REG (* CCMP (register) - 64-bit variant on page C6-839 *)
+  | "0  0  1  0  0" => ARM_CCMN_REG sf Rm cond Rn nzcv(* CCMN (register) - 32-bit variant on page C6-835 *)
+  | "0  1  1  0  0" => ARM_CCMP_REG sf Rm cond Rn nzcv(* CCMP (register) - 32-bit variant on page C6-839 *)
+  | "1  0  1  0  0" => ARM_CCMN_REG sf Rm cond Rn nzcv(* CCMN (register) - 64-bit variant on page C6-835 *)
+  | "1  1  1  0  0" => ARM_CCMP_REG sf Rm cond Rn nzcv(* CCMP (register) - 64-bit variant on page C6-839 *)
   else UDF end.
-
-
 
   (*conditional select*)
   Definition cond_select :=
@@ -3791,6 +3799,18 @@ Section Decoder.
   | _ => ExtendType_SXTX
   end.
 
+
+  Variant arm_data_r_inst :=
+  | ARM_ADD_SHIFTED_REG_V 
+  | ARM_ADDS_SHIFTED_REG_V  
+  | ARM_SUB_SHIFTED_REG_V 
+  | ARM_SUBS_SHIFTED_REG_V 
+  | ARM_AND_LOG_REG_V 
+  | ARM_ANDS_LOG_REG_V | ARM_BIC_LOG_REG_V | ARM_BICS_LOG_REG_V | ARM_ORR_LOG_REG_V | ARM_ORN_LOG_REG_V | ARM_EOR_LOG_REG_V | ARM_EON_LOG_REG_V 
+  | ARM_ADC_V  | ARM_ADCS_V | ARM_SBC_V  | ARM_SBCS_V | ARM_ADD_EXTENDED_REG_V  | ARM_ADDS_EXTENDED_REG_V | ARM_SUB_EXTENDED_REG_V  
+  | ARM_SUBS_EXTENDED_REG_V | ARM_CCMN_REG_V | ARM_CCMP_REG_V
+  .
+
   (*returns signed/unsigned extended value*)
   Definition ExtendReg2 reg exttype shift datasize:=
   let (unsigned, len) := match exttype with
@@ -3851,7 +3871,7 @@ Section Decoder.
 
   (*op : the actual AddWithCarry
   instr : for ANDS and BICS*)
-  Definition arm_data_r_addwithcarry (cond:bool) (sf s shift Rm:N) imm6 (Rn:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
+  Definition arm_data_r_addwithcarry (cond sf s shift Rm:N) imm6 (Rn:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
   let datasize := match sf with 1 => 64 |_ => 32 end in 
   let shift_type := DecodeShift shift in
   match (sf, (N.testbit imm6 5)) with
@@ -3865,7 +3885,7 @@ Section Decoder.
   end.
 
   (*only for arith functions, this is the "addwcarry"*)
-  Definition arm_data_r_extended (cond:bool) (sf s Rm:N) option_ imm3 Rn Rd (assign assign_flag:bool) (op: exp -> exp -> exp->exp*exp) :=
+  Definition arm_data_r_extended (cond sf s Rm:N) option_ imm3 Rn Rd (assign assign_flag:bool) (op: exp -> exp -> exp->exp*exp) :=
   let datasize := match sf with 1 => 64 |_ => 32 end in 
   let extend_type := DecodeRegExtend option_ in
   if 4 <? imm3 then (Exn 4) else (*Undefined*)
@@ -3875,7 +3895,7 @@ Section Decoder.
   (*operand1 is the thing to set.*)
   arm_data_il assign assign_flag reg_n result nzcv.
   
-  Definition arm_data_rev_il op sf (Rd:N) :=
+  Definition arm_data_rev_il op sf:=
   let datasize := match sf with 1 => 64 |_ => 32 end in 
   match op with
   | ARM_RBIT sf Rn Rd |ARM_REV sf Rn Rd |ARM_CLZ sf Rn Rd |ARM_CLS sf Rn Rd => arm_assign_R Rd (Unknown datasize)
@@ -3894,47 +3914,73 @@ Section Decoder.
   arm_data_il assign assign_flags Rd result (Unknown datasize)
   . 
 
+  Definition arm_data_r_with_carry (sf Rm Rn Rd:N) (assign assign_flags: bool) (op: exp -> exp -> exp->exp*exp):=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  let operand2 := R[ Rm , datasize] in
+  let operand1 := R[ Rn, datasize ] in
+  let (result,_) := op operand1 operand2 (Word 0 1) in
+  arm_data_il assign assign_flags Rd result (Unknown datasize)
+  . 
+
+  Definition arm_data_r_with_cond (op:arm_data_r_inst) (cond sf Rm Rn nzcv:N):=
+  let datasize := match sf with 1 => 64 |_ => 32 end in 
+  let operand2 := R[ Rm , datasize] in
+  let operand1 := R[ Rn, datasize ] in
+  let (result, flags):= match op with 
+    | ARM_CCMN_REG_V =>  (AddWithCarry operand1 operand2 (Word 0 1) )
+    | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry operand1 (UnOp OP_NOT operand2) (Word 1 1))
+    end in
+  let nzcv_final := Ite (ConditionHolds cond) flags (Word nzcv 4) in 
+  (*if condition holds, nzcv final is the new flags from AddWithCarry else its just the value we read in*)
+  arm_data_il false true Rn result nzcv_final
+  . 
+
   Definition arm_data_op_il op (shiftc: bool -> bool -> (exp -> exp -> exp) -> stmt)
   (addwcarry: bool -> bool -> (exp -> exp -> exp -> exp * exp) -> stmt) :=
   match op with 
-  | ARM_ADD_SHIFTED_REG => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_ADDS_SHIFTED_REG => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1)) 
-  | ARM_SUB_SHIFTED_REG => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
-  | ARM_SUBS_SHIFTED_REG => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  | ARM_AND_LOG_REG => shiftc true false (fun a b => BinOp OP_AND a b) 
-  | ARM_ANDS_LOG_REG => shiftc true true (fun a b => BinOp OP_AND a b) 
-  | ARM_BIC_LOG_REG => shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
-  | ARM_ORR_LOG_REG => shiftc true false (fun a b => BinOp OP_OR a b)
-  | ARM_ORN_LOG_REG => shiftc true false (fun a b => BinOp OP_OR a (UnOp OP_NOT b))
-  | ARM_EOR_LOG_REG => shiftc true false (fun a b => BinOp OP_XOR a b) (*TODO: EORS?*)
-  | ARM_EON_LOG_REG => shiftc true false (fun a b => BinOp OP_XOR a (UnOp OP_NOT b))
+  | ARM_ADD_SHIFTED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_SHIFTED_REG_V => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1)) 
+  | ARM_SUB_SHIFTED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
+  | ARM_SUBS_SHIFTED_REG_V => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_AND_LOG_REG_V => shiftc true false (fun a b => BinOp OP_AND a b) 
+  | ARM_ANDS_LOG_REG_V => shiftc true true (fun a b => BinOp OP_AND a b) 
+  | ARM_BIC_LOG_REG_V => shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
+  | ARM_BICS_LOG_REG_V => shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
+  | ARM_ORR_LOG_REG_V => shiftc true false (fun a b => BinOp OP_OR a b)
+  | ARM_ORN_LOG_REG_V => shiftc true false (fun a b => BinOp OP_OR a (UnOp OP_NOT b))
+  | ARM_EOR_LOG_REG_V => shiftc true false (fun a b => BinOp OP_XOR a b) (*TODO: EORS?*)
+  | ARM_EON_LOG_REG_V => shiftc true false (fun a b => BinOp OP_XOR a (UnOp OP_NOT b))
   (*With carry operations*)
-  | ARM_ADC => addwcarry true false (fun a b _ => AddWithCarry a b (Var R_CY)) 
-  | ARM_ADCS => addwcarry true true (fun a b _ => AddWithCarry a b (Var R_CY)) 
-  | ARM_SBC => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
-  | ARM_SBCS => addwcarry true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
+  | ARM_ADC_V => addwcarry true false (fun a b _ => AddWithCarry a b (Var R_CY)) 
+  | ARM_ADCS_V => addwcarry true true (fun a b _ => AddWithCarry a b (Var R_CY)) 
+  | ARM_SBC_V => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
+  | ARM_SBCS_V => addwcarry true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY)) 
   (*Extended operations*)
-  | ARM_ADD_EXTENDED_REG => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_ADDS_EXTENDED_REG => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_SUB_EXTENDED_REG => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  | ARM_SUBS_EXTENDED_REG => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
+  | ARM_ADD_EXTENDED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_EXTENDED_REG_V => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_SUB_EXTENDED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_SUBS_EXTENDED_REG_V => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1)) 
   (**| ARM_CMN_EXTENDED_REG -> ADDS ext alias| ARM_CMP_EXTENDED_REG -> SUBS ext*)
   (*Conditional Comparisons*)
-  | ARM_CCMN_REG => addwcarry false true (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_CCMP_REG => addwcarry false true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
   | _ => havoc
   end.
 
-  Definition arm_data_r_il_shft op (cond:bool) (sf s shift Rm Rd:N) imm6 (Rn:N) (assign assign_flag:bool) :=
+  Definition arm_data_r_il_shft op (cond sf s shift Rm Rd:N) imm6 (Rn:N) :=
     let arm_addwithcarry := arm_data_r_addwithcarry cond sf s shift Rm imm6 Rn in
     let arm_shiftc := arm_data_r_shiftc sf s shift Rm imm6 Rn Rd in
     arm_data_op_il op arm_shiftc arm_addwithcarry.
 
-  Definition arm_data_r_il_ext op (cond:bool) (sf s Rm:N) option_ imm3 Rn Rd :=
+  Definition arm_data_r_il_ext op (cond sf s Rm:N) option_ imm3 Rn Rd :=
     let arm_addwithcarry := arm_data_r_extended cond sf s Rm option_ imm3 Rn Rd in
     let dummy_shiftc (asgn set_flags : bool) (operation : exp -> exp -> exp) : stmt := Nop in
     arm_data_op_il op dummy_shiftc arm_addwithcarry.
   
+  Definition arm_data_r_il_carry op (sf Rm Rn Rd:N) :=
+    (*assign function here -> completed in the op_il function*)
+    let arm_addwithcarry := arm_data_r_with_carry sf Rm Rn Rd in
+    let dummy_shiftc (asgn set_flags : bool) (operation : exp -> exp -> exp) : stmt := Nop in
+    arm_data_op_il op dummy_shiftc arm_addwithcarry.
+
   (*SUBP/S: only for 64 bit*)
   Definition arm_subp_to_il (op Xn Xm Xd:N) (flag:bool ):stmt:=
     let operand1 := if Xn=?31 then (Var R_SP) else R[Xn, 64] in
@@ -3946,20 +3992,31 @@ Section Decoder.
     let (result,flags) := AddWithCarry op1_ext op2_ext (Word 1 1) in
     arm_data_il true flag Xd result flags.
 
-    (*to do*)
-    Definition ZeroExtend (x n:N) := 0.
     (*Immediate*)
-    Definition arm_data_i_addwithcarry (cond:bool) (sf s sh imm12 Rn Rd:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
+    Definition arm_data_i_addwithcarry (sf s sh imm12 Rn Rd:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
     let datasize := match sf with 1 => 64 |_ => 32 end in 
     let imm_ext := match sh with
-    |0 =>  ZeroExtend imm12 datasize
-    |_ =>  ZeroExtend (ZeroExtend imm12 12) datasize 
+    |0 =>  Cast CAST_UNSIGNED datasize (Word imm12 datasize) 
+    |_ =>  Cast CAST_UNSIGNED datasize (Cast CAST_UNSIGNED 12 (Word imm12 datasize))
     end in
     let operand1 := if Rn=?31 then (Var R_SP) else R[Rn, 64] in
-    let (result, nzcv) := op operand1 (Word imm_ext datasize) (Unknown datasize) in
+    let (result, nzcv) := op operand1 imm_ext (Unknown datasize) in
     (*assign=assign to register, assign_flag=set flag values*)
     arm_data_il assign assign_flag Rn result nzcv
     .
+
+  Definition arm_data_i_with_cond op (sf Rn imm nzcv cond:N) :=
+    let datasize := match sf with 1 => 64 |_ => 32 end in 
+    let imm_ext := Cast CAST_UNSIGNED datasize (Word imm datasize) in
+    let operand1 := R[ Rn, datasize ] in
+    let (result, flags):= match op with 
+      | ARM_CCMN_IMM _ _ _ _ _=>  (AddWithCarry operand1 imm_ext (Word 0 1) )
+      | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry operand1 (UnOp OP_NOT imm_ext) (Word 1 1))
+      end in
+    let nzcv_final := Ite (ConditionHolds cond) flags (Word nzcv 4) in 
+    (*if condition holds, nzcv final is the new flags from AddWithCarry else its just the value we read in*)
+    arm_data_il false true Rn result nzcv_final.
+
 
   Definition decode :=
     let op0 := n.[25,29] in
@@ -3978,6 +4035,11 @@ Section Decoder.
   (*final arm2il-C6.2.5*)
   Definition arm2il (a:addr) inst:=
   let il := match inst with
+  (*DP imm*)
+  | ARM_ADD_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true false (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_ADDS_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true true (fun a b _ => AddWithCarry a b (Word 0 1))
+  | ARM_SUB_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_SUBS_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
   (*logical imm*)
   | ARM_AND_IMM Rn Rd immr imms sf n_ => arm_and_imm2il Rn Rd immr imms sf n_
   | ARM_ANDS_IMM Rn Rd immr imms sf n_ => arm_ands_imm2il Rn Rd immr imms sf n_
@@ -3987,8 +4049,64 @@ Section Decoder.
   | ARM_MOVZ_IMM Rd imm16 size shift => arm_movz_imm2il Rd imm16 size shift
   | ARM_MOVN_IMM Rd imm16 size shift => arm_movn_imm2il Rd imm16 size shift
   | ARM_MOVK_IMM Rd imm16 size shift => arm_movk_imm2il Rd imm16 size shift
+  (*PC relative addressing*)
+(*| ARM_ADRP_IMM
+  | ARM_ADR_IMM *)
+  (*compare immediate*)
+  | ARM_CCMN_IMM sf Rn imm nzcv cond => arm_data_i_with_cond (ARM_CCMN_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond 
+  | ARM_CCMP_IMM sf Rn imm nzcv cond => arm_data_i_with_cond (ARM_CCMP_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond 
+  (*bitfield move*)
+  | ARM_BFM_IMM Rn Rd immr imms sf n_ => arm_bfm_imm2il Rn Rd immr imms sf n_
+  | ARM_SBFM_IMM Rn Rd immr imms sf n_ => arm_sbfm_imm2il Rn Rd immr imms sf n_
+  | ARM_UBFM_IMM Rn Rd immr imms sf n_ => arm_ubfm_imm2il Rn Rd immr imms sf n_
+  (*DP reg*)
+  (*arith extended*)
+  | ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_ADD_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
+  | ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_ADDS_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
+  | ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_SUB_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
+  | ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_SUBS_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
+  (*arith shifted*)
+  | ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ADD_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn 
+  | ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ADDS_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn  
+  | ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_SUB_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn 
+  | ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_SUBS_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn 
+  (*logical shifted*)
+  | ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_AND_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ANDS_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_BIC_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_BICS_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORR_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORN_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_EOR_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_EON_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn 
+  | ARM_MVN_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORN_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
+  | ARM_MOV_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORR_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
+  | ARM_TST_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ANDS_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
+  (*carry operations*)
+  | ARM_ADC sf s Rm Rn Rd=> arm_data_r_il_carry ARM_ADC_V sf Rm Rn Rd
+  | ARM_ADCS sf s Rm Rn Rd => arm_data_r_il_carry ARM_ADCS_V sf Rm Rn Rd
+  | ARM_SBC sf s Rm Rn Rd => arm_data_r_il_carry ARM_SBC_V sf Rm Rn Rd 
+  | ARM_SBCS sf s Rm Rn Rd => arm_data_r_il_carry ARM_SBCS_V sf Rm Rn Rd
+  (*shift register*)
+  | ARM_ASRV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
+  | ARM_LSLV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
+  | ARM_LSRV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
+  | ARM_RORV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
+  
+  (*conditional comparison*)
+  | ARM_CCMN_REG sf Rm cond Rn nzcv=> arm_data_r_with_cond ARM_CCMN_REG_V cond sf Rm Rn nzcv
+  | ARM_CCMP_REG sf Rm cond Rn nzcv=> arm_data_r_with_cond ARM_CCMP_REG_V cond sf Rm Rn nzcv
+  (*rev*)
+  | ARM_RBIT sf Rn Rd => arm_data_rev_il (ARM_RBIT sf Rn Rd) sf
+  | ARM_CLZ sf Rn Rd => arm_data_rev_il (ARM_RBIT sf Rn Rd) sf
+  | ARM_CLS sf Rn Rd => arm_data_rev_il (ARM_RBIT sf Rn Rd) sf
+  | ARM_REV   sf Rn Rd => arm_data_rev_il (ARM_REV sf Rn Rd) sf
+  | ARM_REV16 sf Rn Rd => arm_data_rev_il (ARM_REV16 sf Rn Rd) sf
+  | ARM_REV32 sf Rn Rd => arm_data_rev_il (ARM_REV32 sf Rn Rd) sf
+  | ARM_REV64 sf Rn Rd => arm_data_rev_il (ARM_REV64 sf Rn Rd) sf
+
   | UDF => Exn 4
-    (*Data processing immediate*)  
+   
   |_ => Exn 4 end in
   Seq (Move R_PC (Word (a mod 2^64) 64)) il.
 End Decoder.
