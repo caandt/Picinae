@@ -60,8 +60,9 @@ Definition update {A B:Type} {_: EqDec A} (f:A->B) (x:A) (y:B) (x0:A) : B :=
   if x0 == x then y else f x0.
 
 (* Notation f[x:=y] means (update f x y) *)
-Notation "f [ x := y ]" := (update f x y) (at level 50, left associativity, format "f '/' [ x  :=  y ]").
+Notation "f [ x := y ]" := (update f x y) (at level 50, left associativity, format "f '/' [ x  :=  y ]") .
 
+Check update.
 (* Define w-bit modular subtraction. *)
 Definition msub w x y := (x + (2^w - y mod 2^w)) mod 2^w.
 

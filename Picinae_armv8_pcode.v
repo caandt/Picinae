@@ -83,7 +83,7 @@ Definition arm8typctx v :=
   | R_X11 | R_X12 | R_X13 | R_X14 | R_X15 | R_X16 | R_X17 | R_X18 | R_X19 | R_X20 => Some 64
   | R_X21 | R_X22 | R_X23 | R_X24 | R_X25 | R_X26 | R_X27 | R_X28 | R_X29 | R_X30 => Some 64 | R_XZR => Some 64
   | R_SP | R_LR | R_PC => Some 64
-  | R_NG | R_ZR | R_CY | R_OV => Some 8
+  | R_NG | R_ZR | R_CY | R_OV => Some 1
   | R_TMPNG | R_TMPZR | R_TMPCY | R_TMPOV => Some 8
   | SCTLR_E1 => Some 64
   | R_nRW => Some 1
@@ -96,6 +96,7 @@ Definition arm8typctx v :=
   | R_TMP_LDXN => Some 64
 end.
 
+Check arm8typctx.
 (* Create a UsualDecidableType module (which is an instance of Typ) to give as
    input to the Architecture module, so that it understands how the variable
    identifiers chosen above are syntactically written and how to decide whether
@@ -235,3 +236,4 @@ Notation "x .^ y" := (N.lxor x y) (at level 57, left associativity). (* logical 
 Notation "x .| y" := (N.lor x y) (at level 58, left associativity). (* logical or *)
 
 End ARM8Notations.
+

@@ -2,6 +2,10 @@
    Armv8-A A64 lifter based on issue E.a
    https://developer.arm.com/documentation/ddi0487/ea/
  *)
+Set Printing Depth 50.
+Set Printing Width 100.
+Unset Printing All.
+
 
 Require Import Picinae_armv8_pcode Picinae_armv8_PIL_notation.
 Import Picinae_armv8_PIL_notation.Notation.
@@ -9,6 +13,7 @@ Require Import List String Ascii NArith Bool.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope N_scope.
+
 
 Module Notation.
   Definition shift_add n (b: bool) :=
@@ -32,6 +37,7 @@ Module Notation.
           | _   => F s' val mask
           end%char
       end) s 0 0, e).
+
   Definition rev_str s :=
     (fix F s1 s2 :=
       match s1 with
@@ -118,10 +124,10 @@ Definition arm_varid n :=
 
   Definition Unpack_NZCV (flags : exp) : exp * exp * exp * exp :=
   (* Shift each bit down to the 0th position and mask it out with 1 *)
-  let n := BinOp OP_AND (BinOp OP_RSHIFT flags (Word 3 64)) (Word 1 64) in
-  let z := BinOp OP_AND (BinOp OP_RSHIFT flags (Word 2 64)) (Word 1 64) in
-  let c := BinOp OP_AND (BinOp OP_RSHIFT flags (Word 1 64)) (Word 1 64) in
-  let v := BinOp OP_AND flags (Word 1 64) in
+  let n := Cast CAST_LOW 1 (BinOp OP_AND (BinOp OP_RSHIFT flags (Word 3 4)) (Word 1 4)) in
+  let z := Cast CAST_LOW 1 (BinOp OP_AND (BinOp OP_RSHIFT flags (Word 2 4)) (Word 1 4)) in
+  let c := Cast CAST_LOW 1 (BinOp OP_AND (BinOp OP_RSHIFT flags (Word 1 4)) (Word 1 4)) in
+  let v := Cast CAST_LOW 1 (BinOp OP_AND flags (Word 1 4)) in
 
   (* Return them as a 4-tuple tuple of expressions *)
   (n, z, c, v).
@@ -137,6 +143,7 @@ Notation "'temp[' n ']'" := (V_TEMP n) (at level 65, no associativity).
 Definition arm_assign_R n val := Move (arm_varid n) val. (*TODO: Need to fix this*)
 Definition arm_assign_flags flags :=
     let '(n, z, c, v) := Unpack_NZCV flags in
+    
     (Seq (Move R_NG n) (Seq (Move R_ZR z) (Seq (Move R_CY c) (Move R_OV v)))).
 
 Definition arm64_R n N :=
@@ -271,76 +278,188 @@ Notation "'MemAtomicOp_UMAX'" := (<{6#5}>) (at level 0).
 Notation "'MemAtomicOp_UMIN'" := (<{7#5}>) (at level 0).
 Notation "'MemAtomicOp_SWP'" := (<{8#5}>) (at level 0).
 
+(*DP Imm - C4.1.2, page C4-252*)
+(*Add/Sub*)
+Variant arm_add_sub_imm :=
+  | ARM_ADD_IMM
+  | ARM_ADDS_IMM
+  | ARM_SUB_IMM
+  | ARM_SUBS_IMM.
+(*Logical (imm), Bitfield*)
+Variant arm_logical_imm :=
+  | ARM_AND_IMM 
+  | ARM_ANDS_IMM
+  | ARM_EOR_IMM
+  | ARM_ORR_IMM
+  | ARM_BFM_IMM 
+  | ARM_SBFM_IMM 
+  | ARM_UBFM_IMM.
+(*Move (imm)*)
+Variant arm_move_imm :=
+  | ARM_MOVZ_IMM
+  | ARM_MOVN_IMM
+  | ARM_MOVK_IMM.
+(*DP Register - C4.1.5, page C4-299*)
+(*Add/Sub, Logical, Bitwise Shifted*)
+Variant arm_data_shifted :=
+  | ARM_ADD_SHIFTED_REG
+  | ARM_ADDS_SHIFTED_REG
+  | ARM_SUB_SHIFTED_REG
+  | ARM_SUBS_SHIFTED_REG.
 
+Variant arm_log_shifted :=
+  | ARM_AND_LOG_REG 
+  | ARM_ANDS_LOG_REG 
+  | ARM_BIC_LOG_REG 
+  | ARM_BICS_LOG_REG 
+  | ARM_EON_LOG_REG 
+  | ARM_EOR_LOG_REG 
+  | ARM_ORR_LOG_REG 
+  | ARM_MVN_LOG_REG 
+  | ARM_ORN_LOG_REG 
+  | ARM_TST_LOG_REG 
+  | ARM_MOV_LOG_REG.
+(*Add/Sub Extended*)
+Variant arm_extended :=
+  | ARM_ADD_EXTENDED_REG
+  | ARM_ADDS_EXTENDED_REG
+  | ARM_SUB_EXTENDED_REG
+  | ARM_SUBS_EXTENDED_REG.
+(*Add/Sub With Carry*)
+Variant arm_carry :=
+  | ARM_ADC 
+  | ARM_ADCS 
+  | ARM_SBC 
+  | ARM_SBCS.
+(*Shift Register*)
+Variant arm_shift_reg :=
+  | ARM_ASRV_REG 
+  | ARM_LSLV_REG 
+  | ARM_LSRV_REG 
+  | ARM_RORV_REG.
+(*Bitops*)
+Variant arm_bitops :=
+  | ARM_CLS  
+  | ARM_CLZ  
+  | ARM_RBIT 
+  | ARM_REV  
+  | ARM_REV16
+  | ARM_REV32
+  | ARM_REV64.
+(*Loads and Stores*)
+Variant arm_load_gen :=
+  (*LDAPR/STLR unscaled immediate*)
+  | ARM_STLURB      | ARM_LDAPURB
+  | ARM_LDAPURSB    | ARM_STLURH
+  | ARM_LDAPURH     | ARM_LDAPURSH
+  | ARM_LDAPUR      | ARM_LDAPURSW
+  | ARM_STLUR       | ARM_PRFM
+  | ARM_PRFM_IMM 
+  (*load/store register (unscaled immediate)*)
+  | ARM_STURB       | ARM_LDURB
+  | ARM_LDURSB      | ARM_STURH
+  | ARM_LDURH       | ARM_LDURSH
+  | ARM_STUR        | ARM_LDUR
+  | ARM_LDURSW.
+(*Atomic*)
+Variant arm_atomic :=
+  | ARM_LDADDB      | ARM_LDCLRB 
+  | ARM_LDEORB      | ARM_LDSETB 
+  | ARM_LDSMAXB     | ARM_LDSMINB 
+  | ARM_LDUMAXB     | ARM_LDUMINB 
+  | ARM_SWPB        | ARM_LDADDH 
+  | ARM_LDCLRH      | ARM_LDEORH 
+  | ARM_LDSETH      | ARM_LDSMAXH 
+  | ARM_LDSMINH     | ARM_LDUMAXH 
+  | ARM_LDUMINH     | ARM_SWPH
+  | ARM_LDADD       | ARM_LDCLR 
+  | ARM_LDEOR       | ARM_LDSET 
+  | ARM_LDSMAX      | ARM_LDSMIN
+  | ARM_LDUMAX      | ARM_LDUMIN
+  | ARM_SWP         | ARM_LDAPRB
+  | ARM_LDAPRH      | ARM_LDAPR. 
+Variant arm_ldstr_reg :=
+  | ARM_STRB_REG 
+  | ARM_LDRB_REG 
+  | ARM_LDRSB_REG 
+  | ARM_STRH_REG 
+  | ARM_LDRH_REG 
+  | ARM_LDRSH_REG 
+  | ARM_STR_REG 
+  | ARM_LDR_REG 
+  | ARM_LDRSW_REG 
+  | ARM_PRFM_REG.
+Variant arm_unpriv :=
+  | ARM_STTRB 
+  | ARM_LDTRB 
+  | ARM_LDTRSB 
+  | ARM_STTRH 
+  | ARM_LDTRH 
+  | ARM_LDTRSH 
+  | ARM_STTR 
+  | ARM_LDTR 
+  | ARM_LDTRSW. 
+Variant arm_indexed :=
+  | ARM_STRB_IMM 
+  | ARM_LDRB_IMM 
+  | ARM_LDRSB_IMM 
+  | ARM_LDR_IMM 
+  | ARM_STRH_IMM 
+  | ARM_LDRH_IMM 
+  | ARM_LDRSH_IMM 
+  | ARM_STR_IMM 
+  | ARM_LDRSW_IMM. 
+Variant arm_ld_reg_lit :=
+  | ARM_LDR_LIT 
+  | ARM_LDRSW_LIT
+  | ARM_PRFM_LIT.
+Variant arm_ldstr_reg_pair :=
+  | ARM_STP
+  | ARM_LDP
+  | ARM_LDPSW
+  | ARM_STGP. 
+Variant arm_exclusive :=
+  | ARM_STXRB       | ARM_STLXRB 
+  | ARM_LDXRB       | ARM_LDXRH 
+  | ARM_LDAXRB      | ARM_STLLRB 
+  | ARM_STLLRH      | ARM_STLRH 
+  | ARM_STLRB       | ARM_STXRH 
+  | ARM_STLXRH      | ARM_LDLARB
+  | ARM_LDARB       | ARM_LDARH
+  | ARM_LDLARH      | ARM_STXR 
+  | ARM_STLXR       | ARM_STXP 
+  | ARM_STLXP       | ARM_LDXR 
+  | ARM_LDAXR       | ARM_LDXP 
+  | ARM_LDAXP       | ARM_STLLR
+  | ARM_STLR        | ARM_LDLAR
+  | ARM_LDAR        | ARM_CASP 
+  | ARM_CASB        | ARM_CASH
+  | ARM_CAS         | ARM_LDAXRH.
 Variant inst :=
 (*DP imm*)
-  | ARM_ADD_IMM (sf s sh imm12 Rn Rd : N)
-  | ARM_ADDS_IMM (sf s sh imm12 Rn Rd : N)
-  | ARM_SUB_IMM (sf s sh imm12 Rn Rd : N)
-  | ARM_SUBS_IMM (sf s sh imm12 Rn Rd : N)
-  (*8.5: with tag, not implemented*)
-  | ARM_ADDG
-  | ARM_SUBG
-  (*compare*)
-  (*logical imm*)
-  | ARM_AND_IMM  (Rn Rd immr imms sf n_:N)
-  | ARM_ANDS_IMM (Rn Rd immr imms sf n_:N)
-  | ARM_EOR_IMM (Rn Rd immr imms sf n_:N)
-  | ARM_ORR_IMM (Rn Rd immr imms sf n_:N)
-  (*move wide*)
-  | ARM_MOVZ_IMM (Rd imm16 size shift:N)
-  | ARM_MOVN_IMM (Rd imm16 size shift:N)
-  | ARM_MOVK_IMM (Rd imm16 size shift:N)
-  | ARM_MOV_IMM (*bitmask imm/wide imm/inverted wide imm*)
+  | ARM_DATA_IMM (op: arm_add_sub_imm) (sf s sh imm12 Rn Rd : N)
+  (*v8.5: with tag, not implemented : ARM_ADDG, ARM_SUBG*)    
+  | ARM_LOGICAL_IMM (op: arm_logical_imm) (Rn Rd immr imms sf n_:N)
+  | ARM_MOVE_IMM (op: arm_move_imm) (Rd imm16 size shift:N)
+  (*| TODO: ARM_MOV_IMM bitmask imm/wide imm/inverted wide imm*)
   (*PC relative addr*)
   | ARM_ADRP_IMM
   | ARM_ADR_IMM
-  (*bitfield move*)
-  | ARM_BFM_IMM (Rn Rd immr imms sf n_:N)
-  | ARM_SBFM_IMM (Rn Rd immr imms sf n_:N)
-  | ARM_UBFM_IMM (Rn Rd immr imms sf n_:N)
   (*extract*)
-  | ARM_EXTR
+  | ARM_EXTRACT
+  | ARM_EXTEND (op: arm_extended) (sf s opt Rm option_ imm3 Rn Rd : N)
   (*conditional comparison*)
   | ARM_CCMN_IMM (sf Rn imm nzcv cond:N)
   | ARM_CCMP_IMM (sf Rn imm nzcv cond:N)
-
 (*DP reg*)
-  (*arith extended*)
-  | ARM_ADD_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
-  | ARM_ADDS_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
-  | ARM_SUB_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
-  | ARM_SUBS_EXTENDED_REG (sf s opt Rm option_ imm3 Rn Rd : N)
-  (*arith shifted*)
-  | ARM_ADD_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
-  | ARM_ADDS_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
-  | ARM_SUB_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
-  | ARM_SUBS_SHIFTED_REG (sf s shift Rm imm6 Rn Rd:N)
-  (*w carry*)
-  | ARM_ADC (sf s Rm Rn Rd :N)
-  | ARM_ADCS (sf s Rm Rn Rd :N)
-  | ARM_SBC (sf s Rm Rn Rd :N)
-  | ARM_SBCS (sf s Rm Rn Rd :N)
-  (*logical - bitwise ops*)
-  | ARM_AND_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_ANDS_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_BIC_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_BICS_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_EON_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_EOR_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_ORR_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_MVN_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_ORN_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_TST_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  | ARM_MOV_LOG_REG (sf shift Rm imm6 Rn Rd :N)
-  (*mov register/mov register SP <-> reg*)
+  | ARM_EXTENDED (op: arm_extended) (sf s opt Rm option_ imm3 Rn Rd : N)
+  | ARM_DATA_SHIFTED (op: arm_data_shifted) (sf s shift Rm imm6 Rn Rd :N)
+  | ARM_LOG_SHIFTED (op: arm_log_shifted) (sf shift Rm imm6 Rn Rd :N)
+  | ARM_CARRY (op: arm_carry) (sf s Rm Rn Rd :N)
+  | ARM_SHIFT (op: arm_shift_reg) (sf Rm op2 Rn Rd :N)
+  | ARM_BITOPS (op: arm_bitops) (sf Rn Rd:N)
   (*rotate*)
   | ARM_RMIF
-  (*shift register*)
-  | ARM_ASRV_REG (sf Rm op2 Rn Rd :N)
-  | ARM_LSLV_REG (sf Rm op2 Rn Rd :N)
-  | ARM_LSRV_REG (sf Rm op2 Rn Rd :N)
-  | ARM_RORV_REG (sf Rm op2 Rn Rd :N)
   (*conditional select*)
   | ARM_CSEL
   | ARM_CSINV
@@ -370,15 +489,6 @@ Variant inst :=
   | ARM_CRC32CH
   | ARM_CRC32CW
   | ARM_CRC32CX
-  (*bit_ops*)
-  | ARM_CLS   (sf Rn Rd:N)
-  | ARM_CLZ   (sf Rn Rd:N)
-  | ARM_RBIT  (sf Rn Rd:N)
-  | ARM_REV   (sf Rn Rd:N)
-  | ARM_REV16 (sf Rn Rd:N)
-  | ARM_REV32 (sf Rn Rd:N)
-  | ARM_REV64 (sf Rn Rd:N)
-
 (*Branches*)
   (* decoding not implemented yet, treat as unpredictable *)
   | idk
@@ -454,54 +564,10 @@ Variant inst :=
 
 (*Loads and Stores*)
   (*exclusive/others*)
-  | ARM_STXRB (Xn Xs Xt:N)
-  | ARM_STLXRB (Xn Xs Xt:N)
-  | ARM_LDXRB (Xn Xt:N)
-  | ARM_LDXRH (Xn Xt:N)
-  | ARM_LDAXRH (Xn Xt:N)
-  | ARM_LDAXRB (Xn Xt:N)
-  | ARM_STLLRB (Xn Xt:N)
-  | ARM_STLLRH (Xn Xt:N)
-  | ARM_STLRH (Xn Xt:N)
-  | ARM_STLRB (Xn Xt:N)
-  | ARM_STXRH (Xn Xs Xt:N)
-  | ARM_STLXRH (Xn Xs Xt:N)
-  | ARM_LDLARB (Xn Xt:N)
-  | ARM_LDARB (Xn Xt:N)
-  | ARM_LDARH (Xn Xt:N)
-  | ARM_LDLARH (Xn Xt:N)
-  | ARM_STXR (size Xn Xs Xt:N)
-  | ARM_STLXR (size Xn Xs Xt:N)
-  | ARM_STXP (size Xn Xs Xt Xt2:N)
-  | ARM_STLXP (size Xn Xs Xt Xt2:N)
-  | ARM_LDXR (size Xn Xt:N)
-  | ARM_LDAXR (size Xn Xt:N)
-  | ARM_LDXP (size Xn Xt Xt2:N)
-  | ARM_LDAXP (size Xn Xt Xt2:N)
-  | ARM_STLLR (size Xn Xt:N)
-  | ARM_STLR (size Xn Xt:N)
-  | ARM_LDLAR (size Xn Xt:N)
-  | ARM_LDAR (size Xn Xt:N)
+  | ARM_EXCLUSIVE (op: arm_exclusive) (size Xn Xs Xt Xt2:N)
   (*bunch of variants for these, refer to page C4-230*)
-  | ARM_CASP (Xn Xs Xt size:N)
-  | ARM_CASB (Xn Xs Xt:N)
-  | ARM_CASH (Xn Xs Xt:N)
-  | ARM_CAS (Xn Xs Xt size:N)
   (*LDAPR/STLR unscaled immediate*)
-  | ARM_STLURB (Xn Xt imm9:N)
-  | ARM_LDAPURB (Xn Xt imm9:N)
-  | ARM_LDAPURSB (Xn Xt imm9 size:N)
-  | ARM_STLURH (Xn Xt imm9:N)
-  | ARM_LDAPURH (Xn Xt imm9:N)
-  | ARM_LDAPURSH (Xn Xt imm9 size:N)
-  | ARM_LDAPUR (Xn Xt imm9 size:N)
-  | ARM_LDAPURSW (Xn Xt imm9 size:N)
-  | ARM_STLUR (Xn Xt imm9 size:N)
-  | ARM_PRFM (Xn Xt imm9:N)
-  | ARM_PRFM_IMM (Xn Xt imm9:N)
-  | ARM_LDAPRB (Xn Xt:N)
-  | ARM_LDAPRH (Xn Xt:N)
-  | ARM_LDAPR (size Xn Xt:N)
+  | ARM_LOAD_GEN (op: arm_load_gen) (Xn Xt imm9 size:N)
   (*load/store memory tags*)
   | ARM_STG (Xn Xt imm9:N) (writeback printindex:bool)
   | ARM_STZG (Xn Xt imm9:N) (writeback printindex:bool)
@@ -512,90 +578,24 @@ Variant inst :=
   | ARM_STZ2G (Xn Xt imm9:N) (writeback printindex:bool)
   | ARM_LDGM (Xn Xt:N)
   (*load register (literal)*)
-  | ARM_LDR_LIT (Xt imm19 size:N)
-  | ARM_LDRSW_LIT (Xt imm19:N)
-  | ARM_PRFM_LIT (Xt imm19:N)
+  | ARM_LD_REG_LIT (op: arm_ld_reg_lit) (Xt imm19 size:N)
   (*load/store no-allocate pair (offset)*)
   | ARM_STNP (Xn Xt Xt2 imm7 scale:N)
   | ARM_LDNP (Xn Xt Xt2 imm7 scale:N)
   (*load/store register pair (post-indexed, pre-indexed, offset)*)
-  | ARM_STP (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool)
-  | ARM_LDP (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool)
-  | ARM_LDPSW (Xn Xt Xt2 imm7:N) (wback postindex:bool)
-  | ARM_STGP (Xn Xt Xt2 imm7:N) (wback postindex:bool)
-  (*load/store register (unscaled immediate)*)
-  | ARM_STURB (Xn Xt imm9:N)
-  | ARM_LDURB (Xn Xt imm9:N)
-  | ARM_LDURSB (Xn Xt imm9 size:N)
-  | ARM_STURH (Xn Xt imm9:N)
-  | ARM_LDURH (Xn Xt imm9:N)
-  | ARM_LDURSH (Xn Xt imm9 size:N)
-  | ARM_STUR (Xn Xt imm9 size:N)
-  | ARM_LDUR (Xn Xt imm9 size:N)
-  | ARM_LDURSW (Xn Xt imm9:N)
+  | ARM_LD_STR_REG_PAIR (op: arm_ldstr_reg_pair) (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool)
   | ARM_PFRM
   (*imm pre/post-indexed*)
-  | ARM_STRB_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
-  | ARM_LDRB_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
-  | ARM_LDRSB_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
-  | ARM_LDR_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
-  | ARM_STRH_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
-  | ARM_LDRH_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
-  | ARM_LDRSH_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
-  | ARM_STR_IMM (Xn Xt imm912 size:N) (signed wback postindex:bool)
-  | ARM_LDRSW_IMM (Xn Xt imm912:N) (signed wback postindex:bool)
+  | ARM_INDEXED (op: arm_indexed) (Xn Xt imm912 size:N) (signed wback postindex:bool)
   (*register unprivileged*)
-  | ARM_STTRB (Rn Rt imm9:N)
-  | ARM_LDTRB (Rn Rt imm9:N)
-  | ARM_LDTRSB (Rn Rt imm9 size:N)
-  | ARM_STTRH (Rn Rt imm9:N)
-  | ARM_LDTRH (Rn Rt imm9:N)
-  | ARM_LDTRSH (Rn Rt imm9 size:N)
-  | ARM_STTR (Rn Rt imm9 size:N)
-  | ARM_LDTR (Rn Rt imm9 size:N)
-  | ARM_LDTRSW (Rn Rt imm9:N)
+  | ARM_REG_UNPRIVILEGED (op: arm_unpriv) (Rn Rt imm9 size:N)
   (*atomic memory ops*)
-  | ARM_LDADDB (Xn Xs Xt:N)
-  | ARM_LDCLRB (Xn Xs Xt:N)
-  | ARM_LDEORB (Xn Xs Xt:N)
-  | ARM_LDSETB (Xn Xs Xt:N)
-  | ARM_LDSMAXB (Xn Xs Xt:N)
-  | ARM_LDSMINB (Xn Xs Xt:N)
-  | ARM_LDUMAXB (Xn Xs Xt:N)
-  | ARM_LDUMINB (Xn Xs Xt:N)
-  | ARM_SWPB (Xn Xs Xt:N)
-  | ARM_LDADDH (Xn Xs Xt:N)
-  | ARM_LDCLRH (Xn Xs Xt:N)
-  | ARM_LDEORH (Xn Xs Xt:N)
-  | ARM_LDSETH (Xn Xs Xt:N)
-  | ARM_LDSMAXH (Xn Xs Xt:N)
-  | ARM_LDSMINH (Xn Xs Xt:N)
-  | ARM_LDUMAXH (Xn Xs Xt:N)
-  | ARM_LDUMINH (Xn Xs Xt:N)
-  | ARM_SWPH (Xn Xs Xt:N)
-  | ARM_LDADD (size Xn Xs Xt:N)
-  | ARM_LDCLR (size Xn Xs Xt:N)
-  | ARM_LDEOR (size Xn Xs Xt:N)
-  | ARM_LDSET (size Xn Xs Xt:N)
-  | ARM_LDSMAX (size Xn Xs Xt:N)
-  | ARM_LDSMIN (size Xn Xs Xt:N)
-  | ARM_LDUMAX (size Xn Xs Xt:N)
-  | ARM_LDUMIN (size Xn Xs Xt:N)
-  | ARM_SWP (size Xn Xs Xt:N)
+  | ARM_ATOMIC (op:arm_atomic) (size Xn Xs Xt:N)
   (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
   (*pac*)
   | ARM_LDRAA (Xn Xt S imm9:N) (wback:bool)
   (*load/store register*)
-  | ARM_STRB_REG (Xn Xm Xt extend:N)
-  | ARM_LDRB_REG (Xn Xm Xt extend:N)
-  | ARM_LDRSB_REG (Xn Xm Xt extend size:N)
-  | ARM_STRH_REG (Xn Xm Xt extend S:N)
-  | ARM_LDRH_REG (Xn Xm Xt extend S:N)
-  | ARM_LDRSH_REG (Xn Xm Xt extend size S:N)
-  | ARM_STR_REG (Xn Xm Xt extend size S:N)
-  | ARM_LDR_REG (Xn Xm Xt extend size S:N)
-  | ARM_LDRSW_REG (Xn Xm Xt extend S:N)
-  | ARM_PRFM_REG (Xn Xm Xt extend S:N)
+  | ARM_LD_STR_REG (op:arm_ldstr_reg)  (Xn Xm Xt extend size S:N)
   (*TODO: There are way more load instructions than written out here, add to this section plz*)
 (*Data Processing*)
   (*2 src*)
@@ -624,10 +624,12 @@ Variant inst :=
     if we know the bitwidth beforehand. Just use a sequence of nested ites.
     This already assumes a max iwdth of 64 bits. *)
 Definition HighestSetBit w e := <{
-  temp[301] := w#w;
-  rep w#w do if 1#w<<Xtemp[301] & e then nop else temp[301] := Xtemp[301] - 1#64 end end;
+  temp[301] := w#w - 1#w;
+  rep w#w do if (1#w<<Xtemp[301] & e) <> 0#w then nop else temp[301] := Xtemp[301] - 1#w end end;
   temp[300] := Xtemp[301]
 }>.
+
+Print HighestSetBit.
 
 (* Return a w-bit expression of e ones *)
 Definition Ones w e := <{
@@ -643,6 +645,7 @@ Definition Replicate rettemp t w w' x := <{
   temp[rettemp] := 0#w';
   rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
 }>.
+
 
 (* J1-7389 *)
 (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
@@ -674,40 +677,35 @@ Definition DecodeBitMasks (immN imms immr immediate M:N) :=
     (* R *) temp[402] := immr & levels;
     (* diff *) temp[403] := S-R;
     (* esize *) temp[404] := 1#7 << lenw7;
-    (* TODO: Shreya double check this logic please.
-        I'm encoding `d = UInt(diff<lenw7-1:0>`) as a bit-and with levels,
-        the Ones run of length lenw7. I think this correctly takes the lower
-        lenw7 bits; cannot use an lcast because the cast-lenw7gth has to be N, not exp. *)
-
     (* d *) temp[405] := Xtemp[403] & levels;
     if lenw6 = 1#6 then
-    (* welem *) temp[410] := {Ones 2 <{S+1#6}>};
-    (* telem *) temp[411] := {Ones 2 <{d+1#6}>};
+    (* welem *) temp[410] := {Ones 2 (Cast CAST_LOW 2 (BinOp OP_PLUS (Var (V_TEMP 401)) (Word 1 6)))};
+    (* telem *) temp[411] := {Ones 2 <{lcast {2} ({d} + {1}#{6})}>};
     (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
     (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
     if lenw6 = 2#6 then
-    (* welem *) temp[410] := {Ones 4 <{S+1#6}>};
-    (* telem *) temp[411] := {Ones 4 <{d+1#6}>};
+    (* welem *) temp[410] := {Ones 4 <{lcast {4} ({S} + {1}#{6})}>};
+    (* telem *) temp[411] := {Ones 4 <{lcast {4} ({d} + {1}#{6})}>};
     (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
     (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
     if lenw6 = 3#6 then
-    (* welem *) temp[410] := {Ones 8 <{S+1#6}>};
-    (* telem *) temp[411] := {Ones 8 <{d+1#6}>};
+    (* welem *) temp[410] := {Ones 8 <{ucast {8} ({S} + {1}#{6})}>};
+    (* telem *) temp[411] := {Ones 8 <{ucast {8} ({d} + {1}#{6})}>};
     (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
     (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
     if lenw6 = 4#6 then
-    (* welem *) temp[410] := {Ones 16 <{S+1#6}>};
-    (* telem *) temp[411] := {Ones 16 <{d+1#6}>};
+    (* welem *) temp[410] := {Ones 16 <{ucast {16} ({S} + {1}#{6})}>};
+    (* telem *) temp[411] := {Ones 16 <{ucast {16} ({d} + {1}#{6})}>};
     (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
     (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
     if lenw6 = 5#6 then
-    (* welem *) temp[410] := {Ones 32 <{S+1#6}>};
-    (* telem *) temp[411] := {Ones 32 <{d+1#6}>};
+    (* welem *) temp[410] := {Ones 32 <{ucast {32} ({S} + {1}#{6})}>};
+    (* telem *) temp[411] :=  {Ones 32 <{ucast {32} ({d} + {1}#{6})}>};
     (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
     (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
     if lenw6 = 6#6 then
-    (* welem *) temp[410] := {Ones 64 <{S+1#6}>};
-    (* telem *) temp[411] := {Ones 64 <{d+1#6}>};
+    (* welem *) temp[410] := {Ones 64 <{ucast {64} ({S} + {1}#{6})}>};
+    (* telem *) temp[411] := {Ones 64 <{ucast {64} ({d} + {1}#{6})}>};
     (* wmask *) {Replicate 980 406 64 M <{Xtemp[410]}>};
     (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
     exn 0 end end end end end end
@@ -732,17 +730,17 @@ Section Decoder.
     let imm12 := n.[10,22] in
     let Rn := n.[5,10] in let Rd := n.[0,5] in
     match[bits] sf, op, s with
-    | "0  0  0" => ARM_ADD_IMM sf s sh imm12 Rn Rd (* ADD (immediate) - 32-bit variant on page C6-761 *)
-    | "0  0  1" => ARM_ADDS_IMM sf s sh imm12 Rn Rd(* ADDS (immediate) - 32-bit variant on page C6-769 *)
-    | "0  1  0" => ARM_SUB_IMM sf s sh imm12 Rn Rd(* SUB (immediate) - 32-bit variant on page C6-1311 *)
-    | "0  1  1" => ARM_SUBS_IMM sf s sh imm12 Rn Rd(* SUBS (immediate) - 32-bit variant on page C6-1321 *)
-    | "1  0  0" => ARM_ADD_IMM sf s sh imm12 Rn Rd(* ADD (immediate) - 64-bit variant on page C6-761 *)
-    | "1  0  1" => ARM_ADDS_IMM sf s sh imm12 Rn Rd(* ADDS (immediate) - 64-bit variant on page C6-769 *)
-    | "1  1  0" => ARM_SUB_IMM sf s sh imm12 Rn Rd(* SUB (immediate) - 64-bit variant on page C6-1311 *)
-    | "1  1  1" => ARM_SUBS_IMM sf s sh imm12 Rn Rd(* SUBS (immediate) - 64-bit variant on page C6-1321 *)
+    | "0  0  0" => ARM_DATA_IMM ARM_ADD_IMM sf s sh imm12 Rn Rd  (* ADD (immediate) - 32-bit variant on page C6-761 *)
+    | "0  0  1" => ARM_DATA_IMM ARM_ADDS_IMM sf s sh imm12 Rn Rd (* ADDS (immediate) - 32-bit variant on page C6-769 *)
+    | "0  1  0" => ARM_DATA_IMM ARM_SUB_IMM sf s sh imm12 Rn Rd (* SUB (immediate) - 32-bit variant on page C6-1311 *)
+    | "0  1  1" => ARM_DATA_IMM ARM_SUBS_IMM sf s sh imm12 Rn Rd (* SUBS (immediate) - 32-bit variant on page C6-1321 *)
+    | "1  0  0" => ARM_DATA_IMM ARM_ADD_IMM sf s sh imm12 Rn Rd (* ADD (immediate) - 64-bit variant on page C6-761 *)
+    | "1  0  1" => ARM_DATA_IMM ARM_ADDS_IMM sf s sh imm12 Rn Rd (* ADDS (immediate) - 64-bit variant on page C6-769 *)
+    | "1  1  0" => ARM_DATA_IMM ARM_SUB_IMM sf s sh imm12 Rn Rd (* SUB (immediate) - 64-bit variant on page C6-1311 *)
+    | "1  1  1" => ARM_DATA_IMM ARM_SUBS_IMM sf s sh imm12 Rn Rd (* SUBS (immediate) - 64-bit variant on page C6-1321 *)  
     else UDF end.
 
-  (*immediate, with tags*)
+(**  (*immediate, with tags*)
   Definition add_sub_imm_tags :=
     let sf := n.[31] in
     let op := n.[30] in
@@ -752,7 +750,7 @@ Section Decoder.
     | "1  -  1" => UDF (* Unallocated. - *)
     | "1  0  0" => ARM_ADDG (* ADDG Armv8.5 *)
     | "1  1  0" => ARM_SUBG (* SUBG Armv8.5 *)
-    else UDF end.
+    else UDF end. *)
 
   Definition arm_ands_imm2il (Xn Xd immr imms sf n:N) :=
     let bit32variant := <{sf#1 = 0#1 & n#1 = 0#1}> in
@@ -819,14 +817,14 @@ Section Decoder.
     let immr := n.[16,22] in
     match[bits] sf, opc, n_ with
   | "0  -   1" => UDF (* Unallocated. *)
-  | "0  00  0" => ARM_AND_IMM Rn Rd immr imms sf n_ (* AND (immediate) - 32-bit variant on page C6-775 *)
-  | "0  01  0" => ARM_ORR_IMM Rn Rd immr imms sf n_ (* ORR (immediate) - 32-bit variant on page C6-1125 *)
-  | "0  10  0" => ARM_EOR_IMM Rn Rd immr imms sf n_ (* EOR (immediate) - 32-bit variant on page C6-896 *)
-  | "0  11  0" => ARM_ANDS_IMM Rn Rd immr imms sf n_ (* ANDS (immediate) - 32-bit variant on page C6-779 *)
-  | "1  00  -" => ARM_AND_IMM Rn Rd immr imms sf n_ (* AND (immediate) - 64-bit variant on page C6-775 *)
-  | "1  01  -" => ARM_ORR_IMM Rn Rd immr imms sf n_ (* ORR (immediate) - 64-bit variant on page C6-1125 *)
-  | "1  10  -" => ARM_EOR_IMM Rn Rd immr imms sf n_ (* EOR (immediate) - 64-bit variant on page C6-896 *)
-  | "1  11  -" => ARM_ANDS_IMM Rn Rd immr imms sf n_ (* ANDS (immediate) - 64-bit variant on page C6-779 *)
+  | "0  00  0" => ARM_LOGICAL_IMM ARM_AND_IMM Rn Rd immr imms sf n_ (* AND (immediate) - 32-bit variant on page C6-775 *)
+  | "0  01  0" => ARM_LOGICAL_IMM ARM_ORR_IMM Rn Rd immr imms sf n_ (* ORR (immediate) - 32-bit variant on page C6-1125 *)
+  | "0  10  0" => ARM_LOGICAL_IMM ARM_EOR_IMM Rn Rd immr imms sf n_ (* EOR (immediate) - 32-bit variant on page C6-896 *)
+  | "0  11  0" => ARM_LOGICAL_IMM ARM_ANDS_IMM Rn Rd immr imms sf n_ (* ANDS (immediate) - 32-bit variant on page C6-779 *)
+  | "1  00  -" => ARM_LOGICAL_IMM ARM_AND_IMM Rn Rd immr imms sf n_ (* AND (immediate) - 64-bit variant on page C6-775 *)
+  | "1  01  -" => ARM_LOGICAL_IMM ARM_ORR_IMM Rn Rd immr imms sf n_ (* ORR (immediate) - 64-bit variant on page C6-1125 *)
+  | "1  10  -" => ARM_LOGICAL_IMM ARM_EOR_IMM Rn Rd immr imms sf n_ (* EOR (immediate) - 64-bit variant on page C6-896 *)
+  | "1  11  -" => ARM_LOGICAL_IMM ARM_ANDS_IMM Rn Rd immr imms sf n_ (* ANDS (immediate) - 64-bit variant on page C6-779 *)
   else UDF end.
 
   Definition arm_movk_imm2il Xd imm16 size shift :=
@@ -867,12 +865,12 @@ Section Decoder.
     match[bits] sf, opc, hw with
     | "-  01  - " => UDF (* Unallocated. *)
     | "0  -   1x" => UDF (* Unallocated. *)
-    | "0  00  - " => ARM_MOVN_IMM Rd imm16 32 hw (* MOVN - 32-bit variant on page C6-1100 *)
-    | "0  10  - " => ARM_MOVZ_IMM Rd imm16 32 hw (* MOVZ - 32-bit variant on page C6-1102 *)
-    | "0  11  - " => ARM_MOVK_IMM Rd imm16 32 hw (* MOVK - 32-bit variant on page C6-1098 *)
-    | "1  00  - " => ARM_MOVN_IMM Rd imm16 64 hw (* MOVN - 64-bit variant on page C6-1100 *)
-    | "1  10  - " => ARM_MOVZ_IMM Rd imm16 64 hw (* MOVZ - 64-bit variant on page C6-1102 *)
-    | "1  11  - " => ARM_MOVK_IMM Rd imm16 64 hw (* MOVK - 64-bit variant on page C6-1098 *)
+    | "0  00  - " => ARM_MOVE_IMM ARM_MOVN_IMM Rd imm16 32 hw (* MOVN - 32-bit variant on page C6-1100 *)
+    | "0  10  - " => ARM_MOVE_IMM ARM_MOVZ_IMM Rd imm16 32 hw (* MOVZ - 32-bit variant on page C6-1102 *)
+    | "0  11  - " => ARM_MOVE_IMM ARM_MOVK_IMM Rd imm16 32 hw (* MOVK - 32-bit variant on page C6-1098 *)
+    | "1  00  - " => ARM_MOVE_IMM ARM_MOVN_IMM Rd imm16 64 hw (* MOVN - 64-bit variant on page C6-1100 *)
+    | "1  10  - " => ARM_MOVE_IMM ARM_MOVZ_IMM Rd imm16 64 hw (* MOVZ - 64-bit variant on page C6-1102 *)
+    | "1  11  - " => ARM_MOVE_IMM ARM_MOVK_IMM Rd imm16 64 hw (* MOVK - 64-bit variant on page C6-1098 *)
     else UDF end.
 
   (*  If <imms> is greater than or equal to <immr>, this copies a bitfield of (<imms>-<immr>+1) bits starting from bit position
@@ -919,8 +917,6 @@ Section Decoder.
       {arm_varid Xd} := ucast 64 ((dst * !tmask) | (bot & tmask))
     }>.
 
-  Print Replicate.
-  Print xbits.
   Definition pilxbits (w:N) (n lo hi:exp) :=
     <{ (n >> lo) % (1#w << (hi-lo)) }>.
 
@@ -955,13 +951,13 @@ Section Decoder.
     match[bits] sf, opc, n_ with
     | "-  11  -" => UDF (* Unallocated. *)
     | "0  -   1" => UDF (* Unallocated. *)
-    | "0  00  0" => ARM_SBFM_IMM Rn Rd immr imms sf n_ (* SBFM - 32-bit variant on page C6-1170 *)
-    | "0  01  0" => ARM_BFM_IMM Rn Rd immr imms sf n_ (* BFM - 32-bit variant on page C6-804 *)
-    | "0  10  0" => ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 32-bit variant on page C6-1351 *)
+    | "0  00  0" => ARM_LOGICAL_IMM ARM_SBFM_IMM Rn Rd immr imms sf n_ (* SBFM - 32-bit variant on page C6-1170 *)
+    | "0  01  0" => ARM_LOGICAL_IMM ARM_BFM_IMM Rn Rd immr imms sf n_ (* BFM - 32-bit variant on page C6-804 *)
+    | "0  10  0" => ARM_LOGICAL_IMM ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 32-bit variant on page C6-1351 *)
     | "1  -   0" => UDF (* Unallocated. *)
-    | "1  00  1" => ARM_SBFM_IMM Rn Rd immr imms sf n_ (* SBFM - 64-bit variant on page C6-1170 *)
-    | "1  01  1" => ARM_BFM_IMM Rn Rd immr imms sf n_ (* BFM - 64-bit variant on page C6-804 *)
-    | "1  10  1" => ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 64-bit variant on page C6-1351 *)
+    | "1  00  1" => ARM_LOGICAL_IMM ARM_SBFM_IMM Rn Rd immr imms sf n_ (* SBFM - 64-bit variant on page C6-1170 *)
+    | "1  01  1" => ARM_LOGICAL_IMM ARM_BFM_IMM Rn Rd immr imms sf n_ (* BFM - 64-bit variant on page C6-804 *)
+    | "1  10  1" => ARM_LOGICAL_IMM ARM_UBFM_IMM Rn Rd immr imms sf n_ (* UBFM - 64-bit variant on page C6-1351 *)
     else UDF end.
 
   Definition extract :=
@@ -976,9 +972,9 @@ Section Decoder.
     | "-  1x  -  -  -     " => UDF (* Unallocated. *)
     | "0  -   -  -  1xxxxx" => UDF (* Unallocated. *)
     | "0  -   1  -  -     " => UDF (* Unallocated. *)
-    | "0  00  0  0  0xxxxx" => ARM_EXTR (* EXTR - 32-bit variant on page C6-903 *)
+    | "0  00  0  0  0xxxxx" => ARM_EXTRACT (* EXTR - 32-bit variant on page C6-903 *)
     | "1  -   0  -  -     " => UDF (* Unallocated. *)
-    | "1  00  1  0  -     " => ARM_EXTR (* EXTR - 64-bit variant on page C6-903 *)
+    | "1  00  1  0  -     " => ARM_EXTRACT (* EXTR - 64-bit variant on page C6-903 *)
     else UDF end.
 
   Definition dp_imm :=
@@ -986,7 +982,7 @@ Section Decoder.
     match[bits] op0 with
   | "00x" => pc_rel (* PC-rel. addressing *)
   | "010" => add_sub_imm (* Add/subtract (immediate) *)
-  | "011" => add_sub_imm_tags (* Add/subtract (immediate, with tags) on page C4-254 *)
+  (*| 011 => add_sub_imm_tags  Add/subtract (immediate, with tags) on page C4-254 *)
   | "100" => logical_imm (* Logical (immediate) on page C4-254 *)
   | "101" => move_wide_imm (* Move wide (immediate) on page C4-255 *)
   | "110" => bitfield (* Bitfield on page C4-256 *)
@@ -1750,70 +1746,70 @@ Section Decoder.
     match[bits] size, o2, l_, o1, o0, Rt2 with
     | "-   1  -  1  -  !=11111" => UDF (* Unallocated. - *)
     | "0x  0  -  1  -  !=11111" => UDF (* Unallocated. - *)
-    | "00  0  0  0  0  -      " => ARM_STXRB Rn Rs Rt (* STXRB - *)
-    | "00  0  0  0  1  -      " => ARM_STLXRB Rn Rs Rt (* STLXRB - *)
-    | "00  0  0  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, no memory ordering variant on page C6-568 ARMv8.1 *)
-    | "00  0  0  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, release variant on page C6-568 ARMv8.1 *)
-    | "00  0  1  0  0  -      " => ARM_LDXRB Rn Rt(* LDXRB - *)
-    | "00  0  1  0  1  -      " => ARM_LDAXRB Rn Rt(* LDAXRB - *)
-    | "00  0  1  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire variant on page C6-568 ARMv8.1 *)
-    | "00  0  1  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire and release variant on page C6-568 ARMv8.1 *)
-    | "00  1  0  0  0  -      " => ARM_STLLRB Rn Rt (* STLLRB ARMv8.1 *)
-    | "00  1  0  0  1  -      " => ARM_STLRB Rn Rt (* STLRB - *)
-    | "00  1  0  1  0  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - No memory ordering variant on page C6-564 ARMv8.1 *)
-    | "00  1  0  1  1  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - Release variant on page C6-564 ARMv8.1 *)
-    | "00  1  1  0  0  -      " => ARM_LDLARB Rn Rt (* LDLARB ARMv8.1 *)
-    | "00  1  1  0  1  -      " => ARM_LDARB Rn Rt (* LDARB - *)
-    | "00  1  1  1  0  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - Acquire variant on page C6-564 ARMv8.1 *)
-    | "00  1  1  1  1  11111  " => ARM_CASB Rn Rs Rt (* CASB, CASAB, CASALB, CASLB - Acquire and release variant on page C6-564 ARMv8.1 *)
-    | "01  0  0  0  0  -      " => ARM_STXRH Rn Rs Rt (* STXRH - *)
-    | "01  0  0  0  1  -      " => ARM_STLXRH Rn Rs Rt (* STLXRH - *)
-    | "01  0  0  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, no memory ordering variant on page C6-569 ARM *)
-    | "01  0  0  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, release variant on page C6-569 ARMv8.1 *)
-    | "01  0  1  0  0  -      " => ARM_LDXRH Rn Rt (* LDXRH - *)
-    | "01  0  1  0  1  -      " => ARM_LDAXRH Rn Rt (* LDAXRH - *)
-    | "01  0  1  1  0  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire variant on *)
-    | "01  0  1  1  1  11111  " => ARM_CASP Rn Rs Rt 32 (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire and *)
-    | "01  1  0  0  0  -      " => ARM_STLLRH Rn Rt (* STLLRH ARMv8.1 *)
-    | "01  1  0  0  1  -      " => ARM_STLRH Rn Rt (* STLRH - *)
-    | "01  1  0  1  0  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - No memory ordering *)
-    | "01  1  0  1  1  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - Release variant on *)
-    | "01  1  1  0  0  -      " => ARM_LDLARH Rn Rt (* LDLARH ARMv8.1 *)
-    | "01  1  1  0  1  -      " => ARM_LDARH Rn Rt (* LDARH - *)
-    | "01  1  1  1  0  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - Acquire variant on *)
-    | "01  1  1  1  1  11111  " => ARM_CASH Rn Rs Rt (* CASH, CASAH, CASALH, CASLH - Acquire and release *)
-    | "10  0  0  0  0  -      " => ARM_STXR 32 Rn Rs Rt (* STXR - 32-bit variant on page C6-922 - *)
-    | "10  0  0  0  1  -      " => ARM_STLXR 32 Rn Rs Rt (* STLXR - 32-bit variant on page C6-859 - *)
-    | "10  0  0  1  0  -      " => ARM_STXP 32 Rn Rs Rt Rt2 (* STXP - 32-bit variant on page C6-920 - *)
-    | "10  0  0  1  1  -      " => ARM_STLXP 64 Rn Rs Rt Rt2 (* STLXP - 32-bit variant on page C6-856 - *)
-    | "10  0  1  0  0  -      " => ARM_LDXR 32 Rn Rt (* LDXR - 32-bit variant on page C6-750 - *)
-    | "10  0  1  0  1  -      " => ARM_LDAXR 32 Rn Rt (* LDAXR - 32-bit variant on page C6-643 - *)
-    | "10  0  1  1  0  -      " => ARM_LDXP 32 Rn Rt Rt2 (* LDXP - 32-bit variant on page C6-748 - *)
-    | "10  0  1  1  1  -      " => ARM_LDAXP 32 Rn Rt Rt2 (* LDAXP - 32-bit variant on page C6-641 - *)
-    | "10  1  0  0  0  -      " => ARM_STLLR 64 Rn Rt(* STLLR - 32-bit variant on page C6-852 ARMv8.1 *)
-    | "10  1  0  0  1  -      " => ARM_STLR 64 Rn Rt (* STLR - 32-bit variant on page C6-853 - *)
-    | "10  1  0  1  0  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, no memory ordering *)
-    | "10  1  0  1  1  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, release variant on *)
-    | "10  1  1  0  0  -      " => ARM_LDLAR 32 Rn Rt (* LDLAR - 32-bit variant on page C6-661 *)
-    | "10  1  1  0  1  -      " => ARM_LDAR 32 Rn Rt (* LDAR - 32-bit variant on page C6-638 - *)
-    | "10  1  1  1  0  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, acquire variant on *)
-    | "10  1  1  1  1  11111  " => ARM_CAS Rn Rs Rt 32 (* CAS, CASA, CASAL, CASL - 32-bit, acquire and release *)
-    | "11  0  0  0  0  -      " => ARM_STXR 64 Rn Rs Rt (* STXR - 64-bit variant on page C6-922 - *)
-    | "11  0  0  0  1  -      " => ARM_STLXR 64 Rn Rs Rt (* STLXR - 64-bit variant on page C6-859 - *)
-    | "11  0  0  1  0  -      " => ARM_STXP 64 Rn Rs Rt Rt2 (* STXP - 64-bit variant on page C6-920 - *)
-    | "11  0  0  1  1  -      " => ARM_STLXP 64 Rn Rs Rt Rt2 (* STLXP - 64-bit variant on page C6-856 - *)
-    | "11  0  1  0  0  -      " => ARM_LDXR 64 Rn Rt (* LDXR - 64-bit variant on page C6-750 - *)
-    | "11  0  1  0  1  -      " => ARM_LDAXR 64 Rn Rt (* LDAXR - 64-bit variant on page C6-643 - *)
-    | "11  0  1  1  0  -      " => ARM_LDXP 64 Rn Rt Rt2 (* LDXP - 64-bit variant on page C6-748 - *)
-    | "11  0  1  1  1  -      " => ARM_LDAXP 64 Rn Rt Rt2 (* LDAXP - 64-bit variant on page C6-641 - *)
-    | "11  1  0  0  0  -      " => ARM_STLLR 64 Rn Rt(* STLLR - 64-bit variant on page C6-852 ARMv8.1 *)
-    | "11  1  0  0  1  -      " => ARM_STLR 64 Rn Rt (* STLR - 64-bit variant on page C6-853 - *)
-    | "11  1  0  1  0  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, no memory ordering *)
-    | "11  1  0  1  1  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, release variant on *)
-    | "11  1  1  0  0  -      " => ARM_LDLAR 64 Rn Rt (* LDLAR - 64-bit variant on page C6-661 ARMv8.1 *)
-    | "11  1  1  0  1  -      " => ARM_LDAR 64 Rn Rt (* LDAR - 64-bit variant on page C6-638 - *)
-    | "11  1  1  1  0  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, acquire variant on *)
-    | "11  1  1  1  1  11111  " => ARM_CAS Rn Rs Rt 64 (* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
+    | "00  0  0  0  0  -      " => ARM_EXCLUSIVE ARM_STXRB size Rn Rs Rt Rt2 (* STXRB - *)
+    | "00  0  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLXRB size Rn Rs Rt Rt2 (* STLXRB - *)
+    | "00  0  0  1  0  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2 (* CASP, CASPA, CASPAL, CASPL - 32-bit, no memory ordering variant on page C6-568 ARMv8.1 *)
+    | "00  0  0  1  1  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2 (* CASP, CASPA, CASPAL, CASPL - 32-bit, release variant on page C6-568 ARMv8.1 *)
+    | "00  0  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDXRB size Rn Rs Rt Rt2(* LDXRB - *)
+    | "00  0  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDAXRB size Rn Rs Rt Rt2(* LDAXRB - *)
+    | "00  0  1  1  0  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2 (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire variant on page C6-568 ARMv8.1 *)
+    | "00  0  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2 (* CASP, CASPA, CASPAL, CASPL - 32-bit, acquire and release variant on page C6-568 ARMv8.1 *)
+    | "00  1  0  0  0  -      " => ARM_EXCLUSIVE ARM_STLLRB size Rn Rs Rt Rt2 (* STLLRB ARMv8.1 *)
+    | "00  1  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLRB size Rn Rs Rt Rt2 (* STLRB - *)
+    | "00  1  0  1  0  11111  " => ARM_EXCLUSIVE ARM_CASB size Rn Rs Rt Rt2 (* CASB, CASAB, CASALB, CASLB - No memory ordering variant on page C6-564 ARMv8.1 *)
+    | "00  1  0  1  1  11111  " => ARM_EXCLUSIVE ARM_CASB size Rn Rs Rt Rt2 (* CASB, CASAB, CASALB, CASLB - Release variant on page C6-564 ARMv8.1 *)
+    | "00  1  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDLARB size Rn Rs Rt Rt2 (* LDLARB ARMv8.1 *)
+    | "00  1  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDARB size Rn Rs Rt Rt2 (* LDARB - *)
+    | "00  1  1  1  0  11111  " => ARM_EXCLUSIVE ARM_CASB size Rn Rs Rt Rt2 (* CASB, CASAB, CASALB, CASLB - Acquire variant on page C6-564 ARMv8.1 *)
+    | "00  1  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CASB size Rn Rs Rt Rt2 (* CASB, CASAB, CASALB, CASLB - Acquire and release variant on page C6-564 ARMv8.1 *)
+    | "01  0  0  0  0  -      " => ARM_EXCLUSIVE ARM_STXRH size Rn Rs Rt Rt2(* STXRH - *)
+    | "01  0  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLXRH size Rn Rs Rt Rt2 (* STLXRH - *)
+    | "01  0  0  1  0  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2 (* CASP, CASPA, CASPAL, CASPL - 64-bit, no memory ordering variant on page C6-569 ARM *)
+    | "01  0  0  1  1  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2 (* CASP, CASPA, CASPAL, CASPL - 64-bit, release variant on page C6-569 ARMv8.1 *)
+    | "01  0  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDXRH size Rn Rs Rt Rt2 (* LDXRH - *)
+    | "01  0  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDAXRH size Rn Rs Rt Rt2 (* LDAXRH - *)
+    | "01  0  1  1  0  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2  (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire variant on *)
+    | "01  0  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CASP 32 Rn Rs Rt Rt2  (* CASP, CASPA, CASPAL, CASPL - 64-bit, acquire and *)
+    | "01  1  0  0  0  -      " => ARM_EXCLUSIVE ARM_STLLRH size Rn Rs Rt Rt2 (* STLLRH ARMv8.1 *)
+    | "01  1  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLRH size Rn Rs Rt Rt2 (* STLRH - *)
+    | "01  1  0  1  0  11111  " => ARM_EXCLUSIVE ARM_CASH size Rn Rs Rt Rt2 (* CASH, CASAH, CASALH, CASLH - No memory ordering *)
+    | "01  1  0  1  1  11111  " => ARM_EXCLUSIVE ARM_CASH size Rn Rs Rt Rt2 (* CASH, CASAH, CASALH, CASLH - Release variant on *)
+    | "01  1  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDLARH size Rn Rs Rt Rt2 (* LDLARH ARMv8.1 *)
+    | "01  1  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDARH size Rn Rs Rt Rt2 (* LDARH - *)
+    | "01  1  1  1  0  11111  " => ARM_EXCLUSIVE ARM_CASH size Rn Rs Rt Rt2 (* CASH, CASAH, CASALH, CASLH - Acquire variant on *)
+    | "01  1  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CASH size Rn Rs Rt Rt2(* CASH, CASAH, CASALH, CASLH - Acquire and release *)
+    | "10  0  0  0  0  -      " => ARM_EXCLUSIVE ARM_STXR 32 Rn Rs Rt Rt2(* STXR - 32-bit variant on page C6-922 - *)
+    | "10  0  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLXR 32 Rn Rs Rt Rt2 (* STLXR - 32-bit variant on page C6-859 - *)
+    | "10  0  0  1  0  -      " => ARM_EXCLUSIVE ARM_STXP 32 Rn Rs Rt Rt2 (* STXP - 32-bit variant on page C6-920 - *)
+    | "10  0  0  1  1  -      " => ARM_EXCLUSIVE ARM_STLXP 64 Rn Rs Rt Rt2 (* STLXP - 32-bit variant on page C6-856 - *)
+    | "10  0  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDXR 32 Rn Rs Rt Rt2 (* LDXR - 32-bit variant on page C6-750 - *)
+    | "10  0  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDAXR 32 Rn Rs Rt Rt2 (* LDAXR - 32-bit variant on page C6-643 - *)
+    | "10  0  1  1  0  -      " => ARM_EXCLUSIVE ARM_LDXP 32 Rn Rs Rt Rt2(* LDXP - 32-bit variant on page C6-748 - *)
+    | "10  0  1  1  1  -      " => ARM_EXCLUSIVE ARM_LDAXP 32 Rn Rs Rt Rt2 (* LDAXP - 32-bit variant on page C6-641 - *)
+    | "10  1  0  0  0  -      " => ARM_EXCLUSIVE ARM_STLLR 64 Rn Rs Rt Rt2 (* STLLR - 32-bit variant on page C6-852 ARMv8.1 *)
+    | "10  1  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLR 64 Rn Rs Rt Rt2  (* STLR - 32-bit variant on page C6-853 - *)
+    | "10  1  0  1  0  11111  " => ARM_EXCLUSIVE ARM_CAS 32 Rn Rs Rt Rt2  (* CAS, CASA, CASAL, CASL - 32-bit, no memory ordering *)
+    | "10  1  0  1  1  11111  " => ARM_EXCLUSIVE ARM_CAS 32 Rn Rs Rt Rt2  (* CAS, CASA, CASAL, CASL - 32-bit, release variant on *)
+    | "10  1  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDLAR 32 Rn Rs Rt Rt2(* LDLAR - 32-bit variant on page C6-661 *)
+    | "10  1  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDAR 32 Rn Rs Rt Rt2 (* LDAR - 32-bit variant on page C6-638 - *)
+    | "10  1  1  1  0  11111  " => ARM_EXCLUSIVE ARM_CAS 32 Rn Rs Rt Rt2 (* CAS, CASA, CASAL, CASL - 32-bit, acquire variant on *)
+    | "10  1  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CAS 32 Rn Rs Rt Rt2 (* CAS, CASA, CASAL, CASL - 32-bit, acquire and release *)
+    | "11  0  0  0  0  -      " => ARM_EXCLUSIVE ARM_STXR 64 Rn Rs Rt Rt2 (* STXR - 64-bit variant on page C6-922 - *)
+    | "11  0  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLXR 64 Rn Rs Rt Rt2 (* STLXR - 64-bit variant on page C6-859 - *)
+    | "11  0  0  1  0  -      " => ARM_EXCLUSIVE ARM_STXP 64 Rn Rs Rt Rt2 (* STXP - 64-bit variant on page C6-920 - *)
+    | "11  0  0  1  1  -      " => ARM_EXCLUSIVE ARM_STLXP 64 Rn Rs Rt Rt2 (* STLXP - 64-bit variant on page C6-856 - *)
+    | "11  0  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDXR 64 Rn Rs Rt Rt2 (* LDXR - 64-bit variant on page C6-750 - *)
+    | "11  0  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDAXR 64 Rn Rs Rt Rt2 (* LDAXR - 64-bit variant on page C6-643 - *)
+    | "11  0  1  1  0  -      " => ARM_EXCLUSIVE ARM_LDXP 64 Rn Rs Rt Rt2 (* LDXP - 64-bit variant on page C6-748 - *)
+    | "11  0  1  1  1  -      " => ARM_EXCLUSIVE ARM_LDAXP 64 Rn Rs Rt Rt2 (* LDAXP - 64-bit variant on page C6-641 - *)
+    | "11  1  0  0  0  -      " => ARM_EXCLUSIVE ARM_STLLR 64 Rn Rs Rt Rt2(* STLLR - 64-bit variant on page C6-852 ARMv8.1 *)
+    | "11  1  0  0  1  -      " => ARM_EXCLUSIVE ARM_STLR 64 Rn Rs Rt Rt2 (* STLR - 64-bit variant on page C6-853 - *)
+    | "11  1  0  1  0  11111  " => ARM_EXCLUSIVE ARM_CAS 64 Rn Rs Rt Rt2 (* CAS, CASA, CASAL, CASL - 64-bit, no memory ordering *)
+    | "11  1  0  1  1  11111  " => ARM_EXCLUSIVE ARM_CAS 64 Rn Rs Rt Rt2 (* CAS, CASA, CASAL, CASL - 64-bit, release variant on *)
+    | "11  1  1  0  0  -      " => ARM_EXCLUSIVE ARM_LDLAR 64 Rn Rs Rt Rt2 (* LDLAR - 64-bit variant on page C6-661 ARMv8.1 *)
+    | "11  1  1  0  1  -      " => ARM_EXCLUSIVE ARM_LDAR 64 Rn Rs Rt Rt2 (* LDAR - 64-bit variant on page C6-638 - *)
+    | "11  1  1  1  0  11111  " => ARM_EXCLUSIVE ARM_CAS 64 Rn Rs Rt Rt2 (* CAS, CASA, CASAL, CASL - 64-bit, acquire variant on *)
+    | "11  1  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CAS 64 Rn Rs Rt Rt2(* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
     else UDF end.
 
   Definition arm_stlurb2il (Xn Xt imm9:N) :=
@@ -1905,20 +1901,20 @@ Section Decoder.
     let imm9 := n.[12,21] in
     let size := n.[30,32] in
     match[bits] size, opc with
-    | "00  00" => ARM_STLURB Rn Rt imm9 (* STLURB Armv8.4 *)
-    | "00  01" => ARM_LDAPURB Rn Rt imm9 (* LDAPURB Armv8.4 *)
-    | "00  10" => ARM_LDAPURSB Rn Rt imm9 64 (* LDAPURSB - 64-bit variant on page C6-932 Armv8.4 *)
-    | "00  11" => ARM_LDAPURSB Rn Rt imm9 32 (* LDAPURSB - 32-bit variant on page C6-932 Armv8.4 *)
-    | "01  00" => ARM_STLURH Rn Rt imm9 (* STLURH Armv8.4 *)
-    | "01  01" => ARM_LDAPURH Rn Rt imm9 (* LDAPURH Armv8.4 *)
-    | "01  10" => ARM_LDAPURSH Rn Rt imm9 64 (* LDAPURSH - 64-bit variant on page C6-934 Armv8.4 *)
-    | "01  11" => ARM_LDAPURSH Rn Rt imm9 32 (* LDAPURSH - 32-bit variant on page C6-934 Armv8.4 *)
-    | "10  00" => ARM_STLUR Rn Rt imm9 32 (* STLUR - 32-bit variant on page C6-1219 Armv8.4 *)
-    | "10  01" => ARM_LDAPUR Rn Rt imm9 32(* LDAPUR - 32-bit variant on page C6-926 Armv8.4 *)
-    | "10  10" => ARM_LDAPURSW Rn Rt imm9 size (* LDAPURSW Armv8.4 *)
+    | "00  00" => ARM_LOAD_GEN ARM_STLURB Rn Rt imm9 size(* STLURB Armv8.4 *)
+    | "00  01" => ARM_LOAD_GEN ARM_LDAPURB Rn Rt imm9 size(* LDAPURB Armv8.4 *)
+    | "00  10" => ARM_LOAD_GEN ARM_LDAPURSB Rn Rt imm9 64 (* LDAPURSB - 64-bit variant on page C6-932 Armv8.4 *)
+    | "00  11" => ARM_LOAD_GEN ARM_LDAPURSB Rn Rt imm9 32 (* LDAPURSB - 32-bit variant on page C6-932 Armv8.4 *)
+    | "01  00" => ARM_LOAD_GEN ARM_STLURH Rn Rt imm9 size (* STLURH Armv8.4 *)
+    | "01  01" => ARM_LOAD_GEN ARM_LDAPURH Rn Rt imm9 size(* LDAPURH Armv8.4 *)
+    | "01  10" => ARM_LOAD_GEN ARM_LDAPURSH Rn Rt imm9 64 (* LDAPURSH - 64-bit variant on page C6-934 Armv8.4 *)
+    | "01  11" => ARM_LOAD_GEN ARM_LDAPURSH Rn Rt imm9 32 (* LDAPURSH - 32-bit variant on page C6-934 Armv8.4 *)
+    | "10  00" => ARM_LOAD_GEN ARM_STLUR Rn Rt imm9 32 (* STLUR - 32-bit variant on page C6-1219 Armv8.4 *)
+    | "10  01" => ARM_LOAD_GEN ARM_LDAPUR Rn Rt imm9 32(* LDAPUR - 32-bit variant on page C6-926 Armv8.4 *)
+    | "10  10" => ARM_LOAD_GEN ARM_LDAPURSW Rn Rt imm9 size (* LDAPURSW Armv8.4 *)
     | "10  11" => UDF (* Unallocated. - *)
-    | "11  00" => ARM_STLUR Rn Rt imm9 64 (* STLUR - 64-bit variant on page C6-1219 Armv8.4 *)
-    | "11  01" => ARM_LDAPUR Rn Rt imm9 64(* LDAPUR - 64-bit variant on page C6-926 Armv8.4 *)
+    | "11  00" => ARM_LOAD_GEN ARM_STLUR Rn Rt imm9 64 (* STLUR - 64-bit variant on page C6-1219 Armv8.4 *)
+    | "11  01" => ARM_LOAD_GEN ARM_LDAPUR Rn Rt imm9 64(* LDAPUR - 64-bit variant on page C6-926 Armv8.4 *)
     | "11  10" => UDF (* Unallocated. - *)
     | "11  11" => UDF (* Unallocated. - *)
     else UDF end.
@@ -1936,7 +1932,7 @@ Section Decoder.
 
   (* C6-1138; The effects of PRFM is implementation defined. *)
   Definition arm_prfm_lit2il (Xt imm19:N) := <{havoc}>.
-
+  Definition N_na : N:=0. (* not applicable to this instruction *)
   (* C4-280 *)
   Definition load_reg_literal :=
     let opc := n.[30,32] in
@@ -1944,13 +1940,13 @@ Section Decoder.
     let imm19 := n.[5,24] in
     let v_ := n.[26] in
     match[bits] opc, v_ with
-    | "00  0" => ARM_LDR_LIT Rt imm19 4 (* LDR (literal) - 32-bit variant on page C6-673 *)
+    | "00  0" => ARM_LD_REG_LIT ARM_LDR_LIT Rt imm19 4 (* LDR (literal) - 32-bit variant on page C6-673 *)
     | "00  1" => UDF (* LDR (literal, SIMD&FP) - 32-bit variant on page C7-1362 *)
-    | "01  0" => ARM_LDR_LIT Rt imm19 8 (* LDR (literal) - 64-bit variant on page C6-673 *)
+    | "01  0" => ARM_LD_REG_LIT ARM_LDR_LIT Rt imm19 8 (* LDR (literal) - 64-bit variant on page C6-673 *)
     | "01  1" => UDF (* LDR (literal, SIMD&FP) - 64-bit variant on page C7-1362 *)
-    | "10  0" => ARM_LDRSW_LIT Rt imm19 (* LDRSW (literal) *)
+    | "10  0" => ARM_LD_REG_LIT ARM_LDRSW_LIT Rt imm19 N_na (* LDRSW (literal) doesn't actually need size*)
     | "10  1" => UDF (* LDR (literal, SIMD&FP) - 128-bit variant on page C7-1362 *)
-    | "11  0" => ARM_PRFM_LIT Rt imm19 (* PRFM (literal) *)
+    | "11  0" => ARM_LD_REG_LIT ARM_PRFM_LIT Rt imm19 N_na (* PRFM (literal) doesn't actually need size*)
     | "11  1" => UDF (* Unallocated. *)
     else UDF end.
 
@@ -2183,16 +2179,16 @@ Section Decoder.
     let Rt2 := n.[10,15] in
     let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STP Rn Rt Rt2 imm7 2 true true (* STP - 32-bit variant on page C6-867 *)
-    | "00  0  1" => ARM_LDP Rn Rt Rt2 imm7 2 true true (* LDP - 32-bit variant on page C6-664 *)
+    | "00  0  0" => ARM_LD_STR_REG_PAIR ARM_STP Rn Rt Rt2 imm7 2 true true (* STP - 32-bit variant on page C6-867 *)
+    | "00  0  1" => ARM_LD_STR_REG_PAIR ARM_LDP Rn Rt Rt2 imm7 2 true true (* LDP - 32-bit variant on page C6-664 *)
     | "00  1  0" => UDF (* STP (SIMD&FP) - 32-bit variant on page C7-1628 *)
     | "00  1  1" => UDF (* LDP (SIMD&FP) - 32-bit variant on page C7-1355 *)
-    | "01  0  0" => ARM_STGP Rn Rt Rt2 imm7 true true (* Armv8.5 *)
-    | "01  0  1" => ARM_LDPSW Rn Rt Rt2 imm7 true true (* LDPSW *)
+    | "01  0  0" => ARM_LD_STR_REG_PAIR ARM_STGP Rn Rt Rt2 imm7 N_na true true (* Armv8.5 *)
+    | "01  0  1" => ARM_LD_STR_REG_PAIR ARM_LDPSW Rn Rt Rt2 imm7 N_na true true (* LDPSW *)
     | "01  1  0" => UDF (* STP (SIMD&FP) - 64-bit variant on page C7-1628 *)
     | "01  1  1" => UDF (* LDP (SIMD&FP) - 64-bit variant on page C7-1355 *)
-    | "10  0  0" => ARM_STP Rn Rt Rt2 imm7 3 true true (* STP - 64-bit variant on page C6-867 *)
-    | "10  0  1" => ARM_LDP Rn Rt Rt2 imm7 3 true true (* LDP - 64-bit variant on page C6-664 *)
+    | "10  0  0" => ARM_LD_STR_REG_PAIR ARM_STP Rn Rt Rt2 imm7 3 true true (* STP - 64-bit variant on page C6-867 *)
+    | "10  0  1" => ARM_LD_STR_REG_PAIR ARM_LDP Rn Rt Rt2 imm7 3 true true (* LDP - 64-bit variant on page C6-664 *)
     | "10  1  0" => UDF (* STP (SIMD&FP) - 128-bit variant on page C7-1628 *)
     | "10  1  1" => UDF (* LDP (SIMD&FP) - 128-bit variant on page C7-1355 *)
     | "11  -  -" => UDF (* Unallocated *)
@@ -2207,16 +2203,16 @@ Section Decoder.
     let Rt2 := n.[10,15] in
     let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STP Rn Rt Rt2 imm7 2 false false (* STP - 32-bit variant on page C6-868 *)
-    | "00  0  1" => ARM_LDP Rn Rt Rt2 imm7 2 false false (* LDP - 32-bit variant on page C6-665 *)
+    | "00  0  0" => ARM_LD_STR_REG_PAIR ARM_STP Rn Rt Rt2 imm7 2 false false (* STP - 32-bit variant on page C6-868 *)
+    | "00  0  1" => ARM_LD_STR_REG_PAIR ARM_LDP Rn Rt Rt2 imm7 2 false false (* LDP - 32-bit variant on page C6-665 *)
     | "00  1  0" => UDF (* STP (SIMD&FP) - 32-bit variant on page C7-1629 *)
     | "00  1  1" => UDF (* LDP (SIMD&FP) - 32-bit variant on page C7-1356 *)
-    | "01  0  0" => ARM_STGP Rn Rt Rt2 imm7 false false (* Unallocated. *)
-    | "01  0  1" => ARM_LDPSW Rn Rt Rt2 imm7 false false (* LDPSW *)
+    | "01  0  0" => ARM_LD_STR_REG_PAIR ARM_STGP Rn Rt Rt2 imm7 N_na false false (* Unallocated. *)
+    | "01  0  1" => ARM_LD_STR_REG_PAIR ARM_LDPSW Rn Rt Rt2 imm7 N_na false false (* LDPSW *)
     | "01  1  0" => UDF (* STP (SIMD&FP) - 64-bit variant on page C7-1629 *)
     | "01  1  1" => UDF (* LDP (SIMD&FP) - 64-bit variant on page C7-1356 *)
-    | "10  0  0" => ARM_STP Rn Rt Rt2 imm7 3 false false (* STP - 64-bit variant on page C6-868 *)
-    | "10  0  1" => ARM_LDP Rn Rt Rt2 imm7 3 false false (* LDP - 64-bit variant on page C6-665 *)
+    | "10  0  0" => ARM_LD_STR_REG_PAIR ARM_STP Rn Rt Rt2 imm7 3 false false (* STP - 64-bit variant on page C6-868 *)
+    | "10  0  1" => ARM_LD_STR_REG_PAIR ARM_LDP Rn Rt Rt2 imm7 3 false false (* LDP - 64-bit variant on page C6-665 *)
     | "10  1  0" => UDF (* STP (SIMD&FP) - 128-bit variant on page C7-1629 *)
     | "10  1  1" => UDF (* LDP (SIMD&FP) - 128-bit variant on page C7-1356 *)
     | "11  -  -" => UDF (* Unallocated. *)
@@ -2231,16 +2227,16 @@ Section Decoder.
     let Rt2 := n.[10,15] in
     let imm7 := n.[15,22] in
     match[bits] opc, v_, l_ with
-    | "00  0  0" => ARM_STP Rn Rt Rt2 imm7 2 true false (* STP - 32-bit variant on page C6-867 *)
-    | "00  0  1" => ARM_LDP Rn Rt Rt2 imm7 2 true false (* LDP - 32-bit variant on page C6-664 *)
+    | "00  0  0" => ARM_LD_STR_REG_PAIR ARM_STP Rn Rt Rt2 imm7 2 true false (* STP - 32-bit variant on page C6-867 *)
+    | "00  0  1" => ARM_LD_STR_REG_PAIR ARM_LDP Rn Rt Rt2 imm7 2 true false (* LDP - 32-bit variant on page C6-664 *)
     | "00  1  0" => UDF (* STP (SIMD&FP) - 32-bit variant on page C7-1628 *)
     | "00  1  1" => UDF (* LDP (SIMD&FP) - 32-bit variant on page C7-1355 *)
-    | "01  0  0" => ARM_STGP Rn Rt Rt2 imm7 true false (* Unallocated. *)
-    | "01  0  1" => ARM_LDPSW Rn Rt Rt2 imm7 true false (* LDPSW *)
+    | "01  0  0" => ARM_LD_STR_REG_PAIR ARM_STGP Rn Rt Rt2 imm7 N_na true false (* Unallocated. *)
+    | "01  0  1" => ARM_LD_STR_REG_PAIR ARM_LDPSW Rn Rt Rt2 imm7 N_na true false (* LDPSW *)
     | "01  1  0" => UDF (* STP (SIMD&FP) - 64-bit variant on page C7-1628 *)
     | "01  1  1" => UDF (* LDP (SIMD&FP) - 64-bit variant on page C7-1355 *)
-    | "10  0  0" => ARM_STP Rn Rt Rt2 imm7 3 true false (* STP - 64-bit variant on page C6-867 *)
-    | "10  0  1" => ARM_LDP Rn Rt Rt2 imm7 3 true false (* LDP - 64-bit variant on page C6-664 *)
+    | "10  0  0" => ARM_LD_STR_REG_PAIR ARM_STP Rn Rt Rt2 imm7 3 true false (* STP - 64-bit variant on page C6-867 *)
+    | "10  0  1" => ARM_LD_STR_REG_PAIR ARM_LDP Rn Rt Rt2 imm7 3 true false (* LDP - 64-bit variant on page C6-664 *)
     | "10  1  0" => UDF (* STP (SIMD&FP) - 128-bit variant on page C7-1628 *)
     | "10  1  1" => UDF (* LDP (SIMD&FP) - 128-bit variant on page C7-1355 *)
     | "11  -  -" => UDF (* Unallocated *)
@@ -2323,30 +2319,30 @@ Section Decoder.
     let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STURB Rn Rt imm9 (* STURB *)
-    | "00  0  01" => ARM_LDURB Rn Rt imm9 (* LDURB *)
-    | "00  0  10" => ARM_LDURSB Rn Rt imm9 32 (* LDURSB - 64-bit variant on page C6-743 *)
-    | "00  0  11" => ARM_LDURSB Rn Rt imm9 64 (* LDURSB - 32-bit variant on page C6-743 *)
+    | "00  0  00" => ARM_LOAD_GEN ARM_STURB Rn Rt imm9 size(* STURB *)
+    | "00  0  01" => ARM_LOAD_GEN ARM_LDURB Rn Rt imm9 size(* LDURB *)
+    | "00  0  10" => ARM_LOAD_GEN ARM_LDURSB Rn Rt imm9 32 (* LDURSB - 64-bit variant on page C6-743 *)
+    | "00  0  11" => ARM_LOAD_GEN ARM_LDURSB Rn Rt imm9 64 (* LDURSB - 32-bit variant on page C6-743 *)
     | "00  1  00" => UDF (* STUR (SIMD&FP) - 8-bit variant on page C7-1638 *)
     | "00  1  01" => UDF (* LDUR (SIMD&FP) - 8-bit variant on page C7-1367 *)
     | "00  1  10" => UDF (* STUR (SIMD&FP) - 128-bit variant on page C7-1638 *)
     | "00  1  11" => UDF (* LDUR (SIMD&FP) - 128-bit variant on page C7-1367 *)
-    | "01  0  00" => ARM_STURH Rn Rt imm9(* STURH *)
-    | "01  0  01" => ARM_LDURH Rn Rt imm9 (* LDURH *)
-    | "01  0  10" => ARM_LDURSH Rn Rt imm9 64 (* LDURSH - 64-bit variant on page C6-745 *)
-    | "01  0  11" => ARM_LDURSH Rn Rt imm9 32 (* LDURSH - 32-bit variant on page C6-745 *)
+    | "01  0  00" => ARM_LOAD_GEN ARM_STURH Rn Rt imm9 size(* STURH *)
+    | "01  0  01" => ARM_LOAD_GEN ARM_LDURH Rn Rt imm9 size(* LDURH *)
+    | "01  0  10" => ARM_LOAD_GEN ARM_LDURSH Rn Rt imm9 64 (* LDURSH - 64-bit variant on page C6-745 *)
+    | "01  0  11" => ARM_LOAD_GEN ARM_LDURSH Rn Rt imm9 32 (* LDURSH - 32-bit variant on page C6-745 *)
     | "01  1  00" => UDF (* STUR (SIMD&FP) - 16-bit variant on page C7-1638 *)
     | "01  1  01" => UDF (* LDUR (SIMD&FP) - 16-bit variant on page C7-1367 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STUR Rn Rt imm9 32 (* STUR - 32-bit variant on page C6-917 *)
-    | "10  0  01" => ARM_LDUR Rn Rt imm9 32 (* LDUR - 32-bit variant on page C6-739 *)
-    | "10  0  10" => ARM_LDURSW Rn Rt imm9 (* LDURSW *)
+    | "10  0  00" => ARM_LOAD_GEN ARM_STUR Rn Rt imm9 32 (* STUR - 32-bit variant on page C6-917 *)
+    | "10  0  01" => ARM_LOAD_GEN ARM_LDUR Rn Rt imm9 32 (* LDUR - 32-bit variant on page C6-739 *)
+    | "10  0  10" => ARM_LOAD_GEN ARM_LDURSW Rn Rt imm9 size(* LDURSW *)
     | "10  1  00" => UDF (* STUR (SIMD&FP) - 32-bit variant on page C7-1638 *)
     | "10  1  01" => UDF (* LDUR (SIMD&FP) - 32-bit variant on page C7-1367 *)
-    | "11  0  00" => ARM_STUR Rn Rt imm9 64 (* STUR - 64-bit variant on page C6-917 *)
-    | "11  0  01" => ARM_LDUR Rn Rt imm9 64 (* LDUR - 64-bit variant on page C6-739 *)
-    | "11  0  10" => ARM_PRFM Rn Rt imm9 (* PRFM (unscaled offset) TODO: 0s are a temp placeholder. *)
+    | "11  0  00" => ARM_LOAD_GEN ARM_STUR Rn Rt imm9 64 (* STUR - 64-bit variant on page C6-917 *)
+    | "11  0  01" => ARM_LOAD_GEN ARM_LDUR Rn Rt imm9 64 (* LDUR - 64-bit variant on page C6-739 *)
+    | "11  0  10" => ARM_LOAD_GEN ARM_PRFM Rn Rt imm9 size (* PRFM (unscaled offset) TODO: 0s are a temp placeholder. *)
     | "11  1  00" => UDF (* STUR (SIMD&FP) - 64-bit variant on page C7-1638 *)
     | "11  1  01" => UDF (* LDUR (SIMD&FP) - 64-bit variant on page C7-1367 *)
     else UDF end.
@@ -2679,29 +2675,29 @@ Section Decoder.
     let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STRB_IMM Rn Rt imm9 true true true (* STRB (immediate) *)
-    | "00  0  01" => ARM_LDRB_IMM Rn Rt imm9 true true true (* LDRB (immediate) *)
-    | "00  0  10" => ARM_LDRSB_IMM Rn Rt imm9 64 true true true (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
-    | "00  0  11" => ARM_LDRSB_IMM Rn Rt imm9 32 true true true (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
+    | "00  0  00" => ARM_INDEXED ARM_STRB_IMM Rn Rt imm9 size true true true (* STRB (immediate) *)
+    | "00  0  01" => ARM_INDEXED ARM_LDRB_IMM Rn Rt imm9 size true true true (* LDRB (immediate) *)
+    | "00  0  10" => ARM_INDEXED ARM_LDRSB_IMM Rn Rt imm9 64 true true true (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
+    | "00  0  11" => ARM_INDEXED ARM_LDRSB_IMM Rn Rt imm9 32 true true true (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
     | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-1631 *)
     | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1358 *)
     | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-1631 *)
     | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1358 *)
-    | "01  0  00" => ARM_STRH_IMM Rn Rt imm9 64 true true true (* STRH (immediate) *)
-    | "01  0  01" => ARM_LDRH_IMM Rn Rt imm9 true true true (* LDRH (immediate) *)
-    | "01  0  10" => ARM_LDRSH_IMM Rn Rt imm9 64 true true true (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
-    | "01  0  11" => ARM_LDRSH_IMM Rn Rt imm9 32 true true true (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
+    | "01  0  00" => ARM_INDEXED ARM_STRH_IMM Rn Rt imm9 64 true true true (* STRH (immediate) *)
+    | "01  0  01" => ARM_INDEXED ARM_LDRH_IMM Rn Rt imm9 size true true true (* LDRH (immediate) *)
+    | "01  0  10" => ARM_INDEXED ARM_LDRSH_IMM Rn Rt imm9 64 true true true (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
+    | "01  0  11" => ARM_INDEXED ARM_LDRSH_IMM Rn Rt imm9 32 true true true (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
     | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-1631 *)
     | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1358 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STR_IMM Rn Rt imm9 32 true true true (* STR (immediate) - 32-bit variant on page C6-870 *)
-    | "10  0  01" => ARM_LDR_IMM Rn Rt imm9 32 true true true (* LDR (immediate) - 32-bit variant on page C6-670 *)
-    | "10  0  10" => ARM_LDRSW_IMM Rn Rt imm9 true true true (* LDRSW (immediate) *)
+    | "10  0  00" => ARM_INDEXED ARM_STR_IMM Rn Rt imm9 32 true true true (* STR (immediate) - 32-bit variant on page C6-870 *)
+    | "10  0  01" => ARM_INDEXED ARM_LDR_IMM Rn Rt imm9 32 true true true (* LDR (immediate) - 32-bit variant on page C6-670 *)
+    | "10  0  10" => ARM_INDEXED ARM_LDRSW_IMM Rn Rt imm9 size true true true (* LDRSW (immediate) *)
     | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-1631 *)
     | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1358 *)
-    | "11  0  00" => ARM_STR_IMM Rn Rt imm9 64 true true true (* STR (immediate) - 64-bit variant on page C6-870 *)
-    | "11  0  01" => ARM_LDR_IMM Rn Rt imm9 64 true true true (* LDR (immediate) - 64-bit variant on page C6-670 *)
+    | "11  0  00" => ARM_INDEXED ARM_STR_IMM Rn Rt imm9 64 true true true (* STR (immediate) - 64-bit variant on page C6-870 *)
+    | "11  0  01" => ARM_INDEXED ARM_LDR_IMM Rn Rt imm9 64 true true true (* LDR (immediate) - 64-bit variant on page C6-670 *)
     | "11  0  10" => UDF (* Unallocated. *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-1631 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-135 *)
@@ -2793,20 +2789,20 @@ Section Decoder.
     let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "-   1  - " => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STTRB Rn Rt imm9 (* STTRB *)
-    | "00  0  01" => ARM_LDTRB Rn Rt imm9 (* LDTRB *)
-    | "00  0  10" => ARM_LDTRSB Rn Rt imm9 64 (* LDTRSB - 64-bit variant on page C6-722 *)
-    | "00  0  11" => ARM_LDTRSB Rn Rt imm9 32 (* LDTRSB - 32-bit variant on page C6-722 *)
-    | "01  0  00" => ARM_STTRH Rn Rt imm9 (* STTRH *)
-    | "01  0  01" => ARM_LDTRH Rn Rt imm9 (* LDTRH *)
-    | "01  0  10" => ARM_LDTRSH Rn Rt imm9 64 (* LDTRSH - 64-bit variant on page C6-724 *)
-    | "01  0  11" => ARM_LDTRSH Rn Rt imm9 32 (* LDTRSH - 32-bit variant on page C6-724 *)
+    | "00  0  00" => ARM_REG_UNPRIVILEGED ARM_STTRB Rn Rt imm9 size(* STTRB *)
+    | "00  0  01" => ARM_REG_UNPRIVILEGED ARM_LDTRB Rn Rt imm9 size(* LDTRB *)
+    | "00  0  10" => ARM_REG_UNPRIVILEGED ARM_LDTRSB Rn Rt imm9 64 (* LDTRSB - 64-bit variant on page C6-722 *)
+    | "00  0  11" => ARM_REG_UNPRIVILEGED ARM_LDTRSB Rn Rt imm9 32 (* LDTRSB - 32-bit variant on page C6-722 *)
+    | "01  0  00" => ARM_REG_UNPRIVILEGED ARM_STTRH Rn Rt imm9 size(* STTRH *)
+    | "01  0  01" => ARM_REG_UNPRIVILEGED ARM_LDTRH Rn Rt imm9 size(* LDTRH *)
+    | "01  0  10" => ARM_REG_UNPRIVILEGED ARM_LDTRSH Rn Rt imm9 64 (* LDTRSH - 64-bit variant on page C6-724 *)
+    | "01  0  11" => ARM_REG_UNPRIVILEGED ARM_LDTRSH Rn Rt imm9 32 (* LDTRSH - 32-bit variant on page C6-724 *)
     | "1x  0  11" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STTR Rn Rt imm9 32 (* STTR - 32-bit variant on page C6-901 *)
-    | "10  0  01" => ARM_LDTR Rn Rt imm9 32 (* LDTR - 32-bit variant on page C6-718 *)
-    | "10  0  10" => ARM_LDTRSW Rn Rt imm9 (* LDTRSW *)
-    | "11  0  00" => ARM_STTR Rn Rt imm9 64 (* STTR - 64-bit variant on page C6-901 *)
-    | "11  0  01" => ARM_LDTR Rn Rt imm9 64 (* LDTR - 64-bit variant on page C6-718 *)
+    | "10  0  00" => ARM_REG_UNPRIVILEGED ARM_STTR Rn Rt imm9 32 (* STTR - 32-bit variant on page C6-901 *)
+    | "10  0  01" => ARM_REG_UNPRIVILEGED ARM_LDTR Rn Rt imm9 32 (* LDTR - 32-bit variant on page C6-718 *)
+    | "10  0  10" => ARM_REG_UNPRIVILEGED ARM_LDTRSW Rn Rt imm9 size(* LDTRSW *)
+    | "11  0  00" => ARM_REG_UNPRIVILEGED ARM_STTR Rn Rt imm9 64 (* STTR - 64-bit variant on page C6-901 *)
+    | "11  0  01" => ARM_REG_UNPRIVILEGED ARM_LDTR Rn Rt imm9 64 (* LDTR - 64-bit variant on page C6-718 *)
     | "11  0  10" => UDF (* Unallocated. *)
     else UDF end.
 
@@ -2820,29 +2816,29 @@ Section Decoder.
     let imm9 := n.[12,21] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STRB_IMM Rn Rt imm9 true true false (* STRB (immediate) *)
-    | "00  0  01" => ARM_LDRB_IMM Rn Rt imm9 true true false (* LDRB (immediate) *)
-    | "00  0  10" => ARM_LDRSB_IMM Rn Rt imm9 64 true true false (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
-    | "00  0  11" => ARM_LDRSB_IMM Rn Rt imm9 32 true true false (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
+    | "00  0  00" => ARM_INDEXED ARM_STRB_IMM Rn Rt imm9 size true true false (* STRB (immediate) *)
+    | "00  0  01" => ARM_INDEXED ARM_LDRB_IMM Rn Rt imm9 size true true false (* LDRB (immediate) *)
+    | "00  0  10" => ARM_INDEXED ARM_LDRSB_IMM Rn Rt imm9 64 true true false (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
+    | "00  0  11" => ARM_INDEXED ARM_LDRSB_IMM Rn Rt imm9 32 true true false (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
     | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-1631 *)
     | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1358 *)
     | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-1632 *)
     | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1359 *)
-    | "01  0  00" => ARM_STRH_IMM Rn Rt imm9 size true true false (* STRH (immediate) *)
-    | "01  0  01" => ARM_LDRH_IMM Rn Rt imm9 true true false (* LDRH (immediate) *)
-    | "01  0  10" => ARM_LDRSH_IMM Rn Rt imm9 64 true true false (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
-    | "01  0  11" => ARM_LDRSH_IMM Rn Rt imm9 32 true true false (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
+    | "01  0  00" => ARM_INDEXED ARM_STRH_IMM Rn Rt imm9 size true true false (* STRH (immediate) *)
+    | "01  0  01" => ARM_INDEXED ARM_LDRH_IMM Rn Rt imm9 size true true false (* LDRH (immediate) *)
+    | "01  0  10" => ARM_INDEXED ARM_LDRSH_IMM Rn Rt imm9 64 true true false (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
+    | "01  0  11" => ARM_INDEXED ARM_LDRSH_IMM Rn Rt imm9 32 true true false (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
     | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-1632 *)
     | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1359 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STR_IMM Rn Rt imm9 32 true true false (* STR (immediate) - 32-bit variant on page C6-870 *)
-    | "10  0  01" => ARM_LDR_IMM Rn Rt imm9 32 true true false (* LDR (immediate) - 32-bit variant on page C6-670 *)
-    | "10  0  10" => ARM_LDRSW_IMM Rn Rt imm9 true true false (* LDRSW (immediate) *)
+    | "10  0  00" => ARM_INDEXED ARM_STR_IMM Rn Rt imm9 32 true true false (* STR (immediate) - 32-bit variant on page C6-870 *)
+    | "10  0  01" => ARM_INDEXED ARM_LDR_IMM Rn Rt imm9 32 true true false (* LDR (immediate) - 32-bit variant on page C6-670 *)
+    | "10  0  10" => ARM_INDEXED ARM_LDRSW_IMM Rn Rt imm9 size true true false (* LDRSW (immediate) *)
     | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-1632 *)
     | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1359 *)
-    | "11  0  00" => ARM_STR_IMM Rn Rt imm9 64 true true false (* STR (immediate) - 64-bit variant on page C6-870 *)
-    | "11  0  01" => ARM_LDR_IMM Rn Rt imm9 64 true true false (* LDR (immediate) - 64-bit variant on page C6-670 *)
+    | "11  0  00" => ARM_INDEXED ARM_STR_IMM Rn Rt imm9 64 true true false (* STR (immediate) - 64-bit variant on page C6-870 *)
+    | "11  0  01" => ARM_INDEXED ARM_LDR_IMM Rn Rt imm9 64 true true false (* LDR (immediate) - 64-bit variant on page C6-670 *)
     | "11  0  10" => UDF (* Unallocated. *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-1632 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1359 *)
@@ -2957,154 +2953,154 @@ Section Decoder.
     | "-   0  0  -  1  100" => UDF (* Unallocated. - *)
     | "-   0  1  1  1  100" => UDF (* Unallocated. - *)
     | "-   1  -  -  -  -  " => UDF (* Unallocated. - *)
-    | "00  0  0  0  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - No memory ordering variant on page C6-632 ARMv8.1 *)
-    | "00  0  0  0  0  001" => ARM_LDCLRB  Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB -  *)
-    | "00  0  0  0  0  010" => ARM_LDEORB  Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - No *)
-    | "00  0  0  0  0  011" => ARM_LDSETB  Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - No *)
-    | "00  0  0  0  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - ARMv8.1 *)
-    | "00  0  0  0  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
-    | "00  0  0  0  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - ARMv8.1 *)
-    | "00  0  0  0  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - ARMv8.1 *)
-    | "00  0  0  0  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - No memory ordering variant on page C6-941 *)
-    | "00  0  0  1  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Release variant on page C6-632 *)
-    | "00  0  0  1  0  001" => ARM_LDCLRB Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Release variant on page C6-647 *)
-    | "00  0  0  1  0  010" => ARM_LDEORB Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - *)
-    | "00  0  0  1  0  011" => ARM_LDSETB Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - *)
-    | "00  0  0  1  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, *)
-    | "00  0  0  1  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
-    | "00  0  0  1  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Release variant on page C6-727 *)
-    | "00  0  0  1  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Release variant on page C6-733 ARMv8.1 *)
-    | "00  0  0  1  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Release variant on page C6-941 ARMv8.1 *)
-    | "00  0  1  0  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Acquire variant on page C6-632 ARMv8.1 *)
-    | "00  0  1  0  0  001" => ARM_LDCLRB Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Acquire variant on page C6-647 ARMv8.1 *)
-    | "00  0  1  0  0  010" => ARM_LDEORB Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - Acquire variant on page C6-653 ARMv8.1 *)
-    | "00  0  1  0  0  011" => ARM_LDSETB Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - Acquire variant on page C6-700 ARMv8.1 *)
-    | "00  0  1  0  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - Acquire variant on page C6-706 ARMv8.1 *)
-    | "00  0  1  0  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB - Acquire variant on page C6-712 ARMv8.1 *)
-    | "00  0  1  0  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Acquire variant on page C6-727 ARMv8.1 *)
-    | "00  0  1  0  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Acquire variant on page C6-733 *)
-    | "00  0  1  0  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Acquire varianton page C6-941 *)
-    | "00  0  1  0  1  100" => ARM_LDAPR Rn Rs Rt (* Manually added, what is this LDAPRB doing in the atomic table? Its encoding matches. *)
-    | "00  0  1  1  0  000" => ARM_LDADDB Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - and release variant on page C6-632 *)
-    | "00  0  1  1  0  001" => ARM_LDCLRB Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - and release variant on page C6-647 *)
-    | "00  0  1  1  0  010" => ARM_LDEORB Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - and release variant on page C6-653 *)
-    | "00  0  1  1  0  011" => ARM_LDSETB Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - and release variant on page C6-700 *)
-    | "00  0  1  1  0  100" => ARM_LDSMAXB Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB,LDSMAXLB - Acquire and release variant on C6-706 *)
-    | "00  0  1  1  0  101" => ARM_LDSMINB Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB- Acquire and release variant on page C6-712 *)
-    | "00  0  1  1  0  110" => ARM_LDUMAXB Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB,LDUMAXLB - Acquire and release variant on C6-727 *)
-    | "00  0  1  1  0  111" => ARM_LDUMINB Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB,LDUMINLB - Acquire and release variant on C6-733 *)
-    | "00  0  1  1  1  000" => ARM_SWPB Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Acquire and variant on page C6-941 *)
-    | "01  0  0  0  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - memory ordering variant on page C6-634 *)
-    | "01  0  0  0  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - No ordering variant on page C6-649 *)
-    | "01  0  0  0  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - No memory ordering variant on page C6-655 *)
-    | "01  0  0  0  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - No *)
-    | "01  0  0  0  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - No memory ordering variant on *)
-    | "01  0  0  0  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
-    | "01  0  0  0  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - No memory ordering variant on *)
-    | "01  0  0  0  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - No memory ordering variant on *)
-    | "01  0  0  0  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - No memory ordering variant on page C6-943 *)
-    | "01  0  0  1  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
-    | "01  0  0  1  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
-    | "01  0  0  1  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
-    | "01  0  0  1  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
-    | "01  0  0  1  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH - Release variant on page C6-708 *)
-    | "01  0  0  1  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
-    | "01  0  0  1  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Release variant on page C6-729 *)
-    | "01  0  0  1  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Release variant on page C6-735 *)
-    | "01  0  0  1  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Release variant *)
-    | "01  0  1  0  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
-    | "01  0  1  0  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
-    | "01  0  1  0  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
-    | "01  0  1  0  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
-    | "01  0  1  0  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - Acquire variant on page C6-708 *)
-    | "01  0  1  0  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
-    | "01  0  1  0  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire variant on page C6-729 *)
-    | "01  0  1  0  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire variant on page C6-735 *)
-    | "01  0  1  0  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Acquire variant *)
-    | "01  0  1  0  1  100" => ARM_LDAPRH Rn Rt (* LDAPR... *)
-    | "01  0  1  1  0  000" => ARM_LDADDH Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
-    | "01  0  1  1  0  001" => ARM_LDCLRH Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
-    | "01  0  1  1  0  010" => ARM_LDEORH Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
-    | "01  0  1  1  0  011" => ARM_LDSETH Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
-    | "01  0  1  1  0  100" => ARM_LDSMAXH Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH  *)
-    | "01  0  1  1  0  101" => ARM_LDSMINH Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH- Acquire and release variant on page C6-714 *)
-    | "01  0  1  1  0  110" => ARM_LDUMAXH Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire and release variant on *)
-    | "01  0  1  1  0  111" => ARM_LDUMINH Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire and release variant on *)
-    | "01  0  1  1  1  000" => ARM_SWPH Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Acquire and *)
-    | "10  0  0  0  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
-    | "10  0  0  0  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, no *)
-    | "10  0  0  0  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, no *)
-    | "10  0  0  0  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, no *)
-    | "10  0  0  0  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, no memory ordering variant on page C6-710 *)
-    | "10  0  0  0  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, no memory ordering variant on page C6-716 *)
-    | "10  0  0  0  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, no memory ordering variant on page C6-731 *)
-    | "10  0  0  0  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL  *)
-    | "10  0  0  0  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
-    | "10  0  0  1  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, release variant on page C6-636 ARMv8.1 *)
-    | "10  0  0  1  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, release variant on page C6-651 ARMv8.1 *)
-    | "10  0  0  1  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, release variant on page C6-657 ARMv8.1 *)
-    | "10  0  0  1  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, release variant on page C6-704 ARMv8.1 *)
-    | "10  0  0  1  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, release variant on page C6-710 ARMv8.1 *)
-    | "10  0  0  1  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, release variant on page C6-716 ARMv8.1 *)
-    | "10  0  0  1  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, release variant on page C6-731 ARMv8.1 *)
-    | "10  0  0  1  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, release variant on page C6-737 ARMv8.1 *)
-    | "10  0  0  1  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, release variant on page C6-945 ARMv8.1 *)
-    | "10  0  1  0  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
-    | "0   0  1  0  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire variant on page C6-651 ARMv8.1 *)
-    | "10  0  1  0  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire variant on page C6-657 ARMv8.1 *)
-    | "10  0  1  0  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire variant on page C6-704 ARMv8.1 *)
-    | "10  0  1  0  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire variant on page C6-710 ARMv8.1 *)
-    | "10  0  1  0  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire variant on page C6-716 ARMv8.1 *)
-    | "10  0  1  0  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire variant on page C6-731 ARMv8.1 *)
-    | "10  0  1  0  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire variant on page C6-737 ARMv8.1 *)
-    | "10  0  1  0  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire variant on page C6-945 ARMv8.1 *)
-    | "10  0  1  0  1  100" => ARM_LDAPR 32 Rn Rt (* LDAPR... *)
-    | "10  0  1  1  0  000" => ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, acquire and release variant on page C6-636 ARMv8.1 *)
-    | "10  0  1  1  0  001" => ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire and release variant on page C6-651 ARMv8.1 *)
-    | "10  0  1  1  0  010" => ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire and release variant on page C6-657 ARMv8.1 *)
-    | "10  0  1  1  0  011" => ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire and release variant on page C6-704 ARMv8.1 *)
-    | "10  0  1  1  0  100" => ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire and release variant on page C6-710 ARMv8.1 *)
-    | "10  0  1  1  0  101" => ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire and release variant on page C6-716 ARMv8.1 *)
-    | "10  0  1  1  0  110" => ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire and release variant on page C6-731 ARMv8.1 *)
-    | "10  0  1  1  0  111" => ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire and release variant on page C6-737 ARMv8.1 *)
-    | "10  0  1  1  1  000" => ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire and release variant on page C6-945 ARMv8.1 *)
-    | "11  0  0  0  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, no memory ordering variant on page C6-636 ARMv8.1 *)
-    | "11  0  0  0  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, no memory ordering variant on page C6-651 *)
-    | "11  0  0  0  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, no memory ordering variant on page C6-657 ARMv8.1 *)
-    | "11  0  0  0  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit, no memory ordering variant on page C6-704 ARMv8.1 *)
-    | "11  0  0  0  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 64-bit, no memory ordering variant on page C6-710 ARMv8.1 *)
-    | "11  0  0  0  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 64-bit, no memory ordering variant on page C6-716 ARMv8.1 *)
-    | "11  0  0  0  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 64-bit, no memory ordering variant on page C6-731 ARMv8.1 *)
-    | "11  0  0  0  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, no memory ordering variant on page C6-737 ARMv8.1 *)
-    | "11  0  0  0  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
-    | "11  0  0  1  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, release variant on page C6-637 ARMv8.1 *)
-    | "11  0  0  1  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, release variant on page C6-652 ARMv8.1 *)
-    | "11  0  0  1  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,release variant on page C6-658 ARMv8.1 *)
-    | "11  0  0  1  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,release variant on page C6-705 ARMv8.1 *)
-    | "11  0  0  1  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, release variant on page C6-711 ARMv8.1 *)
-    | "11  0  0  1  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, release variant on page C6-717 ARMv8.1 *)
-    | "11  0  0  1  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, release variant on page C6-732 ARMv8.1 *)
-    | "11  0  0  1  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, release variant on page C6-738ARMv8.1 *)
-    | "11  0  0  1  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, release variant on page C6-946 ARMv8.1 *)
-    | "11  0  1  0  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, acquire variant on page C6-636 ARMv8.1 *)
-    | "11  0  1  0  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire variant on page C6-651 ARMv8.1 *)
-    | "11  0  1  0  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, acquire variant on page C6-657 ARMv8.1 *)
-    | "11  0  1  0  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire variant on page C6-704 ARMv8.1 *)
-    | "11  0  1  0  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire variant on page C6-710 ARMv8.1 *)
-    | "11  0  1  0  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire variant on page C6-716 ARMv8.1 *)
-    | "11  0  1  0  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire variant on page C6-731 ARMv8.1 *)
-    | "11  0  1  0  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, acquire variant on page C6-737 ARMv8.1 *)
-    | "11  0  1  0  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire varia *)
-    | "11  0  1  0  1  100" => ARM_LDAPR 64 Rn Rt (* LDAPR... *)
-    | "1   0  1  1  0  000" => ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit,acquire and release variant on page C6-636 ARMv8.1 *)
-    | "11  0  1  1  0  001" => ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire and release variant on page C6-651 ARMv8.1 *)
-    | "11  0  1  1  0  010" => ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,acquire and release variant on page C6-657 ARMv8.1 *)
-    | "11  0  1  1  0  011" => ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire and release variant on page C6-704 ARMv8.1 *)
-    | "11  0  1  1  0  100" => ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire and release variant on page C6-710 ARMv8.1 *)
-    | "11  0  1  1  0  101" => ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire and release variant on page C6-716 ARMv8.1 *)
-    | "11  0  1  1  0  110" => ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire and release variant on page C6-731 ARMv8.1 *)
-    | "11  0  1  1  0  111" => ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL -64-bit, acquire and release variant on page C6-737 ARMv8.1 *)
-    | "11  0  1  1  1  000" => ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire and release variant on page C6-945 *)
+    | "00  0  0  0  0  000" => ARM_ATOMIC ARM_LDADDB  size Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - No memory ordering variant on page C6-632 ARMv8.1 *)
+    | "00  0  0  0  0  001" => ARM_ATOMIC ARM_LDCLRB  size Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB -  *)
+    | "00  0  0  0  0  010" => ARM_ATOMIC ARM_LDEORB  size Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - No *)
+    | "00  0  0  0  0  011" => ARM_ATOMIC ARM_LDSETB  size Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - No *)
+    | "00  0  0  0  0  100" => ARM_ATOMIC ARM_LDSMAXB size Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - ARMv8.1 *)
+    | "00  0  0  0  0  101" => ARM_ATOMIC ARM_LDSMINB size Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
+    | "00  0  0  0  0  110" => ARM_ATOMIC ARM_LDUMAXB size Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - ARMv8.1 *)
+    | "00  0  0  0  0  111" => ARM_ATOMIC ARM_LDUMINB size Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - ARMv8.1 *)
+    | "00  0  0  0  1  000" => ARM_ATOMIC ARM_SWPB size Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - No memory ordering variant on page C6-941 *)
+    | "00  0  0  1  0  000" => ARM_ATOMIC ARM_LDADDB size Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Release variant on page C6-632 *)
+    | "00  0  0  1  0  001" => ARM_ATOMIC ARM_LDCLRB size Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Release variant on page C6-647 *)
+    | "00  0  0  1  0  010" => ARM_ATOMIC ARM_LDEORB size Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - *)
+    | "00  0  0  1  0  011" => ARM_ATOMIC ARM_LDSETB size Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - *)
+    | "00  0  0  1  0  100" => ARM_ATOMIC ARM_LDSMAXB size Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, *)
+    | "00  0  0  1  0  101" => ARM_ATOMIC ARM_LDSMINB size Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB *)
+    | "00  0  0  1  0  110" => ARM_ATOMIC ARM_LDUMAXB size Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Release variant on page C6-727 *)
+    | "00  0  0  1  0  111" => ARM_ATOMIC ARM_LDUMINB size Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Release variant on page C6-733 ARMv8.1 *)
+    | "00  0  0  1  1  000" => ARM_ATOMIC ARM_SWPB size Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Release variant on page C6-941 ARMv8.1 *)
+    | "00  0  1  0  0  000" => ARM_ATOMIC ARM_LDADDB size Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - Acquire variant on page C6-632 ARMv8.1 *)
+    | "00  0  1  0  0  001" => ARM_ATOMIC ARM_LDCLRB size Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - Acquire variant on page C6-647 ARMv8.1 *)
+    | "00  0  1  0  0  010" => ARM_ATOMIC ARM_LDEORB size Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - Acquire variant on page C6-653 ARMv8.1 *)
+    | "00  0  1  0  0  011" => ARM_ATOMIC ARM_LDSETB size Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - Acquire variant on page C6-700 ARMv8.1 *)
+    | "00  0  1  0  0  100" => ARM_ATOMIC ARM_LDSMAXB size Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB, LDSMAXLB - Acquire variant on page C6-706 ARMv8.1 *)
+    | "00  0  1  0  0  101" => ARM_ATOMIC ARM_LDSMINB size Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB - Acquire variant on page C6-712 ARMv8.1 *)
+    | "00  0  1  0  0  110" => ARM_ATOMIC ARM_LDUMAXB size Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB, LDUMAXLB - Acquire variant on page C6-727 ARMv8.1 *)
+    | "00  0  1  0  0  111" => ARM_ATOMIC ARM_LDUMINB size Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB, LDUMINLB - Acquire variant on page C6-733 *)
+    | "00  0  1  0  1  000" => ARM_ATOMIC ARM_SWPB size Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Acquire varianton page C6-941 *)
+    | "00  0  1  0  1  100" => ARM_ATOMIC ARM_LDAPR size Rn Rs Rt (* Manually added, what is this LDAPRB doing in the atomic table? Its encoding matches. *)
+    | "00  0  1  1  0  000" => ARM_ATOMIC ARM_LDADDB size Rn Rs Rt (* LDADDB, LDADDAB, LDADDALB, LDADDLB - and release variant on page C6-632 *)
+    | "00  0  1  1  0  001" => ARM_ATOMIC ARM_LDCLRB size Rn Rs Rt (* LDCLRB, LDCLRAB, LDCLRALB, LDCLRLB - and release variant on page C6-647 *)
+    | "00  0  1  1  0  010" => ARM_ATOMIC ARM_LDEORB size Rn Rs Rt (* LDEORB, LDEORAB, LDEORALB, LDEORLB - and release variant on page C6-653 *)
+    | "00  0  1  1  0  011" => ARM_ATOMIC ARM_LDSETB size Rn Rs Rt (* LDSETB, LDSETAB, LDSETALB, LDSETLB - and release variant on page C6-700 *)
+    | "00  0  1  1  0  100" => ARM_ATOMIC ARM_LDSMAXB size Rn Rs Rt (* LDSMAXB, LDSMAXAB, LDSMAXALB,LDSMAXLB - Acquire and release variant on C6-706 *)
+    | "00  0  1  1  0  101" => ARM_ATOMIC ARM_LDSMINB size Rn Rs Rt (* LDSMINB, LDSMINAB, LDSMINALB, LDSMINLB- Acquire and release variant on page C6-712 *)
+    | "00  0  1  1  0  110" => ARM_ATOMIC ARM_LDUMAXB size Rn Rs Rt (* LDUMAXB, LDUMAXAB, LDUMAXALB,LDUMAXLB - Acquire and release variant on C6-727 *)
+    | "00  0  1  1  0  111" => ARM_ATOMIC ARM_LDUMINB size Rn Rs Rt (* LDUMINB, LDUMINAB, LDUMINALB,LDUMINLB - Acquire and release variant on C6-733 *)
+    | "00  0  1  1  1  000" => ARM_ATOMIC ARM_SWPB size Rn Rs Rt (* SWPB, SWPAB, SWPALB, SWPLB - Acquire and variant on page C6-941 *)
+    | "01  0  0  0  0  000" => ARM_ATOMIC ARM_LDADDH size Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - memory ordering variant on page C6-634 *)
+    | "01  0  0  0  0  001" => ARM_ATOMIC ARM_LDCLRH size Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - No ordering variant on page C6-649 *)
+    | "01  0  0  0  0  010" => ARM_ATOMIC ARM_LDEORH size Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - No memory ordering variant on page C6-655 *)
+    | "01  0  0  0  0  011" => ARM_ATOMIC ARM_LDSETH size Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - No *)
+    | "01  0  0  0  0  100" => ARM_ATOMIC ARM_LDSMAXH size Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - No memory ordering variant on *)
+    | "01  0  0  0  0  101" => ARM_ATOMIC ARM_LDSMINH size Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
+    | "01  0  0  0  0  110" => ARM_ATOMIC ARM_LDUMAXH size Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - No memory ordering variant on *)
+    | "01  0  0  0  0  111" => ARM_ATOMIC ARM_LDUMINH size Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - No memory ordering variant on *)
+    | "01  0  0  0  1  000" => ARM_ATOMIC ARM_SWPH size Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - No memory ordering variant on page C6-943 *)
+    | "01  0  0  1  0  000" => ARM_ATOMIC ARM_LDADDH size Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
+    | "01  0  0  1  0  001" => ARM_ATOMIC ARM_LDCLRH size Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
+    | "01  0  0  1  0  010" => ARM_ATOMIC ARM_LDEORH size Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
+    | "01  0  0  1  0  011" => ARM_ATOMIC ARM_LDSETH size Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
+    | "01  0  0  1  0  100" => ARM_ATOMIC ARM_LDSMAXH size Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH - Release variant on page C6-708 *)
+    | "01  0  0  1  0  101" => ARM_ATOMIC ARM_LDSMINH size Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
+    | "01  0  0  1  0  110" => ARM_ATOMIC ARM_LDUMAXH size Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Release variant on page C6-729 *)
+    | "01  0  0  1  0  111" => ARM_ATOMIC ARM_LDUMINH size Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Release variant on page C6-735 *)
+    | "01  0  0  1  1  000" => ARM_ATOMIC ARM_SWPH size Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Release variant *)
+    | "01  0  1  0  0  000" => ARM_ATOMIC ARM_LDADDH size Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
+    | "01  0  1  0  0  001" => ARM_ATOMIC ARM_LDCLRH size Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
+    | "01  0  1  0  0  010" => ARM_ATOMIC ARM_LDEORH size Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
+    | "01  0  1  0  0  011" => ARM_ATOMIC ARM_LDSETH size Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
+    | "01  0  1  0  0  100" => ARM_ATOMIC ARM_LDSMAXH size Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH, LDSMAXLH - Acquire variant on page C6-708 *)
+    | "01  0  1  0  0  101" => ARM_ATOMIC ARM_LDSMINH size Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH *)
+    | "01  0  1  0  0  110" => ARM_ATOMIC ARM_LDUMAXH size Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire variant on page C6-729 *)
+    | "01  0  1  0  0  111" => ARM_ATOMIC ARM_LDUMINH size Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire variant on page C6-735 *)
+    | "01  0  1  0  1  000" => ARM_ATOMIC ARM_SWPH size Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Acquire variant *)
+    | "01  0  1  0  1  100" => ARM_ATOMIC ARM_LDAPRH size Rn Rs Rt (* LDAPR... *)
+    | "01  0  1  1  0  000" => ARM_ATOMIC ARM_LDADDH size Rn Rs Rt (* LDADDH, LDADDAH, LDADDALH, LDADDLH - *)
+    | "01  0  1  1  0  001" => ARM_ATOMIC ARM_LDCLRH size Rn Rs Rt (* LDCLRH, LDCLRAH, LDCLRALH, LDCLRLH - *)
+    | "01  0  1  1  0  010" => ARM_ATOMIC ARM_LDEORH size Rn Rs Rt (* LDEORH, LDEORAH, LDEORALH, LDEORLH - *)
+    | "01  0  1  1  0  011" => ARM_ATOMIC ARM_LDSETH size Rn Rs Rt (* LDSETH, LDSETAH, LDSETALH, LDSETLH - *)
+    | "01  0  1  1  0  100" => ARM_ATOMIC ARM_LDSMAXH size Rn Rs Rt (* LDSMAXH, LDSMAXAH, LDSMAXALH,LDSMAXLH  *)
+    | "01  0  1  1  0  101" => ARM_ATOMIC ARM_LDSMINH size Rn Rs Rt (* LDSMINH, LDSMINAH, LDSMINALH, LDSMINLH- Acquire and release variant on page C6-714 *)
+    | "01  0  1  1  0  110" => ARM_ATOMIC ARM_LDUMAXH size Rn Rs Rt (* LDUMAXH, LDUMAXAH, LDUMAXALH, LDUMAXLH - Acquire and release variant on *)
+    | "01  0  1  1  0  111" => ARM_ATOMIC ARM_LDUMINH size Rn Rs Rt (* LDUMINH, LDUMINAH, LDUMINALH, LDUMINLH - Acquire and release variant on *)
+    | "01  0  1  1  1  000" => ARM_ATOMIC ARM_SWPH size Rn Rs Rt (* SWPH, SWPAH, SWPALH, SWPLH - Acquire and *)
+    | "10  0  0  0  0  000" => ARM_ATOMIC ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
+    | "10  0  0  0  0  001" => ARM_ATOMIC ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, no *)
+    | "10  0  0  0  0  010" => ARM_ATOMIC ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, no *)
+    | "10  0  0  0  0  011" => ARM_ATOMIC ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, no *)
+    | "10  0  0  0  0  100" => ARM_ATOMIC ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, no memory ordering variant on page C6-710 *)
+    | "10  0  0  0  0  101" => ARM_ATOMIC ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, no memory ordering variant on page C6-716 *)
+    | "10  0  0  0  0  110" => ARM_ATOMIC ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, no memory ordering variant on page C6-731 *)
+    | "10  0  0  0  0  111" => ARM_ATOMIC ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL  *)
+    | "10  0  0  0  1  000" => ARM_ATOMIC ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
+    | "10  0  0  1  0  000" => ARM_ATOMIC ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, release variant on page C6-636 ARMv8.1 *)
+    | "10  0  0  1  0  001" => ARM_ATOMIC ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, release variant on page C6-651 ARMv8.1 *)
+    | "10  0  0  1  0  010" => ARM_ATOMIC ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, release variant on page C6-657 ARMv8.1 *)
+    | "10  0  0  1  0  011" => ARM_ATOMIC ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, release variant on page C6-704 ARMv8.1 *)
+    | "10  0  0  1  0  100" => ARM_ATOMIC ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, release variant on page C6-710 ARMv8.1 *)
+    | "10  0  0  1  0  101" => ARM_ATOMIC ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, release variant on page C6-716 ARMv8.1 *)
+    | "10  0  0  1  0  110" => ARM_ATOMIC ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, release variant on page C6-731 ARMv8.1 *)
+    | "10  0  0  1  0  111" => ARM_ATOMIC ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, release variant on page C6-737 ARMv8.1 *)
+    | "10  0  0  1  1  000" => ARM_ATOMIC ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, release variant on page C6-945 ARMv8.1 *)
+    | "10  0  1  0  0  000" => ARM_ATOMIC ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, *)
+    | "0   0  1  0  0  001" => ARM_ATOMIC ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire variant on page C6-651 ARMv8.1 *)
+    | "10  0  1  0  0  010" => ARM_ATOMIC ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire variant on page C6-657 ARMv8.1 *)
+    | "10  0  1  0  0  011" => ARM_ATOMIC ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire variant on page C6-704 ARMv8.1 *)
+    | "10  0  1  0  0  100" => ARM_ATOMIC ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire variant on page C6-710 ARMv8.1 *)
+    | "10  0  1  0  0  101" => ARM_ATOMIC ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire variant on page C6-716 ARMv8.1 *)
+    | "10  0  1  0  0  110" => ARM_ATOMIC ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire variant on page C6-731 ARMv8.1 *)
+    | "10  0  1  0  0  111" => ARM_ATOMIC ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire variant on page C6-737 ARMv8.1 *)
+    | "10  0  1  0  1  000" => ARM_ATOMIC ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire variant on page C6-945 ARMv8.1 *)
+    | "10  0  1  0  1  100" => ARM_ATOMIC ARM_LDAPR 32 Rn Rs Rt (* LDAPR... *)
+    | "10  0  1  1  0  000" => ARM_ATOMIC ARM_LDADD 32 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 32-bit, acquire and release variant on page C6-636 ARMv8.1 *)
+    | "10  0  1  1  0  001" => ARM_ATOMIC ARM_LDCLR 32 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 32-bit, acquire and release variant on page C6-651 ARMv8.1 *)
+    | "10  0  1  1  0  010" => ARM_ATOMIC ARM_LDEOR 32 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 32-bit, acquire and release variant on page C6-657 ARMv8.1 *)
+    | "10  0  1  1  0  011" => ARM_ATOMIC ARM_LDSET 32 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 32-bit, acquire and release variant on page C6-704 ARMv8.1 *)
+    | "10  0  1  1  0  100" => ARM_ATOMIC ARM_LDSMAX 32 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 32-bit, acquire and release variant on page C6-710 ARMv8.1 *)
+    | "10  0  1  1  0  101" => ARM_ATOMIC ARM_LDSMIN 32 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 32-bit, acquire and release variant on page C6-716 ARMv8.1 *)
+    | "10  0  1  1  0  110" => ARM_ATOMIC ARM_LDUMAX 32 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 32-bit, acquire and release variant on page C6-731 ARMv8.1 *)
+    | "10  0  1  1  0  111" => ARM_ATOMIC ARM_LDUMIN 32 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 32-bit, acquire and release variant on page C6-737 ARMv8.1 *)
+    | "10  0  1  1  1  000" => ARM_ATOMIC ARM_SWP 32 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 32-bit, acquire and release variant on page C6-945 ARMv8.1 *)
+    | "11  0  0  0  0  000" => ARM_ATOMIC ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, no memory ordering variant on page C6-636 ARMv8.1 *)
+    | "11  0  0  0  0  001" => ARM_ATOMIC ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, no memory ordering variant on page C6-651 *)
+    | "11  0  0  0  0  010" => ARM_ATOMIC ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, no memory ordering variant on page C6-657 ARMv8.1 *)
+    | "11  0  0  0  0  011" => ARM_ATOMIC ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit, no memory ordering variant on page C6-704 ARMv8.1 *)
+    | "11  0  0  0  0  100" => ARM_ATOMIC ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL - 64-bit, no memory ordering variant on page C6-710 ARMv8.1 *)
+    | "11  0  0  0  0  101" => ARM_ATOMIC ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL - 64-bit, no memory ordering variant on page C6-716 ARMv8.1 *)
+    | "11  0  0  0  0  110" => ARM_ATOMIC ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL - 64-bit, no memory ordering variant on page C6-731 ARMv8.1 *)
+    | "11  0  0  0  0  111" => ARM_ATOMIC ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, no memory ordering variant on page C6-737 ARMv8.1 *)
+    | "11  0  0  0  1  000" => ARM_ATOMIC ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, no memory ordering variant on page C6-945 ARMv8.1 *)
+    | "11  0  0  1  0  000" => ARM_ATOMIC ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, release variant on page C6-637 ARMv8.1 *)
+    | "11  0  0  1  0  001" => ARM_ATOMIC ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit, release variant on page C6-652 ARMv8.1 *)
+    | "11  0  0  1  0  010" => ARM_ATOMIC ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,release variant on page C6-658 ARMv8.1 *)
+    | "11  0  0  1  0  011" => ARM_ATOMIC ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,release variant on page C6-705 ARMv8.1 *)
+    | "11  0  0  1  0  100" => ARM_ATOMIC ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, release variant on page C6-711 ARMv8.1 *)
+    | "11  0  0  1  0  101" => ARM_ATOMIC ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, release variant on page C6-717 ARMv8.1 *)
+    | "11  0  0  1  0  110" => ARM_ATOMIC ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, release variant on page C6-732 ARMv8.1 *)
+    | "11  0  0  1  0  111" => ARM_ATOMIC ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, release variant on page C6-738ARMv8.1 *)
+    | "11  0  0  1  1  000" => ARM_ATOMIC ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, release variant on page C6-946 ARMv8.1 *)
+    | "11  0  1  0  0  000" => ARM_ATOMIC ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit, acquire variant on page C6-636 ARMv8.1 *)
+    | "11  0  1  0  0  001" => ARM_ATOMIC ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire variant on page C6-651 ARMv8.1 *)
+    | "11  0  1  0  0  010" => ARM_ATOMIC ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit, acquire variant on page C6-657 ARMv8.1 *)
+    | "11  0  1  0  0  011" => ARM_ATOMIC ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire variant on page C6-704 ARMv8.1 *)
+    | "11  0  1  0  0  100" => ARM_ATOMIC ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire variant on page C6-710 ARMv8.1 *)
+    | "11  0  1  0  0  101" => ARM_ATOMIC ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire variant on page C6-716 ARMv8.1 *)
+    | "11  0  1  0  0  110" => ARM_ATOMIC ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire variant on page C6-731 ARMv8.1 *)
+    | "11  0  1  0  0  111" => ARM_ATOMIC ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL - 64-bit, acquire variant on page C6-737 ARMv8.1 *)
+    | "11  0  1  0  1  000" => ARM_ATOMIC ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire varia *)
+    | "11  0  1  0  1  100" => ARM_ATOMIC ARM_LDAPR 64 Rn Rs Rt (* LDAPR... *)
+    | "1   0  1  1  0  000" => ARM_ATOMIC ARM_LDADD 64 Rn Rs Rt (* LDADD, LDADDA, LDADDAL, LDADDL - 64-bit,acquire and release variant on page C6-636 ARMv8.1 *)
+    | "11  0  1  1  0  001" => ARM_ATOMIC ARM_LDCLR 64 Rn Rs Rt (* LDCLR, LDCLRA, LDCLRAL, LDCLRL - 64-bit,acquire and release variant on page C6-651 ARMv8.1 *)
+    | "11  0  1  1  0  010" => ARM_ATOMIC ARM_LDEOR 64 Rn Rs Rt (* LDEOR, LDEORA, LDEORAL, LDEORL - 64-bit,acquire and release variant on page C6-657 ARMv8.1 *)
+    | "11  0  1  1  0  011" => ARM_ATOMIC ARM_LDSET 64 Rn Rs Rt (* LDSET, LDSETA, LDSETAL, LDSETL - 64-bit,acquire and release variant on page C6-704 ARMv8.1 *)
+    | "11  0  1  1  0  100" => ARM_ATOMIC ARM_LDSMAX 64 Rn Rs Rt (* LDSMAX, LDSMAXA, LDSMAXAL, LDSMAXL -64-bit, acquire and release variant on page C6-710 ARMv8.1 *)
+    | "11  0  1  1  0  101" => ARM_ATOMIC ARM_LDSMIN 64 Rn Rs Rt (* LDSMIN, LDSMINA, LDSMINAL, LDSMINL -64-bit, acquire and release variant on page C6-716 ARMv8.1 *)
+    | "11  0  1  1  0  110" => ARM_ATOMIC ARM_LDUMAX 64 Rn Rs Rt (* LDUMAX, LDUMAXA, LDUMAXAL, LDUMAXL -64-bit, acquire and release variant on page C6-731 ARMv8.1 *)
+    | "11  0  1  1  0  111" => ARM_ATOMIC ARM_LDUMIN 64 Rn Rs Rt (* LDUMIN, LDUMINA, LDUMINAL, LDUMINL -64-bit, acquire and release variant on page C6-737 ARMv8.1 *)
+    | "11  0  1  1  1  000" => ARM_ATOMIC ARM_SWP 64 Rn Rs Rt (* SWP, SWPA, SWPAL, SWPL - 64-bit, acquire and release variant on page C6-945 *)
     else UDF end.
 
 
@@ -3240,36 +3236,36 @@ Section Decoder.
     match[bits] size, v_, opc, option_ with
     | "-   -  -   x0x  " => UDF (* Unallocated. *)
     | "x1  1  1x  -    " => UDF (* Unallocated. *)
-    | "00  0  00  !=011" => ARM_STRB_REG Rn Rm Rt option_ (* STRB (register) - Extended register variant on page C6-877 *)
-    | "00  0  00  011  " => ARM_STRB_REG Rn Rm Rt option_ (* STRB (register) - Shifted register variant on page C6-877 *)
-    | "00  0  01  !=011" => ARM_LDRB_REG Rn Rm Rt option_ (* LDRB (register) - Extended register variant on page C6-679 *)
-    | "00  0  01  011  " => ARM_LDRB_REG Rn Rm Rt option_ (* LDRB (register) - Shifted register variant on page C6-679 *)
-    | "00  0  10  !=011" => ARM_LDRSB_REG Rn Rm Rt option_ 64 (* LDRSB (register) - 64-bit with extended register offset variant on page C6-688 *)
-    | "00  0  10  011  " => ARM_LDRSB_REG Rn Rm Rt option_ 64 (* LDRSB (register) - 64-bit with shifted register offset variant on page C6-688 *)
-    | "00  0  11  !=011" => ARM_LDRSB_REG Rn Rm Rt option_ 32 (* LDRSB (register) - 32-bit with extended register offset variant on page C6-688 *)
-    | "00  0  11  011  " => ARM_LDRSB_REG Rn Rm Rt option_ 32 (* LDRSB (register) - 32-bit with shifted register offset variant on page C6-688 *)
+    | "00  0  00  !=011" => ARM_LD_STR_REG ARM_STRB_REG Rn Rm Rt option_ size S(* STRB (register) - Extended register variant on page C6-877 *)
+    | "00  0  00  011  " => ARM_LD_STR_REG ARM_STRB_REG Rn Rm Rt option_ size S(* STRB (register) - Shifted register variant on page C6-877 *)
+    | "00  0  01  !=011" => ARM_LD_STR_REG ARM_LDRB_REG Rn Rm Rt option_ size S(* LDRB (register) - Extended register variant on page C6-679 *)
+    | "00  0  01  011  " => ARM_LD_STR_REG ARM_LDRB_REG Rn Rm Rt option_ size S(* LDRB (register) - Shifted register variant on page C6-679 *)
+    | "00  0  10  !=011" => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 64 S(* LDRSB (register) - 64-bit with extended register offset variant on page C6-688 *)
+    | "00  0  10  011  " => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 64 S(* LDRSB (register) - 64-bit with shifted register offset variant on page C6-688 *)
+    | "00  0  11  !=011" => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 32 S(* LDRSB (register) - 32-bit with extended register offset variant on page C6-688 *)
+    | "00  0  11  011  " => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 32 S(* LDRSB (register) - 32-bit with shifted register offset variant on page C6-688 *)
     | "00  1  00  !=011" => UDF (* STR (register, SIMD&FP) *)
     | "00  1  00  011  " => UDF (* STR (register, SIMD&FP) *)
     | "00  1  01  !=011" => UDF (* LDR (register, SIMD&FP) *)
     | "00  1  01  011  " => UDF (* LDR (register, SIMD&FP) *)
     | "00  1  10  -    " => UDF (* STR (register, SIMD&FP) *)
     | "00  1  11  -    " => UDF (* LDR (register, SIMD&FP) *)
-    | "01  0  00  -    " => ARM_STRH_REG Rn Rm Rt option_ S (* STRH (register) *)
-    | "01  0  01  -    " => ARM_LDRH_REG Rn Rm Rt option_ S (* LDRH (register) *) (*TODO: Check this*)
-    | "01  0  10  -    " => ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 64-bit variant on page C6-693 *)
-    | "01  0  11  -    " => ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 32-bit variant on page C6-693 *)
+    | "01  0  00  -    " => ARM_LD_STR_REG ARM_STRH_REG Rn Rm Rt option_ size S (* STRH (register) *)
+    | "01  0  01  -    " => ARM_LD_STR_REG ARM_LDRH_REG Rn Rm Rt option_ size S (* LDRH (register) *) (*TODO: Check this*)
+    | "01  0  10  -    " => ARM_LD_STR_REG ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 64-bit variant on page C6-693 *)
+    | "01  0  11  -    " => ARM_LD_STR_REG ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 32-bit variant on page C6-693 *)
     | "01  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "01  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     | "1x  0  11  -    " => UDF (* Unallocated. *)
     | "1x  1  1x  -    " => UDF (* Unallocated. *)
-    | "10  0  00  -    " => ARM_STR_REG Rn Rm Rt option_ 2 S (* STR (register) - 32-bit variant on page C6-873 *)
-    | "10  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 2 S (* LDR (register) - 32-bit variant on page C6-675 *)
-    | "10  0  10  -    " => ARM_LDRSW_REG Rn Rm Rt option_ S (* LDRSW (register) *)
+    | "10  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt option_ 2 S (* STR (register) - 32-bit variant on page C6-873 *)
+    | "10  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt option_ 2 S (* LDR (register) - 32-bit variant on page C6-675 *)
+    | "10  0  10  -    " => ARM_LD_STR_REG ARM_LDRSW_REG Rn Rm Rt option_ size S (* LDRSW (register) *)
     | "10  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "10  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
-    | "11  0  00  -    " => ARM_STR_REG Rn Rm Rt option_ 3 S (* STR (register) - 64-bit variant on page C6-873 *)
-    | "11  0  01  -    " => ARM_LDR_REG Rn Rm Rt option_ 3 S (* LDR (register) - 64-bit variant on page C6-675 *)
-    | "11  0  10  -    " => ARM_PRFM_REG Rn Rm Rt option_ S (* PRFM (register) *)
+    | "11  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt option_ 3 S (* STR (register) - 64-bit variant on page C6-873 *)
+    | "11  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt option_ 3 S (* LDR (register) - 64-bit variant on page C6-675 *)
+    | "11  0  10  -    " => ARM_LD_STR_REG ARM_PRFM_REG Rn Rm Rt option_ size S (* PRFM (register) *)
     | "11  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "11  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     else UDF end.
@@ -3341,30 +3337,30 @@ Section Decoder.
     let imm12 := n.[10,22] in
     match[bits] size, v_, opc with
     | "x1  1  1x" => UDF (* Unallocated. *)
-    | "00  0  00" => ARM_STRB_IMM Rn Rt imm12 false true true (* STRB (immediate) *)
-    | "00  0  01" => ARM_LDRB_IMM Rn Rt imm12 false true true (* LDRB (immediate) *)
-    | "00  0  10" => ARM_LDRSB_IMM Rn Rt imm12 64 false true true (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
-    | "00  0  11" => ARM_LDRSB_IMM Rn Rt imm12 32 false true true (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
+    | "00  0  00" => ARM_INDEXED ARM_STRB_IMM Rn Rt imm12 size false true true (* STRB (immediate) *)
+    | "00  0  01" => ARM_INDEXED ARM_LDRB_IMM Rn Rt imm12 size false true true (* LDRB (immediate) *)
+    | "00  0  10" => ARM_INDEXED ARM_LDRSB_IMM Rn Rt imm12 64 false true true (* LDRSB (immediate) - 64-bit variant on page C6-685 *)
+    | "00  0  11" => ARM_INDEXED ARM_LDRSB_IMM Rn Rt imm12 32 false true true (* LDRSB (immediate) - 32-bit variant on page C6-685 *)
     | "00  1  00" => UDF (* STR (immediate, SIMD&FP) - 8-bit variant on page C7-1631 *)
     | "00  1  01" => UDF (* LDR (immediate, SIMD&FP) - 8-bit variant on page C7-1358 *)
     | "00  1  10" => UDF (* STR (immediate, SIMD&FP) - 128-bit variant on page C7-1631 *)
     | "00  1  11" => UDF (* LDR (immediate, SIMD&FP) - 128-bit variant on page C7-1358 *)
-    | "01  0  00" => ARM_STRH_IMM Rn Rt imm12 size false true true (* STRH (immediate) *)
-    | "01  0  01" => ARM_LDRH_IMM Rn Rt imm12 false true true (* LDRH (immediate) *)
-    | "01  0  10" => ARM_LDRSH_IMM Rn Rt imm12 64 false true true (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
-    | "01  0  11" => ARM_LDRSH_IMM Rn Rt imm12 32 false true true (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
+    | "01  0  00" => ARM_INDEXED ARM_STRH_IMM Rn Rt imm12 size false true true (* STRH (immediate) *)
+    | "01  0  01" => ARM_INDEXED ARM_LDRH_IMM Rn Rt imm12 size false true true (* LDRH (immediate) *)
+    | "01  0  10" => ARM_INDEXED ARM_LDRSH_IMM Rn Rt imm12 64 false true true (* LDRSH (immediate) - 64-bit variant on page C6-690 *)
+    | "01  0  11" => ARM_INDEXED ARM_LDRSH_IMM Rn Rt imm12 32 false true true (* LDRSH (immediate) - 32-bit variant on page C6-690 *)
     | "01  1  00" => UDF (* STR (immediate, SIMD&FP) - 16-bit variant on page C7-1631 *)
     | "01  1  01" => UDF (* LDR (immediate, SIMD&FP) - 16-bit variant on page C7-1358 *)
     | "1x  0  11" => UDF (* Unallocated. *)
     | "1x  1  1x" => UDF (* Unallocated. *)
-    | "10  0  00" => ARM_STR_IMM Rn Rt imm12 32 false true true (* STR (immediate) - 32-bit variant on page C6-870 *)
-    | "10  0  01" => ARM_LDR_IMM Rn Rt imm12 32 false true true (* LDR (immediate) - 32-bit variant on page C6-670 *)
-    | "10  0  10" => ARM_LDRSW_IMM Rn Rt imm12 false true true (* LDRSW (immediate) *)
+    | "10  0  00" => ARM_INDEXED ARM_STR_IMM Rn Rt imm12 32 false true true (* STR (immediate) - 32-bit variant on page C6-870 *)
+    | "10  0  01" => ARM_INDEXED ARM_LDR_IMM Rn Rt imm12 32 false true true (* LDR (immediate) - 32-bit variant on page C6-670 *)
+    | "10  0  10" => ARM_INDEXED ARM_LDRSW_IMM Rn Rt imm12 size false true true (* LDRSW (immediate) *)
     | "10  1  00" => UDF (* STR (immediate, SIMD&FP) - 32-bit variant on page C7-1631 *)
     | "10  1  01" => UDF (* LDR (immediate, SIMD&FP) - 32-bit variant on page C7-1358 *)
-    | "11  0  00" => ARM_STR_IMM Rn Rt imm12 64 false true true (* STR (immediate) - 64-bit variant on page C6-870 *)
-    | "11  0  01" => ARM_LDR_IMM Rn Rt imm12 64 false true true (* LDR (immediate) - 64-bit variant on page C6-670 *)
-    | "11  0  10" => ARM_PRFM_IMM Rn Rt imm12 (* PRFM (immediate) *)
+    | "11  0  00" => ARM_INDEXED ARM_STR_IMM Rn Rt imm12 64 false true true (* STR (immediate) - 64-bit variant on page C6-870 *)
+    | "11  0  01" => ARM_INDEXED ARM_LDR_IMM Rn Rt imm12 64 false true true (* LDR (immediate) - 64-bit variant on page C6-670 *)
+    | "11  0  10" => ARM_LOAD_GEN ARM_PRFM_IMM Rn Rt imm12 size (* PRFM (immediate) *)
     | "11  1  00" => UDF (* STR (immediate, SIMD&FP) - 64-bit variant on page C7-2115 *)
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1801 *)
     else UDF end.
@@ -3476,18 +3472,18 @@ Section Decoder.
     | "-  0  00000  01xxxx  -    " => UDF (* Unallocated. - *)
     | "-  1  -      -       -    " => UDF (* Unallocated. - *)
     | "0  -  00001  -       -    " => UDF (* Unallocated. - *)
-    | "0  0  00000  000000  -    " => ARM_RBIT sf Rn Rd (* RBIT - 32-bit variant on page C6-1146 - *)
-    | "0  0  00000  000001  -    " => ARM_REV16 sf Rn Rd (* REV16 - 32-bit variant on page C6-1151 - *)
-    | "0  0  00000  000010  -    " => ARM_REV sf Rn Rd (* REV - 32-bit variant on page C6-1149 - *)
+    | "0  0  00000  000000  -    " => ARM_BITOPS ARM_RBIT sf Rn Rd (* RBIT - 32-bit variant on page C6-1146 - *)
+    | "0  0  00000  000001  -    " => ARM_BITOPS ARM_REV16 sf Rn Rd (* REV16 - 32-bit variant on page C6-1151 - *)
+    | "0  0  00000  000010  -    " => ARM_BITOPS ARM_REV sf Rn Rd (* REV - 32-bit variant on page C6-1149 - *)
     | "0  0  00000  000011  -    " => UDF (* Unallocated. *)
-    | "0  0  00000  000100  -    " => ARM_CLZ sf Rn Rd(* CLZ - 32-bit variant on page C6-849 - *)
-    | "0  0  00000  000101  -    " => ARM_CLS sf Rn Rd(* CLS - 32-bit variant on page C6-848 - *)
-    | "1  0  00000  000000  -    " => ARM_RBIT sf Rn Rd(* RBIT - 64-bit variant on page C6-1146 - *)
-    | "1  0  00000  000001  -    " => ARM_REV16 sf Rn Rd(* REV16 - 64-bit variant on page C6-1151 - *)
-    | "1  0  00000  000010  -    " => ARM_REV32 sf Rn Rd(* REV32 - *)
-    | "1  0  00000  000011  -    " => ARM_REV sf Rn Rd(* REV - 64-bit variant on page C6-1149 - *)
-    | "1  0  00000  000100  -    " => ARM_CLZ sf Rn Rd(* CLZ - 64-bit variant on page C6-849 - *)
-    | "1  0  00000  000101  -    " => ARM_CLS sf Rn Rd(* CLS - 64-bit variant on page C6-848 - *)
+    | "0  0  00000  000100  -    " => ARM_BITOPS ARM_CLZ sf Rn Rd(* CLZ - 32-bit variant on page C6-849 - *)
+    | "0  0  00000  000101  -    " => ARM_BITOPS ARM_CLS sf Rn Rd(* CLS - 32-bit variant on page C6-848 - *)
+    | "1  0  00000  000000  -    " => ARM_BITOPS ARM_RBIT sf Rn Rd(* RBIT - 64-bit variant on page C6-1146 - *)
+    | "1  0  00000  000001  -    " => ARM_BITOPS ARM_REV16 sf Rn Rd(* REV16 - 64-bit variant on page C6-1151 - *)
+    | "1  0  00000  000010  -    " => ARM_BITOPS ARM_REV32 sf Rn Rd(* REV32 - *)
+    | "1  0  00000  000011  -    " => ARM_BITOPS ARM_REV sf Rn Rd(* REV - 64-bit variant on page C6-1149 - *)
+    | "1  0  00000  000100  -    " => ARM_BITOPS ARM_CLZ sf Rn Rd(* CLZ - 64-bit variant on page C6-849 - *)
+    | "1  0  00000  000101  -    " => ARM_BITOPS ARM_CLS sf Rn Rd(* CLS - 64-bit variant on page C6-848 - *)
     | "1  0  00001  000000  -    " => ARM_PACIA (* PACIA, PACIA1716, PACIASP, PACIAZ, PACIZA - PACIA variant on page C6-1132 Armv8.3 *)
     | "1  0  00001  000001  -    " => ARM_PACIB (* PACIB, PACIB1716, PACIBSP, PACIBZ, PACIZB - PACIB variant on page C6-1134 Armv8.3 *)
     | "1  0  00001  000010  -    " => ARM_PACDA (* PACDA, PACDZA - PACDA variant on page C6-1129 Armv8.3 *)
@@ -3521,22 +3517,22 @@ Section Decoder.
     let Rn := n.[5,10] in let Rm := n.[16,21] in let Rd := n.[0,5] in
     match[bits] sf, opc, n_, imm6 with
     | "0  -   -  1xxxxx" => UDF (* Unallocated. *)
-    | "0  00  0  -     " => ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd(* AND (shifted register) - 32-bit variant on page C6-538 *)
-    | "0  00  1  -     " => ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd(* BIC (shifted register) - 32-bit variant on page C6-556 *)
-    | "0  01  0  -     " => ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd(* ORR (shifted register) - 32-bit variant on page C6-792 *)
-    | "0  01  1  -     " => ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd(* ORN (shifted register) - 32-bit variant on page C6-788 *)
-    | "0  10  0  -     " => ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd(* EOR (shifted register) - 32-bit variant on page C6-620 *)
-    | "0  10  1  -     " => ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd(* EON (shifted register) - 32-bit variant on page C6-617 *)
-    | "0  11  0  -     " => ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd (* ANDS (shifted register) - 32-bit variant on page C6-542 *)
-    | "0  11  1  -     " => ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd (* BICS (shifted register) - 32-bit variant on page C6-558 *)
-    | "1  00  0  -     " => ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd(* AND (shifted register) - 64-bit variant on page C6-538 *)
-    | "1  00  1  -     " => ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd(* BIC (shifted register) - 64-bit variant on page C6-556 *)
-    | "1  01  0  -     " => ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd(* ORR (shifted register) - 64-bit variant on page C6-792 *)
-    | "1  01  1  -     " => ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd(* ORN (shifted register) - 64-bit variant on page C6-788 *)
-    | "1  10  0  -     " => ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd(* EOR (shifted register) - 64-bit variant on page C6-620 *)
-    | "1  10  1  -     " => ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd(* EON (shifted register) - 64-bit variant on page C6-617 *)
-    | "1  11  0  -     " => ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd(* ANDS (shifted register) - 64-bit variant on page C6-542 *)
-    | "1  11  1  -     " => ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd(* BICS (shifted register) - 64-bit variant on page C6-558 *)
+    | "0  00  0  -     " => ARM_LOG_SHIFTED ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd(* AND (shifted register) - 32-bit variant on page C6-538 *)
+    | "0  00  1  -     " => ARM_LOG_SHIFTED ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd(* BIC (shifted register) - 32-bit variant on page C6-556 *)
+    | "0  01  0  -     " => ARM_LOG_SHIFTED ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd(* ORR (shifted register) - 32-bit variant on page C6-792 *)
+    | "0  01  1  -     " => ARM_LOG_SHIFTED ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd(* ORN (shifted register) - 32-bit variant on page C6-788 *)
+    | "0  10  0  -     " => ARM_LOG_SHIFTED ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd(* EOR (shifted register) - 32-bit variant on page C6-620 *)
+    | "0  10  1  -     " => ARM_LOG_SHIFTED ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd(* EON (shifted register) - 32-bit variant on page C6-617 *)
+    | "0  11  0  -     " => ARM_LOG_SHIFTED ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd (* ANDS (shifted register) - 32-bit variant on page C6-542 *)
+    | "0  11  1  -     " => ARM_LOG_SHIFTED ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd (* BICS (shifted register) - 32-bit variant on page C6-558 *)
+    | "1  00  0  -     " => ARM_LOG_SHIFTED ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd(* AND (shifted register) - 64-bit variant on page C6-538 *)
+    | "1  00  1  -     " => ARM_LOG_SHIFTED ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd(* BIC (shifted register) - 64-bit variant on page C6-556 *)
+    | "1  01  0  -     " => ARM_LOG_SHIFTED ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd(* ORR (shifted register) - 64-bit variant on page C6-792 *)
+    | "1  01  1  -     " => ARM_LOG_SHIFTED ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd(* ORN (shifted register) - 64-bit variant on page C6-788 *)
+    | "1  10  0  -     " => ARM_LOG_SHIFTED ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd(* EOR (shifted register) - 64-bit variant on page C6-620 *)
+    | "1  10  1  -     " => ARM_LOG_SHIFTED ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd(* EON (shifted register) - 64-bit variant on page C6-617 *)
+    | "1  11  0  -     " => ARM_LOG_SHIFTED ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd(* ANDS (shifted register) - 64-bit variant on page C6-542 *)
+    | "1  11  1  -     " => ARM_LOG_SHIFTED ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd(* BICS (shifted register) - 64-bit variant on page C6-558 *)
     else UDF end.
 
 
@@ -3551,14 +3547,14 @@ Section Decoder.
     match[bits] sf, opc, s, shift, imm6 with
     | "-  -  -  11  -     " => UDF (* Unallocated. *)
     | "0  -  -  -   1xxxxx" => UDF (* Unallocated. *)
-    | "0  0  0  -   -     " => ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADD (shifted register) - 32-bit variant on page C6-527 *)
-    | "0  0  1  -   -     " => ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADDS (shifted register) - 32-bit variant on page C6-533 *)
-    | "0  1  0  -   -     " => ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUB (shifted register) - 32-bit variant on page C6-932 *)
-    | "0  1  1  -   -     " => ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUBS (shifted register) - 32-bit variant on page C6-938 *)
-    | "1  0  0  -   -     " => ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADD (shifted register) - 64-bit variant on page C6-527 *)
-    | "1  0  1  -   -     " => ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADDS (shifted register) - 64-bit variant on page C6-533 *)
-    | "1  1  0  -   -     " => ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUB (shifted register) - 64-bit variant on page C6-932 *)
-    | "1  1  1  -   -     " => ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd (* SUBS (shifted register) - 64-bit variant on page C6-938 *)
+    | "0  0  0  -   -     " => ARM_DATA_SHIFTED ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADD (shifted register) - 32-bit variant on page C6-527 *)
+    | "0  0  1  -   -     " => ARM_DATA_SHIFTED ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADDS (shifted register) - 32-bit variant on page C6-533 *)
+    | "0  1  0  -   -     " => ARM_DATA_SHIFTED ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUB (shifted register) - 32-bit variant on page C6-932 *)
+    | "0  1  1  -   -     " => ARM_DATA_SHIFTED ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUBS (shifted register) - 32-bit variant on page C6-938 *)
+    | "1  0  0  -   -     " => ARM_DATA_SHIFTED ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADD (shifted register) - 64-bit variant on page C6-527 *)
+    | "1  0  1  -   -     " => ARM_DATA_SHIFTED ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* ADDS (shifted register) - 64-bit variant on page C6-533 *)
+    | "1  1  0  -   -     " => ARM_DATA_SHIFTED ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd  (* SUB (shifted register) - 64-bit variant on page C6-932 *)
+    | "1  1  1  -   -     " => ARM_DATA_SHIFTED ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd (* SUBS (shifted register) - 64-bit variant on page C6-938 *)
     else UDF end.
 
   (*add/sub - extended reg*)
@@ -3576,14 +3572,14 @@ Section Decoder.
     | "-  -  -  -   11x" => UDF (* Unallocated. *)
     | "-  -  -  x1  -  " => UDF (* Unallocated. *)
     | "-  -  -  1x  -  " => UDF (* Unallocated. *)
-    | "0  0  0  00  -  " => ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADD (extended register) - 32-bit variant on page C6-523 *)
-    | "0  0  1  00  -  " => ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADDS (extended register) - 32-bit variant on page C6-529 *)
-    | "0  1  0  00  -  " => ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUB (extended register) - 32-bit variant on page C6-928 *)
-    | "0  1  1  00  -  " => ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUBS (extended register) - 32-bit variant on page C6-934 *)
-    | "1  0  0  00  -  " => ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADD (extended register) - 64-bit variant on page C6-523 *)
-    | "1  0  1  00  -  " => ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADDS (extended register) - 64-bit variant on page C6-529 *)
-    | "1  1  0  00  -  " => ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUB (extended register) - 64-bit variant on page C6-928 *)
-    | "1  1  1  00  -  " => ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUBS (extended register) - 64-bit variant on page C6-934 *)
+    | "0  0  0  00  -  " => ARM_EXTENDED ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADD (extended register) - 32-bit variant on page C6-523 *)
+    | "0  0  1  00  -  " => ARM_EXTENDED ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADDS (extended register) - 32-bit variant on page C6-529 *)
+    | "0  1  0  00  -  " => ARM_EXTENDED ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUB (extended register) - 32-bit variant on page C6-928 *)
+    | "0  1  1  00  -  " => ARM_EXTENDED ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUBS (extended register) - 32-bit variant on page C6-934 *)
+    | "1  0  0  00  -  " => ARM_EXTENDED ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADD (extended register) - 64-bit variant on page C6-523 *)
+    | "1  0  1  00  -  " => ARM_EXTENDED ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* ADDS (extended register) - 64-bit variant on page C6-529 *)
+    | "1  1  0  00  -  " => ARM_EXTENDED ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUB (extended register) - 64-bit variant on page C6-928 *)
+    | "1  1  1  00  -  " => ARM_EXTENDED ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd(* SUBS (extended register) - 64-bit variant on page C6-934 *)
     else UDF end.
 
   (*add/sub - with carry*)
@@ -3593,14 +3589,14 @@ Section Decoder.
     let s := n.[29] in
     let Rm := n.[16,21] in let Rn := n.[5,10] in let Rd := n.[0,5] in
     match[bits] sf, op, s with
-      | "0  0  0" => ARM_ADC sf s Rm Rn Rd(* ADC - 32-bit variant on page C6-754 *)
-      | "0  0  1" => ARM_ADCS sf s Rm Rn Rd(* ADCS - 32-bit variant on page C6-756 *)
-      | "0  1  0" => ARM_SBC sf s Rm Rn Rd(* SBC - 32-bit variant on page C6-1164 *)
-      | "0  1  1" => ARM_SBCS sf s Rm Rn Rd(* SBCS - 32-bit variant on page C6-1166 *)
-      | "1  0  0" => ARM_ADC sf s Rm Rn Rd(* ADC - 64-bit variant on page C6-754 *)
-      | "1  0  1" => ARM_ADCS sf s Rm Rn Rd(* ADCS - 64-bit variant on page C6-756 *)
-      | "1  1  0" => ARM_SBC sf s Rm Rn Rd(* SBC - 64-bit variant on page C6-1164 *)
-      | "1  1  1" => ARM_SBCS sf s Rm Rn Rd(* SBCS - 64-bit variant on page C6-1166 *)
+      | "0  0  0" => ARM_CARRY ARM_ADC sf s Rm Rn Rd(* ADC - 32-bit variant on page C6-754 *)
+      | "0  0  1" => ARM_CARRY ARM_ADCS sf s Rm Rn Rd(* ADCS - 32-bit variant on page C6-756 *)
+      | "0  1  0" => ARM_CARRY ARM_SBC sf s Rm Rn Rd(* SBC - 32-bit variant on page C6-1164 *)
+      | "0  1  1" => ARM_CARRY ARM_SBCS sf s Rm Rn Rd(* SBCS - 32-bit variant on page C6-1166 *)
+      | "1  0  0" => ARM_CARRY ARM_ADC sf s Rm Rn Rd(* ADC - 64-bit variant on page C6-754 *)
+      | "1  0  1" => ARM_CARRY ARM_ADCS sf s Rm Rn Rd(* ADCS - 64-bit variant on page C6-756 *)
+      | "1  1  0" => ARM_CARRY ARM_SBC sf s Rm Rn Rd(* SBC - 64-bit variant on page C6-1164 *)
+      | "1  1  1" => ARM_CARRY ARM_SBCS sf s Rm Rn Rd(* SBCS - 64-bit variant on page C6-1166 *)
       else UDF end.
 
   (*rotate right into flags*)
@@ -3752,26 +3748,25 @@ Section Decoder.
 
   Definition Pack_NZCV (n z c v : exp) : exp :=
   (* Shift each flag into its proper architectural position *)
-  let n_shifted := BinOp OP_LSHIFT n (Word 3 64) in
-  let z_shifted := BinOp OP_LSHIFT z (Word 2 64) in
-  let c_shifted := BinOp OP_LSHIFT c (Word 1 64) in
+  let n_shifted := BinOp OP_LSHIFT (Cast CAST_UNSIGNED 4 n) (Word 3 4) in
+  let z_shifted := BinOp OP_LSHIFT (Cast CAST_UNSIGNED 4 z) (Word 2 4) in
+  let c_shifted := BinOp OP_LSHIFT (Cast CAST_UNSIGNED 4 c) (Word 1 4) in
 
   (* Merge all positions together into one expression using bitwise OR *)
-  BinOp OP_OR (BinOp OP_OR n_shifted z_shifted) (BinOp OP_OR c_shifted v).
-
+  BinOp OP_OR (BinOp OP_OR n_shifted z_shifted) (BinOp OP_OR c_shifted (Cast CAST_UNSIGNED 4 v)).
 
   (*Shared Functions for Shift, Extend, AddWCarry*)
-  Definition AddWithCarry x y carry_in:=
-    let unsigned_sum := BinOp OP_PLUS (BinOp OP_PLUS x y) (Cast CAST_UNSIGNED 64 carry_in) in
-    let signed_sum := BinOp OP_PLUS (BinOp OP_PLUS x y) (Cast CAST_SIGNED 64 carry_in) in
+  Definition AddWithCarry datasize x y carry_in:=
+    let unsigned_sum := BinOp OP_PLUS (BinOp OP_PLUS x y) (Cast CAST_UNSIGNED datasize carry_in) in
+    let signed_sum := BinOp OP_PLUS (BinOp OP_PLUS x y) (Cast CAST_SIGNED datasize carry_in) in
     let result := unsigned_sum in
-    let n := result in
-    let z :=  (UnOp OP_NOT (BinOp OP_EQ (Word 0 64) result)) in
-    let c := BinOp OP_OR (BinOp OP_LT result x) (BinOp OP_AND (BinOp OP_EQ (Word 0xffff_ffff_ffff_ffff 64) result) carry_in) in
+    let n := Cast CAST_HIGH 1 result in
+    let z :=  (UnOp OP_NOT (BinOp OP_EQ (Word 0 datasize) result)) in
+    let c := BinOp OP_OR (BinOp OP_LT result x) (BinOp OP_AND (BinOp OP_EQ (Word (N.ones datasize) datasize) result) carry_in) in
     let v := BinOp OP_OR
             (BinOp OP_SLT
-            (BinOp OP_AND (BinOp OP_XOR x result)(BinOp OP_XOR y result))(Word 0 64))
-            (BinOp OP_AND (BinOp OP_EQ (Word 0xffff_ffff_ffff_ffff 64) result) carry_in) in
+            (BinOp OP_AND (BinOp OP_XOR x result)(BinOp OP_XOR y result))(Word 0 datasize))
+            (BinOp OP_AND (BinOp OP_EQ (Word (N.ones datasize) datasize) result) carry_in) in
 
     let nzcv := Pack_NZCV n z c v in
     (result, nzcv).
@@ -3861,20 +3856,21 @@ Section Decoder.
 
   (*Returns an exp*)
   Definition arm_data_r_shiftc (sf s shift Rm:N) imm6 (Rn Rd:N) (assign assign_flags: bool) (op:exp -> exp -> exp) :=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  let datasize := if sf =? 1 then 64 else 32 in
   let shift_type := DecodeShift shift in
   match (sf, (N.testbit imm6 5)) with
   |(0, true) => Nop
   | _ => let operand2 := ShiftReg Rm shift_type (Word imm6 datasize) datasize in
          let operand1 := R[ Rn , datasize] in
   let result := op operand1 operand2 in
-  arm_data_il assign assign_flags Rn result (Unknown datasize)
+  let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+  arm_data_il assign assign_flags Rn result64 (Unknown datasize)
   end.
 
   (*op : the actual AddWithCarry
   instr : for ANDS and BICS*)
   Definition arm_data_r_addwithcarry (cond sf s shift Rm:N) imm6 (Rn:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  let datasize := if sf =? 1 then 64 else 32 in
   let shift_type := DecodeShift shift in
   match (sf, (N.testbit imm6 5)) with
   |(0, true) => Nop
@@ -3883,142 +3879,185 @@ Section Decoder.
           let operand1 := R[ Rn , datasize] in
   let (result, nzcv) := op operand1 operand2 (Unknown datasize) in
   (*assign=assign to register, assign_flag=set flag values*)
-  arm_data_il assign assign_flag Rn result nzcv
+  let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+  arm_data_il assign assign_flag Rn result64 nzcv
   end.
 
   (*only for arith functions, this is the "addwcarry"*)
   Definition arm_data_r_extended (cond sf s Rm:N) option_ imm3 Rn Rd (assign assign_flag:bool) (op: exp -> exp -> exp->exp*exp) :=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  let datasize := if sf =? 1 then 64 else 32 in
   let extend_type := DecodeRegExtend option_ in
   if 4 <? imm3 then (Exn 4) else (*Undefined*)
-  let (operand1,reg_n) := if Rn=? 31 then ((Var R_SP),32) else ((R[ Rn , datasize]),Rd) in
+  let (operand1,reg_n) := if Rn=? 31 then ((SP_read datasize),32) else ((R[ Rn , datasize]),Rd) in
   let operand2 := ExtendReg2 Rm extend_type imm3 datasize in
   let (result,nzcv) := op operand1 operand2 (Unknown datasize)in
   (*operand1 is the thing to set.*)
-  arm_data_il assign assign_flag reg_n result nzcv.
+  let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+  arm_data_il assign assign_flag reg_n result64 nzcv.
 
-  Definition arm_data_rev_il op sf:=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  Definition arm_data_rev_il op sf Rd:=
+  let datasize := if sf =? 1 then 64 else 32 in
   match op with
-  | ARM_RBIT sf Rn Rd |ARM_REV sf Rn Rd |ARM_CLZ sf Rn Rd |ARM_CLS sf Rn Rd => arm_assign_R Rd (Unknown datasize)
-  | ARM_REV16 sf Rn Rd => arm_assign_R Rd (Unknown 16)
-  | ARM_REV32 sf Rn Rd => arm_assign_R Rd (Unknown 32)
-  | ARM_REV64 sf Rn Rd => arm_assign_R Rd (Unknown 64)
-  | _=> Nop
+  | ARM_RBIT |ARM_REV |ARM_CLZ |ARM_CLS => arm_assign_R Rd (Unknown datasize)
+  | ARM_REV16 => arm_assign_R Rd (Unknown 16)
+  | ARM_REV32 => arm_assign_R Rd (Unknown 32)
+  | ARM_REV64 => arm_assign_R Rd (Unknown 64)
   end.
 
   (*asrv, lsrv, etc.*)
   Definition arm_data_r_shift_il (sf Rm op2 Rn Rd:N) (assign assign_flags: bool) :=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  let datasize := if sf =? 1 then 64 else 32 in
   let shift_type := DecodeShift op2 in
   let operand2 := R[ Rm , datasize] in
   let result := ShiftReg Rn shift_type (BinOp OP_MOD operand2 (Word datasize datasize)) datasize in
-  arm_data_il assign assign_flags Rd result (Unknown datasize)
+  let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+  arm_data_il assign assign_flags Rd result64 (Unknown datasize)
   .
 
   Definition arm_data_r_with_carry (sf Rm Rn Rd:N) (assign assign_flags: bool) (op: exp -> exp -> exp->exp*exp):=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  let datasize := if sf =? 1 then 64 else 32 in
   let operand2 := R[ Rm , datasize] in
   let operand1 := R[ Rn, datasize ] in
   let (result,_) := op operand1 operand2 (Word 0 1) in
-  arm_data_il assign assign_flags Rd result (Unknown datasize)
+  let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+  arm_data_il assign assign_flags Rd result64 (Unknown datasize)
   .
 
   Definition arm_data_r_with_cond (op:arm_data_r_inst) (cond sf Rm Rn nzcv:N):=
-  let datasize := match sf with 1 => 64 |_ => 32 end in
+  let datasize := if sf =? 1 then 64 else 32 in
   let operand2 := R[ Rm , datasize] in
   let operand1 := R[ Rn, datasize ] in
   let (result, flags):= match op with
-    | ARM_CCMN_REG_V =>  (AddWithCarry operand1 operand2 (Word 0 1) )
-    | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry operand1 (UnOp OP_NOT operand2) (Word 1 1))
+    | ARM_CCMN_REG_V =>  (AddWithCarry datasize operand1 operand2 (Word 0 1) )
+    | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry datasize operand1 (UnOp OP_NOT operand2) (Word 1 1))
     end in
   let nzcv_final := Ite (ConditionHolds cond) flags (Word nzcv 4) in
   (*if condition holds, nzcv final is the new flags from AddWithCarry else its just the value we read in*)
-  arm_data_il false true Rn result nzcv_final
+  let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+  arm_data_il false true Rn result64 nzcv_final
   .
 
-  Definition arm_data_op_il op (shiftc: bool -> bool -> (exp -> exp -> exp) -> stmt)
-  (addwcarry: bool -> bool -> (exp -> exp -> exp -> exp * exp) -> stmt) :=
-  match op with
-  | ARM_ADD_SHIFTED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_ADDS_SHIFTED_REG_V => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_SUB_SHIFTED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  | ARM_SUBS_SHIFTED_REG_V => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  | ARM_AND_LOG_REG_V => shiftc true false (fun a b => BinOp OP_AND a b)
-  | ARM_ANDS_LOG_REG_V => shiftc true true (fun a b => BinOp OP_AND a b)
-  | ARM_BIC_LOG_REG_V => shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
-  | ARM_BICS_LOG_REG_V => shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
-  | ARM_ORR_LOG_REG_V => shiftc true false (fun a b => BinOp OP_OR a b)
-  | ARM_ORN_LOG_REG_V => shiftc true false (fun a b => BinOp OP_OR a (UnOp OP_NOT b))
-  | ARM_EOR_LOG_REG_V => shiftc true false (fun a b => BinOp OP_XOR a b) (*TODO: EORS?*)
-  | ARM_EON_LOG_REG_V => shiftc true false (fun a b => BinOp OP_XOR a (UnOp OP_NOT b))
-  (*With carry operations*)
-  | ARM_ADC_V => addwcarry true false (fun a b _ => AddWithCarry a b (Var R_CY))
-  | ARM_ADCS_V => addwcarry true true (fun a b _ => AddWithCarry a b (Var R_CY))
-  | ARM_SBC_V => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY))
-  | ARM_SBCS_V => addwcarry true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Var R_CY))
-  (*Extended operations*)
-  | ARM_ADD_EXTENDED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_ADDS_EXTENDED_REG_V => addwcarry true true (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_SUB_EXTENDED_REG_V => addwcarry true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  | ARM_SUBS_EXTENDED_REG_V => addwcarry true true (fun a b _=> AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  (**| ARM_CMN_EXTENDED_REG -> ADDS ext alias| ARM_CMP_EXTENDED_REG -> SUBS ext*)
-  (*Conditional Comparisons*)
-  | _ => havoc
-  end.
+  Definition arm_datashft_reg2il op (cond sf s shift Rm Rd:N) imm6 (Rn:N):=
+    let datasize := if sf =? 1 then 64 else 32 in
+    let arm_addwithcarry := arm_data_r_addwithcarry cond sf s shift Rm imm6 Rn in
+    match op with
+    | ARM_ADD_SHIFTED_REG => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a b (Word 0 1))
+    | ARM_ADDS_SHIFTED_REG => arm_addwithcarry true true (fun a b _ => AddWithCarry datasize a b (Word 0 1))
+    | ARM_SUB_SHIFTED_REG => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Word 1 1))
+    | ARM_SUBS_SHIFTED_REG => arm_addwithcarry true true (fun a b _=> AddWithCarry datasize a (UnOp OP_NOT b) (Word 1 1))
+    end.
 
-  Definition arm_data_r_il_shft op (cond sf s shift Rm Rd:N) imm6 (Rn:N) :=
+  Definition arm_logshft_reg2il op (cond sf s shift Rm Rd:N) imm6 (Rn:N):=
+    let arm_shiftc := arm_data_r_shiftc sf s shift Rm imm6 Rn Rd in
+    match op with
+    | ARM_AND_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_AND a b)
+    | ARM_ANDS_LOG_REG |ARM_TST_LOG_REG => arm_shiftc true true (fun a b => BinOp OP_AND a b)
+    | ARM_BIC_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
+    | ARM_BICS_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_AND a (UnOp OP_NOT b))
+    | ARM_ORR_LOG_REG |ARM_MOV_LOG_REG=> arm_shiftc true false (fun a b => BinOp OP_OR a b)
+    | ARM_ORN_LOG_REG |ARM_MVN_LOG_REG  => arm_shiftc true false (fun a b => BinOp OP_OR a (UnOp OP_NOT b))
+    | ARM_EOR_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_XOR a b) (*TODO: EORS?*)
+    | ARM_EON_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_XOR a (UnOp OP_NOT b))
+  
+    end.
+
+  Definition arm_withcarry_2il op (sf Rm Rn Rd:N) :=
+    (*assign function here -> completed in the op_il function*)
+    let datasize := if sf =? 1 then 64 else 32 in
+    let arm_addwithcarry := arm_data_r_with_carry sf Rm Rn Rd in
+    match op with 
+    | ARM_ADC => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a b (Var R_CY))
+    | ARM_ADCS => arm_addwithcarry true true (fun a b _ => AddWithCarry datasize a b (Var R_CY))
+    | ARM_SBC => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Var R_CY))
+    | ARM_SBCS => arm_addwithcarry true true (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Var R_CY))
+    end.   
+
+(**  Definition arm_data_r_il_shft op (cond sf s shift Rm Rd:N) imm6 (Rn:N) :=
     let arm_addwithcarry := arm_data_r_addwithcarry cond sf s shift Rm imm6 Rn in
     let arm_shiftc := arm_data_r_shiftc sf s shift Rm imm6 Rn Rd in
-    arm_data_op_il op arm_shiftc arm_addwithcarry.
+    arm_data_op_il op arm_shiftc arm_addwithcarry.*)
 
-  Definition arm_data_r_il_ext op (cond sf s Rm:N) option_ imm3 Rn Rd :=
+  Definition arm_extend_reg2il op (cond sf s Rm:N) option_ imm3 Rn Rd :=
+    let datasize := if sf =? 1 then 64 else 32 in
     let arm_addwithcarry := arm_data_r_extended cond sf s Rm option_ imm3 Rn Rd in
-    let dummy_shiftc (asgn set_flags : bool) (operation : exp -> exp -> exp) : stmt := Nop in
-    arm_data_op_il op dummy_shiftc arm_addwithcarry.
+    match op with
+    | ARM_ADD_EXTENDED_REG => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a b (Word 0 1))
+    | ARM_ADDS_EXTENDED_REG => arm_addwithcarry true true (fun a b _ => AddWithCarry datasize a b (Word 0 1))
+    | ARM_SUB_EXTENDED_REG => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Word 1 1))
+    | ARM_SUBS_EXTENDED_REG => arm_addwithcarry true true (fun a b _=> AddWithCarry datasize a (UnOp OP_NOT b) (Word 1 1))
+    end.
 
-  Definition arm_data_r_il_carry op (sf Rm Rn Rd:N) :=
+
+
+(**  Definition arm_data_r_il_carry op (sf Rm Rn Rd:N) :=
     (*assign function here -> completed in the op_il function*)
     let arm_addwithcarry := arm_data_r_with_carry sf Rm Rn Rd in
     let dummy_shiftc (asgn set_flags : bool) (operation : exp -> exp -> exp) : stmt := Nop in
-    arm_data_op_il op dummy_shiftc arm_addwithcarry.
+    arm_data_op_il op dummy_shiftc arm_addwithcarry.*)
 
   (*SUBP/S: only for 64 bit*)
   Definition arm_subp_to_il (op Xn Xm Xd:N) (flag:bool ):stmt:=
-    let operand1 := if Xn=?31 then (Var R_SP) else R[Xn, 64] in
-    let operand2 := if Xm=?31 then (Var R_SP) else R[Xn, 64] in
+    let operand1 := if Xn=?31 then (SP_read 64) else R[Xn, 64] in
+    let operand2 := if Xm=?31 then (SP_read 64) else R[Xn, 64] in
     let op1_55 := Cast CAST_LOW 56 operand1 in
     let op2_55 := Cast CAST_LOW 56 operand2 in
     let op1_ext := Cast CAST_SIGNED 64 op1_55 in
     let op2_ext := Cast CAST_SIGNED 64 op2_55 in
-    let (result,flags) := AddWithCarry op1_ext op2_ext (Word 1 1) in
+    let (result,flags) := AddWithCarry 64 op1_ext op2_ext (Word 1 1) in
     arm_data_il true flag Xd result flags.
 
     (*Immediate*)
-    Definition arm_data_i_addwithcarry (sf s sh imm12 Rn Rd:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
-    let datasize := match sf with 1 => 64 |_ => 32 end in
+    Definition arm_data_i_addwithcarry (datasize sf s sh imm12 Rn Rd:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
     let imm_ext := match sh with
-    |0 =>  Cast CAST_UNSIGNED datasize (Word imm12 datasize)
-    |_ =>  Cast CAST_UNSIGNED datasize (Cast CAST_UNSIGNED 12 (Word imm12 datasize))
+    | 0 => Cast CAST_UNSIGNED datasize (Word imm12 datasize)
+    | _ => BinOp OP_LSHIFT (Cast CAST_UNSIGNED datasize (Word imm12 datasize)) (Word 12 datasize)
     end in
-    let operand1 := if Rn=?31 then (Var R_SP) else R[Rn, 64] in
+    let operand1 := if Rn=?31 then (SP_read datasize) else R[Rn, datasize] in
     let (result, nzcv) := op operand1 imm_ext (Unknown datasize) in
     (*assign=assign to register, assign_flag=set flag values*)
-    arm_data_il assign assign_flag Rn result nzcv
+    let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+    arm_data_il assign assign_flag Rd result64 nzcv
     .
 
   Definition arm_data_i_with_cond op (sf Rn imm nzcv cond:N) :=
-    let datasize := match sf with 1 => 64 |_ => 32 end in
+    let datasize := if sf =? 1 then 64 else 32 in
     let imm_ext := Cast CAST_UNSIGNED datasize (Word imm datasize) in
     let operand1 := R[ Rn, datasize ] in
     let (result, flags):= match op with
-      | ARM_CCMN_IMM _ _ _ _ _=>  (AddWithCarry operand1 imm_ext (Word 0 1) )
-      | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry operand1 (UnOp OP_NOT imm_ext) (Word 1 1))
+      | ARM_CCMN_IMM _ _ _ _ _=>  (AddWithCarry datasize operand1 imm_ext (Word 0 1) )
+      | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry datasize operand1 (UnOp OP_NOT imm_ext) (Word 1 1))
       end in
     let nzcv_final := Ite (ConditionHolds cond) flags (Word nzcv 4) in
     (*if condition holds, nzcv final is the new flags from AddWithCarry else its just the value we read in*)
-    arm_data_il false true Rn result nzcv_final.
+    let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
+    arm_data_il false true Rn result64 nzcv_final.
+  
+  Definition arm_data_imm2il op sf s sh imm12 Rn Rd:=
+  let datasize := if sf =? 1 then 64 else 32 in
+  match op with
+  | ARM_ADD_IMM => arm_data_i_addwithcarry datasize sf s sh imm12 Rn Rd true false (fun a b _ => AddWithCarry datasize a b (Word 0 1))
+  | ARM_ADDS_IMM => arm_data_i_addwithcarry datasize sf s sh imm12 Rn Rd true true (fun a b _ => AddWithCarry datasize a b (Word 0 1))
+  | ARM_SUB_IMM => arm_data_i_addwithcarry datasize sf s sh imm12 Rn Rd true false (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_SUBS_IMM => arm_data_i_addwithcarry datasize sf s sh imm12 Rn Rd true true (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Word 1 1))
+  end.
 
+  Definition arm_log_imm2il op Rn Rd immr imms sf n_:=
+  match op with
+  | ARM_AND_IMM => arm_and_imm2il Rn Rd immr imms sf n_
+  | ARM_ANDS_IMM => arm_ands_imm2il Rn Rd immr imms sf n_
+  | ARM_EOR_IMM => arm_eor_imm2il Rn Rd immr imms sf n_
+  | ARM_ORR_IMM => arm_orr_imm2il Rn Rd immr imms sf n_
+  | ARM_BFM_IMM  => arm_bfm_imm2il Rn Rd immr imms sf n_
+  | ARM_SBFM_IMM  => arm_sbfm_imm2il Rn Rd immr imms sf n_
+  | ARM_UBFM_IMM => arm_ubfm_imm2il Rn Rd immr imms sf n_
+  end.
+
+  Definition arm_mov_imm2il op Rd imm16 size shift :=
+  match op with 
+  | ARM_MOVZ_IMM  => arm_movz_imm2il Rd imm16 size shift
+  | ARM_MOVN_IMM  => arm_movn_imm2il Rd imm16 size shift
+  | ARM_MOVK_IMM  => arm_movk_imm2il Rd imm16 size shift
+  end.
 
   Definition arm_decode :=
     let op0 := n.[25,29] in
@@ -4038,74 +4077,33 @@ Section Decoder.
   Definition arm2il (a:addr) inst:=
   let il := match inst with
   (*DP imm*)
-  | ARM_ADD_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true false (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_ADDS_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true true (fun a b _ => AddWithCarry a b (Word 0 1))
-  | ARM_SUB_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true false (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
-  | ARM_SUBS_IMM sf s sh imm12 Rn Rd => arm_data_i_addwithcarry sf s sh imm12 Rn Rd true true (fun a b _ => AddWithCarry a (UnOp OP_NOT b) (Word 1 1))
+  | ARM_DATA_IMM op sf s sh imm12 Rn Rd => arm_data_imm2il op sf s sh imm12 Rn Rd
   (*logical imm*)
-  | ARM_AND_IMM Rn Rd immr imms sf n_ => arm_and_imm2il Rn Rd immr imms sf n_
-  | ARM_ANDS_IMM Rn Rd immr imms sf n_ => arm_ands_imm2il Rn Rd immr imms sf n_
-  | ARM_EOR_IMM Rn Rd immr imms sf n_ => arm_eor_imm2il Rn Rd immr imms sf n_
-  | ARM_ORR_IMM Rn Rd immr imms sf n_ => arm_orr_imm2il Rn Rd immr imms sf n_
+  | ARM_LOGICAL_IMM op Rn Rd immr imms sf n_ => arm_log_imm2il op Rn Rd immr imms sf n_
   (*move wide*)
-  | ARM_MOVZ_IMM Rd imm16 size shift => arm_movz_imm2il Rd imm16 size shift
-  | ARM_MOVN_IMM Rd imm16 size shift => arm_movn_imm2il Rd imm16 size shift
-  | ARM_MOVK_IMM Rd imm16 size shift => arm_movk_imm2il Rd imm16 size shift
+  | ARM_MOVE_IMM op Rd imm16 size shift => arm_mov_imm2il op Rd imm16 size shift
   (*PC relative addressing*)
 (*| ARM_ADRP_IMM
   | ARM_ADR_IMM *)
   (*compare immediate*)
   | ARM_CCMN_IMM sf Rn imm nzcv cond => arm_data_i_with_cond (ARM_CCMN_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond
   | ARM_CCMP_IMM sf Rn imm nzcv cond => arm_data_i_with_cond (ARM_CCMP_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond
-  (*bitfield move*)
-  | ARM_BFM_IMM Rn Rd immr imms sf n_ => arm_bfm_imm2il Rn Rd immr imms sf n_
-  | ARM_SBFM_IMM Rn Rd immr imms sf n_ => arm_sbfm_imm2il Rn Rd immr imms sf n_
-  | ARM_UBFM_IMM Rn Rd immr imms sf n_ => arm_ubfm_imm2il Rn Rd immr imms sf n_
   (*DP reg*)
   (*arith extended*)
-  | ARM_ADD_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_ADD_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
-  | ARM_ADDS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_ADDS_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
-  | ARM_SUB_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_SUB_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
-  | ARM_SUBS_EXTENDED_REG sf s opt Rm option_ imm3 Rn Rd => arm_data_r_il_ext ARM_SUBS_EXTENDED_REG_V 0 sf s Rm option_ imm3 Rn Rd
+  | ARM_EXTENDED op sf s opt Rm option_ imm3 Rn Rd => arm_extend_reg2il op 0 sf s Rm option_ imm3 Rn Rd
   (*arith shifted*)
-  | ARM_ADD_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ADD_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn
-  | ARM_ADDS_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ADDS_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn
-  | ARM_SUB_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_SUB_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn
-  | ARM_SUBS_SHIFTED_REG sf s shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_SUBS_SHIFTED_REG_V 0 sf s shift Rm Rd imm6 Rn
+  | ARM_DATA_SHIFTED op sf s shift Rm imm6 Rn Rd => arm_datashft_reg2il op 0 sf s shift Rm Rd imm6 Rn
   (*logical shifted*)
-  | ARM_AND_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_AND_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_ANDS_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ANDS_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_BIC_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_BIC_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_BICS_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_BICS_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_ORR_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORR_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_ORN_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORN_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_EOR_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_EOR_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_EON_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_EON_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_MVN_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORN_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_MOV_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ORR_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
-  | ARM_TST_LOG_REG sf shift Rm imm6 Rn Rd => arm_data_r_il_shft ARM_ANDS_LOG_REG_V 0 sf 0 shift Rm Rd imm6 Rn
+  | ARM_LOG_SHIFTED op sf shift Rm imm6 Rn Rd => arm_logshft_reg2il op 0 sf 0 shift Rm Rd imm6 Rn
   (*carry operations*)
-  | ARM_ADC sf s Rm Rn Rd=> arm_data_r_il_carry ARM_ADC_V sf Rm Rn Rd
-  | ARM_ADCS sf s Rm Rn Rd => arm_data_r_il_carry ARM_ADCS_V sf Rm Rn Rd
-  | ARM_SBC sf s Rm Rn Rd => arm_data_r_il_carry ARM_SBC_V sf Rm Rn Rd
-  | ARM_SBCS sf s Rm Rn Rd => arm_data_r_il_carry ARM_SBCS_V sf Rm Rn Rd
+  | ARM_CARRY op sf s Rm Rn Rd=> arm_withcarry_2il op sf Rm Rn Rd
   (*shift register*)
-  | ARM_ASRV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
-  | ARM_LSLV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
-  | ARM_LSRV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
-  | ARM_RORV_REG sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
-
+  | ARM_SHIFT _ sf Rm op2 Rn Rd => arm_data_r_shift_il sf Rm op2 Rn Rd true false
   (*conditional comparison*)
   | ARM_CCMN_REG sf Rm cond Rn nzcv=> arm_data_r_with_cond ARM_CCMN_REG_V cond sf Rm Rn nzcv
   | ARM_CCMP_REG sf Rm cond Rn nzcv=> arm_data_r_with_cond ARM_CCMP_REG_V cond sf Rm Rn nzcv
   (*rev*)
-  | ARM_RBIT sf Rn Rd => arm_data_rev_il (ARM_RBIT sf Rn Rd) sf
-  | ARM_CLZ sf Rn Rd => arm_data_rev_il (ARM_RBIT sf Rn Rd) sf
-  | ARM_CLS sf Rn Rd => arm_data_rev_il (ARM_RBIT sf Rn Rd) sf
-  | ARM_REV   sf Rn Rd => arm_data_rev_il (ARM_REV sf Rn Rd) sf
-  | ARM_REV16 sf Rn Rd => arm_data_rev_il (ARM_REV16 sf Rn Rd) sf
-  | ARM_REV32 sf Rn Rd => arm_data_rev_il (ARM_REV32 sf Rn Rd) sf
-  | ARM_REV64 sf Rn Rd => arm_data_rev_il (ARM_REV64 sf Rn Rd) sf
+  | ARM_BITOPS op sf Rn Rd => arm_data_rev_il op sf Rd
   (*branch*)
   | ARM_B_COND cond imm19 => arm_b_cond2il cond imm19
   (*unconditional branch(register)*)
@@ -4123,54 +4121,54 @@ Section Decoder.
   | ARM_TBNZ Rt imm14 b5 b40 => arm_tbnz2il Rt imm14 b5 b40
 (*Loads and Stores*)
   (*exclusive/others*)
-  | ARM_STXRB Xn Xs Xt => arm_stxrb2il Xn Xs Xt
-  | ARM_STLXRB Xn Xs Xt => arm_stlxrb2il Xn Xs Xt
-  | ARM_LDXRB Xn Xt => arm_ldxrb2il Xn Xt 
-  | ARM_LDXRH Xn Xt => arm_ldxrh2il Xn Xt 
-  | ARM_LDAXRH Xn Xt => arm_ldaxrh2il Xn Xt
-  | ARM_LDAXRB Xn Xt => arm_ldaxrb2il Xn Xt
-  | ARM_STLLRB Xn Xt => arm_stllrb2il Xn Xt
-  | ARM_STLLRH Xn Xt => arm_stllrh2il Xn Xt
-  | ARM_STLRH Xn Xt => arm_stlrh2il Xn Xt
-  | ARM_STLRB Xn Xt => arm_stlrb2il Xn Xt
-  | ARM_STXRH Xn Xs Xt => arm_stxrh2il Xn Xs Xt
-  | ARM_STLXRH Xn Xs Xt => arm_stlxrh2il Xn Xs Xt
-  | ARM_LDLARB Xn Xt => arm_ldlarb2il Xn Xt
-  | ARM_LDARB Xn Xt => arm_ldarb2il Xn Xt
-  | ARM_LDARH Xn Xt => arm_ldarh2il Xn Xt
-  | ARM_LDLARH Xn Xt => arm_ldlarh2il Xn Xt
-  | ARM_STXR size Xn Xs Xt => arm_stxr2il size Xn Xs Xt 
-  | ARM_STLXR size Xn Xs Xt => arm_stxr2il_size size Xn Xs Xt
-  | ARM_STXP size Xn Xs Xt Xt2 => arm_stxp2il size Xn Xs Xt Xt2
-  | ARM_STLXP size Xn Xs Xt Xt2 => arm_stlxp2il size Xn Xs Xt Xt2 
-  | ARM_LDXR size Xn Xt => arm_ldxr2il size Xn Xt
-  | ARM_LDAXR size Xn Xt => arm_ldaxr2il size Xn Xt
-  | ARM_LDXP size Xn Xt Xt2 => arm_ldxp2il size Xn Xt Xt2
-  | ARM_LDAXP size Xn Xt Xt2 => havoc
-  | ARM_STLLR size Xn Xt => arm_stllr2il size Xn Xt
-  | ARM_STLR size Xn Xt => arm_stlr2il size Xn Xt
-  | ARM_LDLAR size Xn Xt => arm_ldlar2il size Xn Xt
-  | ARM_LDAR size Xn Xt => arm_ldar2il size Xn Xt
+  | ARM_EXCLUSIVE ARM_STXRB size Xn Xs Xt Xt2 => arm_stxrb2il Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_STLXRB size Xn Xs Xt Xt2 => arm_stlxrb2il Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_LDXRB size Xn Xs Xt Xt2 => arm_ldxrb2il Xn Xt 
+  | ARM_EXCLUSIVE ARM_LDXRH size Xn Xs Xt Xt2 => arm_ldxrh2il Xn Xt 
+  | ARM_EXCLUSIVE ARM_LDAXRH size Xn Xs Xt Xt2 => arm_ldaxrh2il Xn Xt
+  | ARM_EXCLUSIVE ARM_LDAXRB size Xn Xs Xt Xt2 => arm_ldaxrb2il Xn Xt
+  | ARM_EXCLUSIVE ARM_STLLRB size Xn Xs Xt Xt2 => arm_stllrb2il Xn Xt
+  | ARM_EXCLUSIVE ARM_STLLRH size Xn Xs Xt Xt2 => arm_stllrh2il Xn Xt
+  | ARM_EXCLUSIVE ARM_STLRH size Xn Xs Xt Xt2 => arm_stlrh2il Xn Xt
+  | ARM_EXCLUSIVE ARM_STLRB size Xn Xs Xt Xt2 => arm_stlrb2il Xn Xt
+  | ARM_EXCLUSIVE ARM_STXRH size Xn Xs Xt Xt2 => arm_stxrh2il Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_STLXRH size Xn Xs Xt Xt2 => arm_stlxrh2il Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_LDLARB size Xn Xs Xt Xt2 => arm_ldlarb2il Xn Xt
+  | ARM_EXCLUSIVE ARM_LDARB size Xn Xs Xt Xt2 => arm_ldarb2il Xn Xt
+  | ARM_EXCLUSIVE ARM_LDARH size Xn Xs Xt Xt2 => arm_ldarh2il Xn Xt
+  | ARM_EXCLUSIVE ARM_LDLARH size Xn Xs Xt Xt2 => arm_ldlarh2il Xn Xt
+  | ARM_EXCLUSIVE ARM_STXR size Xn Xs Xt Xt2 => arm_stxr2il size Xn Xs Xt 
+  | ARM_EXCLUSIVE ARM_STLXR size Xn Xs Xt Xt2 => arm_stxr2il_size size Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_STXP size Xn Xs Xt Xt2 => arm_stxp2il size Xn Xs Xt Xt2
+  | ARM_EXCLUSIVE ARM_STLXP size Xn Xs Xt Xt2 => arm_stlxp2il size Xn Xs Xt Xt2 
+  | ARM_EXCLUSIVE ARM_LDXR size Xn Xs Xt Xt2 => arm_ldxr2il size Xn Xt
+  | ARM_EXCLUSIVE ARM_LDAXR size Xn Xs Xt Xt2 => arm_ldaxr2il size Xn Xt
+  | ARM_EXCLUSIVE ARM_LDXP size Xn Xs Xt Xt2 => arm_ldxp2il size Xn Xt Xt2
+  | ARM_EXCLUSIVE ARM_LDAXP size Xn Xs Xt Xt2 => havoc
+  | ARM_EXCLUSIVE ARM_STLLR size Xn Xs Xt Xt2 => arm_stllr2il size Xn Xt
+  | ARM_EXCLUSIVE ARM_STLR size Xn Xs Xt Xt2 => arm_stlr2il size Xn Xt
+  | ARM_EXCLUSIVE ARM_LDLAR size Xn Xs Xt Xt2 => arm_ldlar2il size Xn Xt
+  | ARM_EXCLUSIVE ARM_LDAR size Xn Xs Xt Xt2 => arm_ldar2il size Xn Xt
   (*bunch of variants for these, refer to page C4-230*)
-  | ARM_CASP Xn Xs Xt size => arm_casp2il Xn Xs Xt size
-  | ARM_CASB Xn Xs Xt => arm_casb2il Xn Xs Xt
-  | ARM_CASH Xn Xs Xt => arm_cash2il Xn Xs Xt
-  | ARM_CAS Xn Xs Xt size => arm_cas2il Xn Xs Xt size
+  | ARM_EXCLUSIVE ARM_CASP size Xn Xs Xt Xt2 => arm_casp2il Xn Xs Xt size
+  | ARM_EXCLUSIVE ARM_CASB size Xn Xs Xt Xt2 => arm_casb2il Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_CASH size Xn Xs Xt Xt2 => arm_cash2il Xn Xs Xt
+  | ARM_EXCLUSIVE ARM_CAS size Xn Xs Xt Xt2 => arm_cas2il Xn Xs Xt size
   (*LDAPR/STLR unscaled immediate*)
-  | ARM_STLURB Xn Xt imm9 => arm_stlurb2il Xn Xt imm9
-  | ARM_LDAPURB Xn Xt imm9 => arm_ldapurb2il Xn Xt (Word imm9 64)
-  | ARM_LDAPURSB Xn Xt imm9 size => arm_ldapursb2il Xn Xt (Word imm9 64) size
-  | ARM_STLURH Xn Xt imm9 => arm_stlurh2il Xn Xt (Word imm9 64) 
-  | ARM_LDAPURH Xn Xt imm9 => arm_ldapurh2il Xn Xt (Word imm9 64)
-  | ARM_LDAPURSH Xn Xt imm9 size => arm_ldapursh2il Xn Xt (Word imm9 64) size
-  | ARM_LDAPUR Xn Xt imm9 size => arm_ldapur2il Xn Xt (Word imm9 64) size
-  | ARM_LDAPURSW Xn Xt imm9 size => arm_ldapursw2il Xn Xt (Word imm9 64) size
-  | ARM_STLUR Xn Xt imm9 size => arm_stlur2il Xn Xt (Word imm9 64) size
-  | ARM_PRFM Xn Xt imm9 => arm_prfm_lit2il Xt imm9
-  | ARM_PRFM_IMM Xn Xt imm9 => havoc
-  | ARM_LDAPRB Xn Xt => arm_ldaprb2il Xn Xt
-  | ARM_LDAPRH Xn Xt => arm_ldaprh2il Xn Xt
-  | ARM_LDAPR size Xn Xt => arm_ldapr2il size Xn Xt
+  | ARM_LOAD_GEN ARM_STLURB Xn Xt imm9 size => arm_stlurb2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDAPURB Xn Xt imm9 size => arm_ldapurb2il Xn Xt (Word imm9 64)
+  | ARM_LOAD_GEN ARM_LDAPURSB Xn Xt imm9 size => arm_ldapursb2il Xn Xt (Word imm9 64) size
+  | ARM_LOAD_GEN ARM_STLURH Xn Xt imm9 size => arm_stlurh2il Xn Xt (Word imm9 64) 
+  | ARM_LOAD_GEN ARM_LDAPURH Xn Xt imm9 size => arm_ldapurh2il Xn Xt (Word imm9 64)
+  | ARM_LOAD_GEN ARM_LDAPURSH Xn Xt imm9 size => arm_ldapursh2il Xn Xt (Word imm9 64) size
+  | ARM_LOAD_GEN ARM_LDAPUR Xn Xt imm9 size => arm_ldapur2il Xn Xt (Word imm9 64) size
+  | ARM_LOAD_GEN ARM_LDAPURSW Xn Xt imm9 size => arm_ldapursw2il Xn Xt (Word imm9 64) size
+  | ARM_LOAD_GEN ARM_STLUR Xn Xt imm9 size => arm_stlur2il Xn Xt (Word imm9 64) size
+  | ARM_LOAD_GEN ARM_PRFM Xn Xt imm9 size => arm_prfm_lit2il Xt imm9
+  | ARM_LOAD_GEN ARM_PRFM_IMM Xn Xt imm9 size => havoc
+  | ARM_ATOMIC ARM_LDAPRB size Xn Xs Xt => arm_ldaprb2il Xn Xt
+  | ARM_ATOMIC ARM_LDAPRH size Xn Xs Xt => arm_ldaprh2il Xn Xt
+  | ARM_ATOMIC ARM_LDAPR size Xn Xs Xt => arm_ldapr2il size Xn Xt
   (*load/store memory tags*)
   | ARM_STG Xn Xt imm9 writeback printindex => arm_stg2il Xn Xt imm9 writeback printindex
   | ARM_STZG Xn Xt imm9 writeback printindex => arm_stzg2il Xn Xt imm9 writeback printindex
@@ -4181,97 +4179,96 @@ Section Decoder.
   | ARM_STZ2G Xn Xt imm9 writeback printindex => arm_stz2g2il Xn Xt imm9 writeback printindex
   | ARM_LDGM Xn Xt => arm_ldgm2il Xn Xt
   (*load register (literal)*)
-  | ARM_LDR_LIT Xt imm19 size => arm_ldr_lit2il Xt imm19 size
-  | ARM_LDRSW_LIT Xt imm19 => arm_ldrsw_lit2il Xt imm19
-  | ARM_PRFM_LIT Xt imm19 => arm_prfm_lit2il Xt imm19
+  | ARM_LD_REG_LIT ARM_LDR_LIT Xt imm19 size => arm_ldr_lit2il Xt imm19 size
+  | ARM_LD_REG_LIT ARM_LDRSW_LIT Xt imm19 size => arm_ldrsw_lit2il Xt imm19
+  | ARM_LD_REG_LIT ARM_PRFM_LIT Xt imm19 size => arm_prfm_lit2il Xt imm19
   (*load/store no-allocate pair (offset)*)
   | ARM_STNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale 
   | ARM_LDNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale 
   (*load/store register pair (post-indexed, pre-indexed, offset)*)
-  | ARM_STP Xn Xt Xt2 imm7 scale wback postindex => arm_stp2il Xn Xt Xt2 imm7 scale wback postindex 
-  | ARM_LDP Xn Xt Xt2 imm7 scale wback postindex => arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex 
-  | ARM_LDPSW Xn Xt Xt2 imm7 wback postindex => arm_ldpsw2il Xn Xt Xt2 imm7 wback postindex 
-  | ARM_STGP Xn Xt Xt2 imm7 wback postindex => arm_stgp2il Xn Xt Xt2 imm7 wback postindex 
+  | ARM_LD_STR_REG_PAIR ARM_STP Xn Xt Xt2 imm7 scale wback postindex => arm_stp2il Xn Xt Xt2 imm7 scale wback postindex 
+  | ARM_LD_STR_REG_PAIR ARM_LDP Xn Xt Xt2 imm7 scale wback postindex => arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex 
+  | ARM_LD_STR_REG_PAIR ARM_LDPSW Xn Xt Xt2 imm7 scale wback postindex => arm_ldpsw2il Xn Xt Xt2 imm7 wback postindex 
+  | ARM_LD_STR_REG_PAIR ARM_STGP Xn Xt Xt2 imm7 scale wback postindex => arm_stgp2il Xn Xt Xt2 imm7 wback postindex 
   (*load/store register (unscaled immediate)*)
-  | ARM_STURB Xn Xt imm9 => arm_sturb2il Xn Xt imm9
-  | ARM_LDURB Xn Xt imm9 => arm_ldurb2il Xn Xt imm9
-  | ARM_LDURSB Xn Xt imm9 size => arm_ldursb2il Xn Xt imm9 size
-  | ARM_STURH Xn Xt imm9 => arm_sturh2il Xn Xt imm9
-  | ARM_LDURH Xn Xt imm9 => arm_ldurh2il Xn Xt imm9
-  | ARM_LDURSH Xn Xt imm9 size => arm_ldursh2il Xn Xt imm9 size
-  | ARM_STUR Xn Xt imm9 size => arm_stur2il Xn Xt imm9 size
-  | ARM_LDUR Xn Xt imm9 size => arm_ldur2il Xn Xt imm9 size
-  | ARM_LDURSW Xn Xt imm9 => arm_ldursw2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_STURB Xn Xt imm9 _ => arm_sturb2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDURB Xn Xt imm9 _ => arm_ldurb2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDURSB Xn Xt imm9 size => arm_ldursb2il Xn Xt imm9 size
+  | ARM_LOAD_GEN ARM_STURH Xn Xt imm9 _ => arm_sturh2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDURH Xn Xt imm9 _ => arm_ldurh2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDURSH Xn Xt imm9 size => arm_ldursh2il Xn Xt imm9 size
+  | ARM_LOAD_GEN ARM_STUR Xn Xt imm9 size => arm_stur2il Xn Xt imm9 size
+  | ARM_LOAD_GEN ARM_LDUR Xn Xt imm9 size => arm_ldur2il Xn Xt imm9 size
+  | ARM_LOAD_GEN ARM_LDURSW Xn Xt imm9 _ => arm_ldursw2il Xn Xt imm9
   (*imm pre/post-indexed*)
-  | ARM_STRB_IMM Xn Xt imm912 signed wback postindex => arm_strb_imm2il Xn Xt imm912 signed wback postindex
-  | ARM_LDRB_IMM Xn Xt imm912 signed wback postindex => arm_ldrb_imm2il Xn Xt imm912 signed wback postindex 
-  | ARM_LDRSB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsb_imm2il Xn Xt imm912 size signed wback postindex
-  | ARM_LDR_IMM Xn Xt imm912 size signed wback postindex => arm_ldr_imm2il Xn Xt imm912 size signed wback postindex 
-  | ARM_STRH_IMM Xn Xt imm912 size signed wback postindex => arm_strh_imm2il Xn Xt imm912 size signed wback postindex (*TODO: whats size?*)
-  | ARM_LDRH_IMM Xn Xt imm912 signed wback postindex => arm_ldrh_imm2il Xn Xt imm912 signed wback postindex
-  | ARM_LDRSH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsh_imm2il Xn Xt imm912 size signed wback postindex
-  | ARM_STR_IMM Xn Xt imm912 size signed wback postindex => arm_str_imm2il Xn Xt imm912 size signed wback postindex
-  | ARM_LDRSW_IMM Xn Xt imm912 signed wback postindex => arm_ldrsw_imm2il Xn Xt imm912 signed wback postindex
+  | ARM_INDEXED ARM_STRB_IMM Xn Xt imm912 size signed wback postindex => arm_strb_imm2il Xn Xt imm912 signed wback postindex
+  | ARM_INDEXED ARM_LDRB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrb_imm2il Xn Xt imm912 signed wback postindex 
+  | ARM_INDEXED ARM_LDRSB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsb_imm2il Xn Xt imm912 size signed wback postindex
+  | ARM_INDEXED ARM_LDR_IMM Xn Xt imm912 size signed wback postindex => arm_ldr_imm2il Xn Xt imm912 size signed wback postindex 
+  | ARM_INDEXED ARM_STRH_IMM Xn Xt imm912 size signed wback postindex => arm_strh_imm2il Xn Xt imm912 size signed wback postindex (*TODO: whats size?*)
+  | ARM_INDEXED ARM_LDRH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrh_imm2il Xn Xt imm912 signed wback postindex
+  | ARM_INDEXED ARM_LDRSH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsh_imm2il Xn Xt imm912 size signed wback postindex
+  | ARM_INDEXED ARM_STR_IMM Xn Xt imm912 size signed wback postindex => arm_str_imm2il Xn Xt imm912 size signed wback postindex
+  | ARM_INDEXED ARM_LDRSW_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsw_imm2il Xn Xt imm912 signed wback postindex
   (*register unprivileged*)
-  | ARM_STTRB Rn Rt imm9 => arm_sttrb2il Rn Rt imm9
-  | ARM_LDTRB Rn Rt imm9 => arm_ldtrb2il Rn Rt imm9
-  | ARM_LDTRSB Rn Rt imm9 size => arm_ldtrsb2il Rn Rt imm9 size
-  | ARM_STTRH Rn Rt imm9 => arm_sttrh2il Rn Rt imm9
-  | ARM_LDTRH Rn Rt imm9 => arm_ldtrh2il Rn Rt imm9
-  | ARM_LDTRSH Rn Rt imm9 size => arm_ldtrsh2il Rn Rt imm9 size
-  | ARM_STTR Rn Rt imm9 size => arm_sttr2il Rn Rt imm9 size
-  | ARM_LDTR Rn Rt imm9 size => arm_ldtr2il Rn Rt imm9 size
-  | ARM_LDTRSW Rn Rt imm9 => arm_ldtrsw2il Rn Rt imm9 
+  | ARM_REG_UNPRIVILEGED ARM_STTRB Rn Rt imm9 size => arm_sttrb2il Rn Rt imm9
+  | ARM_REG_UNPRIVILEGED ARM_LDTRB Rn Rt imm9 size => arm_ldtrb2il Rn Rt imm9
+  | ARM_REG_UNPRIVILEGED ARM_LDTRSB Rn Rt imm9 size => arm_ldtrsb2il Rn Rt imm9 size
+  | ARM_REG_UNPRIVILEGED ARM_STTRH Rn Rt imm9 size => arm_sttrh2il Rn Rt imm9
+  | ARM_REG_UNPRIVILEGED ARM_LDTRH Rn Rt imm9 size => arm_ldtrh2il Rn Rt imm9
+  | ARM_REG_UNPRIVILEGED ARM_LDTRSH Rn Rt imm9 size => arm_ldtrsh2il Rn Rt imm9 size
+  | ARM_REG_UNPRIVILEGED ARM_STTR Rn Rt imm9 size => arm_sttr2il Rn Rt imm9 size
+  | ARM_REG_UNPRIVILEGED ARM_LDTR Rn Rt imm9 size => arm_ldtr2il Rn Rt imm9 size
+  | ARM_REG_UNPRIVILEGED ARM_LDTRSW Rn Rt imm9 size => arm_ldtrsw2il Rn Rt imm9 
   (*atomic memory ops*)
-  | ARM_LDADDB Xn Xs Xt => arm_ldaddb2il Xn Xs Xt
-  | ARM_LDCLRB Xn Xs Xt => arm_ldclrb2il Xn Xs Xt
-  | ARM_LDEORB Xn Xs Xt => arm_ldeorb2il Xn Xs Xt
-  | ARM_LDSETB Xn Xs Xt => arm_ldsetb2il Xn Xs Xt
-  | ARM_LDSMAXB Xn Xs Xt => arm_ldsmaxb2il Xn Xs Xt
-  | ARM_LDSMINB Xn Xs Xt => arm_ldsminb2il Xn Xs Xt
-  | ARM_LDUMINB Xn Xs Xt => arm_lduminb2il Xn Xs Xt
-  | ARM_SWPB Xn Xs Xt => arm_swpb2il Xn Xs Xt
-  | ARM_LDADDH Xn Xs Xt => arm_ldaddh2il Xn Xs Xt 
-  | ARM_LDCLRH Xn Xs Xt => arm_ldclrh2il Xn Xs Xt
-  | ARM_LDEORH Xn Xs Xt => arm_ldeorh2il Xn Xs Xt
-  | ARM_LDSETH Xn Xs Xt => arm_ldseth2il Xn Xs Xt
-  | ARM_LDSMAXH Xn Xs Xt => arm_ldsmaxh2il Xn Xs Xt
-  | ARM_LDSMINH Xn Xs Xt => arm_ldsminh2il Xn Xs Xt
-  | ARM_LDUMAXH Xn Xs Xt => arm_ldumaxh2il Xn Xs Xt
-  | ARM_LDUMINH Xn Xs Xt => arm_lduminh2il Xn Xs Xt
-  | ARM_SWPH Xn Xs Xt => arm_swph2il Xn Xs Xt
-  | ARM_LDADD size Xn Xs Xt => arm_ldadd2il size Xn Xs Xt
-  | ARM_LDCLR size Xn Xs Xt => arm_ldclr2il size Xn Xs Xt
-  | ARM_LDEOR size Xn Xs Xt => arm_ldeor2il size Xn Xs Xt
-  | ARM_LDSET size Xn Xs Xt => arm_ldset2il size Xn Xs Xt
-  | ARM_LDSMAX size Xn Xs Xt => arm_ldsmax2il size Xn Xs Xt
-  | ARM_LDSMIN size Xn Xs Xt => arm_ldsmin2il size Xn Xs Xt
-  | ARM_LDUMAX size Xn Xs Xt => arm_ldumax2il size Xn Xs Xt
-  | ARM_LDUMIN size Xn Xs Xt => arm_ldumin2il size Xn Xs Xt
-  | ARM_SWP size Xn Xs Xt => arm_swp2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDADDB size Xn Xs Xt => arm_ldaddb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDCLRB size Xn Xs Xt => arm_ldclrb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDEORB size Xn Xs Xt => arm_ldeorb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSETB size Xn Xs Xt => arm_ldsetb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSMAXB size Xn Xs Xt => arm_ldsmaxb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSMINB size Xn Xs Xt => arm_ldsminb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDUMINB size Xn Xs Xt => arm_lduminb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_SWPB size Xn Xs Xt => arm_swpb2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDADDH size Xn Xs Xt => arm_ldaddh2il Xn Xs Xt 
+  | ARM_ATOMIC ARM_LDCLRH size Xn Xs Xt => arm_ldclrh2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDEORH size Xn Xs Xt => arm_ldeorh2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSETH size Xn Xs Xt => arm_ldseth2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSMAXH size Xn Xs Xt => arm_ldsmaxh2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSMINH size Xn Xs Xt => arm_ldsminh2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDUMAXH size Xn Xs Xt => arm_ldumaxh2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDUMINH size Xn Xs Xt => arm_lduminh2il Xn Xs Xt
+  | ARM_ATOMIC ARM_SWPH size Xn Xs Xt => arm_swph2il Xn Xs Xt
+  | ARM_ATOMIC ARM_LDADD size Xn Xs Xt => arm_ldadd2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDCLR size Xn Xs Xt => arm_ldclr2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDEOR size Xn Xs Xt => arm_ldeor2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSET size Xn Xs Xt => arm_ldset2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSMAX size Xn Xs Xt => arm_ldsmax2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDSMIN size Xn Xs Xt => arm_ldsmin2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDUMAX size Xn Xs Xt => arm_ldumax2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_LDUMIN size Xn Xs Xt => arm_ldumin2il size Xn Xs Xt
+  | ARM_ATOMIC ARM_SWP size Xn Xs Xt => arm_swp2il size Xn Xs Xt
   (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
   (*pac*)
   | ARM_LDRAA Xn Xt s imm9 wback => arm_ldraa2il Xn Xt s imm9 wback
   (*load/store register*)
-  | ARM_STRB_REG Xn Xm Xt extend => arm_strb_reg2il Xn Xm Xt extend
-  | ARM_LDRB_REG Xn Xm Xt extend => arm_ldrb_reg2il Xn Xm Xt extend
-  | ARM_LDRSB_REG Xn Xm Xt extend size => arm_ldrsb_reg2il Xn Xm Xt size extend
-  | ARM_STRH_REG Xn Xm Xt extend s => arm_strh_reg2il Xn Xm Xt extend s
-  | ARM_LDRH_REG Xn Xm Xt extend s => arm_ldrh_reg2il Xn Xm Xt extend s
-  | ARM_LDRSH_REG Xn Xm Xt extend size s => arm_ldrsh_reg2il Xn Xm Xt extend size s
-  | ARM_STR_REG Xn Xm Xt extend size s => arm_str_reg2il Xn Xm Xt extend size s
-  | ARM_LDR_REG Xn Xm Xt extend size s => arm_ldr_reg2il Xn Xm Xt extend size s
-  | ARM_LDRSW_REG Xn Xm Xt extend s => arm_ldrsw_reg2il Xn Xm Xt extend s
-  | ARM_PRFM_REG Xn Xm Xt extend s => havoc
-
+  | ARM_LD_STR_REG ARM_STRB_REG Xn Xm Xt extend _ _ => arm_strb_reg2il Xn Xm Xt extend
+  | ARM_LD_STR_REG ARM_LDRB_REG Xn Xm Xt extend _ _ => arm_ldrb_reg2il Xn Xm Xt extend
+  | ARM_LD_STR_REG ARM_LDRSB_REG Xn Xm Xt extend size _=> arm_ldrsb_reg2il Xn Xm Xt size extend
+  | ARM_LD_STR_REG ARM_STRH_REG Xn Xm Xt extend _ s => arm_strh_reg2il Xn Xm Xt extend s
+  | ARM_LD_STR_REG ARM_LDRH_REG Xn Xm Xt extend _ s => arm_ldrh_reg2il Xn Xm Xt extend s
+  | ARM_LD_STR_REG ARM_LDRSH_REG Xn Xm Xt extend size s => arm_ldrsh_reg2il Xn Xm Xt extend size s
+  | ARM_LD_STR_REG ARM_STR_REG Xn Xm Xt extend size s => arm_str_reg2il Xn Xm Xt extend size s
+  | ARM_LD_STR_REG ARM_LDR_REG Xn Xm Xt extend size s => arm_ldr_reg2il Xn Xm Xt extend size s
+  | ARM_LD_STR_REG ARM_LDRSW_REG Xn Xm Xt extend _ s => arm_ldrsw_reg2il Xn Xm Xt extend s
+ (* | ARM_LD_STR_REG ARM_PRFM_REG Xn Xm Xt extend _ s => havoc*)
   | UDF => Exn 4
-
-  |_ => Exn 4 end in
+  |_ => havoc end in
   Seq (Move R_PC (Word (a mod 2^64) 64)) il.
 End Decoder.
 
 (********** well-typedness **********)
 Ltac destruct_match := repeat match goal with |- context [ match ?x with _ => _ end ] => destruct x end.
+Ltac destruct_match_rmr := repeat match goal with |- context [ match ?x with _ => _ end ] => destruct x eqn:e end.
 Ltac destruct_match_in H :=
   repeat match type of H with context[match ?x with _ => _ end] =>
     let e := fresh "e" in
@@ -4290,11 +4287,18 @@ Ltac unfold_rec a :=
 
 Notation temp0 := (V_TEMP 0).
 Local Ltac unfold_stmt := match goal with | |- hastyp_stmt _ _ ?a _ => unfold_rec a end.
-
+Local Ltac unfold_exp := match goal with | |- hastyp_exp _ _ ?a _ => unfold_rec a end.
 Local Lemma armct_sub: armc ⊆ armct.
 Proof.
   unfold pfsub. intros. unfold armct. unfold update. destruct iseq. subst. discriminate. assumption.
 Qed.
+
+Definition sizeof_c (c : typctx) (v : var) : bitwidth :=
+  match c v with
+  | Some s => s
+  | None => 0
+  end.
+
 
 Local Lemma update_some:
   forall x y (c c': typctx),
@@ -4303,6 +4307,41 @@ Local Lemma update_some:
     c ⊆ (update c' x (Some y)).
 Proof.
   intros. rewrite <- store_upd_eq. assumption. apply H0. assumption.
+Qed.
+
+Local Lemma update_some_c:
+  forall x (c c': typctx),
+    c x = Some (sizeof_c c x) ->
+    c ⊆ c' ->
+    c ⊆ (update c' x (Some (sizeof_c c x))).
+Proof.
+  intros x c c' Hx Hsub.
+  apply update_some.
+  - exact Hx.
+  - exact Hsub.
+Qed.
+
+Local Lemma update_fresh:
+  forall (c : typctx) v w,
+    c v = None ->
+    c ⊆ update c v (Some w).
+Proof.
+  intros c v w H.
+  intros x wx Hx.
+  unfold update.  destruct (x==v).
+  subst x. rewrite H in Hx. discriminate. assumption.
+Qed.
+
+Local Lemma update_fresh2:
+  forall x y (c c': typctx),
+    c x = None ->
+    c ⊆ c' ->
+    c ⊆ (update c' x (Some y)).
+Proof.
+  intros x y c c' Hnone Hsub z wz Hz.
+  destruct (iseq x z).
+  subst. rewrite Hnone in Hz. discriminate.
+  apply Hsub in Hz. rewrite update_frame. assumption. easy.
 Qed.
 
 Local Lemma hastyp_arm_varid:
@@ -4333,6 +4372,43 @@ Proof.
   intros. unfold arm_varid. now destruct_match.
 Qed.
 
+Import Lia.
+
+Local Ltac etyp' :=
+  repeat match goal with 
+    | |- hastyp_exp _ (R[_,?s]) ?s => unfold arm64_R; cbn
+    | |- hastyp_exp _ (SP_read ?s) ?s => unfold SP_read; cbn
+    | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
+    | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
+    | |- hastyp_exp ?c1 (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof_c c1 v)
+    | |- hastyp_exp ?c1 (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof_c c1 v)
+
+    (**| |- hastyp_exp _ (BinOp OP_EQ ?x _) 1 => eapply TBinOp
+    | |- hastyp_exp _ (BinOp OP_LT ?x _) 1 => eapply TBinOp
+    | |- hastyp_exp _ (BinOp OP_SLT ?x _) 1 => eapply TBinOp
+    | |- hastyp_exp _ (BinOp OP_LE ?x _) 1 => eapply TBinOp*)
+(*^^corner cases^^*)
+    | |- hastyp_exp _ (Concat (Word _ ?cw1) (Word _ ?cw2)) _ => apply TConcat with (w1 := cw1) (w2 := cw2)
+    | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
+    | |- hastyp_exp _ (BinOp _ _ _) ?sw => apply TBinOp with (w := sw)
+    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]
+    | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
+    | |- hastyp_exp ?c1 (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof_c c1 v)
+    | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
+    | |- hastyp_exp _ (Extract _ _ _) ?sw => apply TExtract with (w := sw)
+    | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
+    | |- hastyp_exp _ (Var _) _ => apply TVar
+    | |- hastyp_exp _ (Ite _ _ _) ?sw => apply TIte with (w := 1)
+    | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
+    | |- hastyp_exp _ (Unknown _) _ => apply TUnknown
+    | |- hastyp_exp _ (Word _ _) _ => apply TWord
+    | |- _ <= _ => easy
+    | |- _ < _ => reflexivity
+    end.
+
+
+Local Ltac new_etyp := repeat etyp'.
+
 Local Ltac etyp :=
   repeat match goal with
          | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
@@ -4341,7 +4417,27 @@ Local Ltac etyp :=
          | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
          | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
          | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
+        
          | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
+
+(* --- NEW CONCAT RULE --- *)
+         (* eapply leaves w1 and w2 as existential variables, solved by the sub-expressions *)
+
+         | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
+
+         (* --- NEW CAST RULES --- *)
+         (* Extracts the inner expression's width automatically if it's a Word or Var *)
+         | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
+         | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
+         | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
+         (* Fallback for general Cast expressions *)
+         | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
+
+         (* --- NEW CAST SIDE-CONDITION SOLVERS --- *)
+         | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
+         
+         (*| |- _ <= _ => easy lets see if it works*)
+
          | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
          | |- hastyp_exp _ (Var _) _ => apply TVar
          | |- hastyp_exp _ (Ite _ _ _) ?a => apply TIte with (w := 1)
@@ -4364,16 +4460,39 @@ Local Ltac etypn size :=
   | |- _ <= _ => easy
   | |- _ < _ => reflexivity
   end.
-Local Ltac etyps size := repeat (etyp + etypn size).
+Local Ltac etyps size := repeat (etypn size + etyp).
 
+Print Move.
 Local Ltac stypc c :=
   cbn; repeat match goal with
          | |- hastyp_stmt _ _ (Seq _ _) _ => apply TSeq with (c1 := c) (c2 := c)
-         | |- hastyp_stmt _ _ (If _ _ _) _ => apply TIf with (c2 := c)
+         | |- hastyp_stmt _ _ (If _ _   _) _ => apply TIf with (c2 := c)
          | |- hastyp_stmt _ _ (Exn _) _ => apply TExn
          | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep with (w:=64) (c':=c)
          | |- hastyp_stmt _ _ Nop _ => apply TNop
          | |- hastyp_stmt _ _ (Jmp _) _ => apply TJmp with (w := 64)
+
+         | |- hastyp_stmt _ _ (Move (V_TEMP _) _) ?w' => apply TMove with (w := w')
+
+         | |- hastyp_stmt _ _ (Move temp0 _) _ => apply TMove with (w := 64)
+         | |- hastyp_stmt _ _ (Move ?v _) _ => apply TMove with (w := sizeof v); [> right | | apply update_some_c]; try reflexivity
+         | |- pfsub armc armc  => reflexivity
+         | |- pfsub armc armct  => apply armct_sub
+         | |- hastyp_exp _ _ _  => etyp
+  end.
+
+Local Ltac stypc_w c w' c1 c2 :=
+  cbn; repeat match goal with
+         | |- hastyp_stmt _ _ (Seq _ _) _ => apply TSeq with (c1 := c1) (c2 := c2)
+         | |- hastyp_stmt _ _ (If _ _   _) _ => apply TIf with (c2:=c2)
+         | |- hastyp_stmt _ _ (Exn _) _ => apply TExn
+         | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep with (w:=w') (c:=c2)
+         | |- hastyp_stmt _ _ Nop _ => apply TNop
+         | |- hastyp_stmt _ _ (Jmp _) _ => apply TJmp with (w := 64)
+
+         | |- hastyp_stmt _ ?cx (Move (V_TEMP ?v) _) _ =>
+             apply TMove with (w := w') (c' := update c1 (V_TEMP v) (Some w'))
+
          | |- hastyp_stmt _ _ (Move temp0 _) _ => apply TMove with (w := 64)
          | |- hastyp_stmt _ _ (Move ?v _) _ => apply TMove with (w := sizeof v); [> right | | apply update_some]; try reflexivity
          | |- pfsub armc armc  => reflexivity
@@ -4381,13 +4500,40 @@ Local Ltac stypc c :=
          | |- hastyp_exp _ _ _  => etyp
   end.
 
+Local Ltac e_stypc c :=
+  cbn; repeat match goal with
+         | |- hastyp_stmt _ _ (Seq _ _) _ => eapply TSeq
+         | |- hastyp_stmt _ _ (If _ _ _) _ => eapply TIf
+         | |- hastyp_stmt _ _ (Exn _) _ => apply TExn
+         | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep
+         | |- hastyp_stmt _ _ Nop _ => apply TNop
+         | |- hastyp_stmt _ ?c1 (Move (V_TEMP ?v) _) _ =>
+             eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
+         | |- hastyp_stmt _ ?c1 (Move ?v _) _ => apply TMove with (w := sizeof_c c1 v); [> right | | apply update_some_c]; try reflexivity
+
+         | |- _ = None \/ _ = Some _ => try left; try reflexivity
+         | |- hastyp_exp _ _ _  => new_etyp
+  end.
+
+
 Local Ltac styp := stypc armc.
+Local Ltac styp_w w c1 c2 := stypc_w armc w c1 c2.
+Local Ltac estyp := e_stypc armc .
 
-Local Ltac des_match i:= match goal with
-
-| |- context[if ?a then _ else _] => destruct a eqn:?
-| |- context[i = ?a] => unfold_rec a
-end. 
+Local Lemma hastyp_HighestSetBit:
+  forall w e,
+    w <> 0 -> w <= 64 ->
+    hastyp_exp armc e w ->
+    hastyp_stmt armc armc (HighestSetBit w e)
+      (update (update armc (V_TEMP 301) (Some w)) (V_TEMP 300) (Some w)).
+Proof.
+  intros. assert(w < 2 ^ w) by apply lt_pow2_lin. 
+  unfold_stmt. estyp.
+  all: try lia; try reflexivity. 
+  eapply hastyp_exp_weaken. eassumption.
+  eapply update_fresh. reflexivity.
+  rewrite update_cancel. reflexivity.
+Admitted.
 
 (*Local Ltac hammer :=
   repeat match goal with
@@ -4409,30 +4555,242 @@ Local Lemma hastyp_havoc:
 Proof.
   intros. unfold_stmt. stypc c; now try apply H.
 Qed.
+Import Lia.
+Lemma hastyp_Pack_NZCV:
+  forall c n z cf v,
+    hastyp_exp c n 1 ->
+    hastyp_exp c z 1 ->
+    hastyp_exp c cf 1 ->
+    hastyp_exp c v 1 ->
+    hastyp_exp c (Pack_NZCV n z cf v) 4.
+Proof.
+  intros. unfold Pack_NZCV.
+  apply TBinOp with (w := 4);
+    [apply TBinOp with (w := 4) | apply TBinOp with (w := 4)].
+  all: try eapply TBinOp with (w := 4); try eapply TCast with (w := 1); try eassumption; try lia; try etyps 4.
+Qed.
+
+Lemma hastyp_Unpack_NZCV:
+  forall c flags,
+    hastyp_exp c flags 4 ->
+    let '(n, z, cf, v) := Unpack_NZCV flags in
+    hastyp_exp c n 1 /\ hastyp_exp c z 1 /\ hastyp_exp c cf 1 /\ hastyp_exp c v 1.
+Proof.
+  intros. unfold Unpack_NZCV.
+  repeat split.
+  all: etyps 4; apply H.
+Qed.
+
+Lemma hastyp_arm_assign_flags:
+  forall c flags,
+    armc ⊆ c ->
+    hastyp_exp armc flags 4 ->
+    hastyp_stmt armc c (arm_assign_flags flags) armc.
+Proof.
+  intros. unfold arm_assign_flags. 
+  destruct (Unpack_NZCV flags) as [[[n z] c0] v] eqn:Hunpack.
+  pose proof (hastyp_Unpack_NZCV arm8typctx flags H0) as Hcomp.
+  rewrite Hunpack in Hcomp. destruct Hcomp as [Hn [Hz [Hc0 Hc]]].
+  styp; cbn; try eassumption. eapply hastyp_exp_weaken with (c1:= arm8typctx) (c2:=c); eassumption.
+Qed.  
+
+Lemma hastyp_AddWithCarry:
+  forall c datasize x y carry_in,
+    datasize = 32 \/ datasize = 64 ->
+    hastyp_exp c x datasize ->
+    hastyp_exp c y datasize ->
+    hastyp_exp c carry_in 1 ->
+    let '(result, nzcv) := AddWithCarry datasize x y carry_in in
+    hastyp_exp c result datasize /\ hastyp_exp c nzcv 4.
+Proof.
+  intros c datasize x y carry_in Hd Hx Hy Hcarry.
+  unfold AddWithCarry. 
+  split.
+  etyp; try eassumption. lia.
+  apply hastyp_Pack_NZCV. 
+  all: etyp; try eassumption. all: try unfold widthof_binop. all: try lia. 
+  all: try rewrite N.ones_equiv; apply N.lt_pred_l; apply N.pow_nonzero; try lia.
+
+Qed.
+
+Local Lemma hastyp_assign_R:
+  forall c n e,
+    armc ⊆ c ->
+    hastyp_exp armc e 64 ->
+    hastyp_stmt armc c (arm_assign_R n e) armc.
+Proof.
+  intros. unfold arm_assign_R. styp. 
+  rewrite sizeof_arm_varid. apply typeof_arm_varid.
+  rewrite sizeof_arm_varid. 
+  apply hastyp_exp_weaken with (c1:= arm8typctx) (c2:= c);
+  assumption.
+  rewrite sizeof_arm_varid. apply typeof_arm_varid. assumption.
+Qed.
+
+Local Lemma hastyp_arm_data_il:
+  forall c assign assign_flags Rn result flags,
+    armc ⊆ c ->
+    hastyp_exp armc result 64 ->
+    hastyp_exp armc flags 4 ->
+    hastyp_stmt armc c (arm_data_il assign assign_flags Rn result flags) armc.
+Proof.
+  intros. unfold_stmt. destruct assign_flags.
+  apply hastyp_arm_assign_flags; assumption.
+  destruct assign. apply hastyp_assign_R; assumption.
+  styp. assumption.
+Qed.
+
+Local Lemma hastyp_AddWithCarry_eq:
+  forall c datasize x y carry_in r n,
+    datasize = 32 \/ datasize = 64 ->
+    hastyp_exp c x datasize ->
+    hastyp_exp c y datasize ->
+    hastyp_exp c carry_in 1 ->
+    AddWithCarry datasize x y carry_in = (r, n) ->
+    hastyp_exp c r datasize /\ hastyp_exp c n 4.
+Proof.
+  intros.
+  pose proof (hastyp_AddWithCarry c datasize x y carry_in H H0 H1 H2) as Hac.
+  rewrite H3 in Hac.
+  assumption.
+Qed.
+
+Ltac awc_sub_branch e:=
+apply hastyp_AddWithCarry_eq with (c:=arm8typctx) in e; destruct e;
+try apply hastyp_arm_data_il.
+
+Ltac awc_branch e sh:=
+  destruct_match_rmr; destruct sh in e; awc_sub_branch e;
+  try first[reflexivity|assumption|right;reflexivity];
+  try new_etyp; try reflexivity;try lia.
+
+Ltac awc_branch32 e sh Rn:=
+  destruct_match_rmr; destruct sh in e;
+  try awc_sub_branch e;
+  try first[reflexivity|assumption|left;reflexivity];
+  try apply TCast with (w:=32); try assumption; try lia; 
+  try new_etyp; try reflexivity;try lia; 
+  try destruct (Rn=?31) eqn:Hrn;
+  try new_etyp; try rewrite sizeof_arm_varid; try apply typeof_arm_varid; try reflexivity; try lia.
+
+Ltac awc sf Rn sh:=
+  unfold_stmt; destruct (sf =? 1) eqn:?; destruct (Rn =? 31) eqn:?;
+  destruct_match_rmr; 
+  match goal with 
+  | e: _ = (_,_) |- _ => awc_branch32 e sh Rn
+  end.
+
+Local Lemma hastyp_arm_data_imm:
+  forall op sf s sh imm12 Rn Rd,
+    imm12 < 2^12 ->
+    hastyp_stmt armc armc (arm_data_imm2il op sf s sh imm12 Rn Rd) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?.
+  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
+  + awc_branch e sh.
+  + awc_branch e sh.
+  + awc_branch32 e sh Rn. 
+  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
+  + awc_branch e sh.
+  + awc_branch e sh.
+  + awc_branch32 e sh Rn. 
+  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
+  + awc_branch e sh.
+  + awc_branch e sh.
+  + awc_branch32 e sh Rn. 
+  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
+  + awc_branch e sh.
+  + awc_branch e sh.
+  + awc_branch32 e sh Rn.
+Qed.
+
+Local Lemma hastyp_Ones:
+  forall c w e,
+  w > 0 ->
+  hastyp_exp c e w -> hastyp_exp c (Ones w e) w.
+Proof.
+  intros. assert (w < 2^w) by apply lt_pow2_lin.
+  unfold Ones. new_etyp. all: first[lia|assumption].
+Qed.
+
+Local Lemma hastyp_Replicate:
+  forall c rettemp t w w' x,
+    armc ⊆ c ->
+    w <> 0 -> w' <> 0 -> w <= w' -> t <> rettemp ->
+    hastyp_exp c x w ->
+    hastyp_stmt armc c (Replicate rettemp t w w' x)
+      (update (update c (V_TEMP t) (Some w')) (V_TEMP rettemp) (Some w')).
+Proof.
+Admitted.
+
+
+Local Lemma sizeof_c_lookup:
+  forall c v w,
+    c v = Some w ->
+    sizeof_c c v = w.
+Proof.
+  intros c v w Hv.
+  unfold sizeof_c.
+  rewrite Hv.
+  reflexivity.
+Qed.
+
+Local Ltac solve_armc_sub_fresh :=
+  intros v k Hv;
+  repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
+  exact Hv.
+
+Local Lemma hastyp_DecodeBitMasks:
+  forall immN imms immr immediate,
+    (immediate = 0 \/ immediate = 1) ->
+    exists c_final,
+      hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate 64) c_final /\
+      c_final (V_TEMP 980) = Some 64 /\
+      c_final (V_TEMP 990) = Some 64.
+Proof.
+  intros. eexists. split. 
+  unfold_stmt. estyp.
+  eapply hastyp_HighestSetBit. 1-2: lia.
+  admit.
+  estyp. all: try eapply hastyp_Replicate.
+  all: try eapply hastyp_Ones.
+  all: try rewrite update_frame by congruence;
+  try rewrite update_updated; try reflexivity.
+  all: try unfold sizeof_c ;try rewrite update_updated; try lia.
+  rewrite update_swap. rewrite update_updated. lia.
+  congruence.
+  rewrite update_swap. rewrite update_cancel. rewrite update_swap. estyp. apply update_updated.
+  1-2: congruence. 1-3: admit. (*should just be assumptions*)
+  all: repeat estyp; repeat (rewrite update_frame; [| congruence]); try apply update_updated.
+  all: try solve_armc_sub_fresh.
+
+Admitted.
+  
+Local Lemma hastyp_arm_log_imm:
+  forall op Rn Rd immr imms sf n_,
+    hastyp_stmt armc armc (arm_log_imm2il op Rn Rd immr imms sf n_) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?.
+  - unfold_stmt. styp. admit. admit. admit.
+  all: try rewrite sizeof_arm_varid; try apply typeof_arm_varid; try reflexivity.
+Admitted.
+
+Local Lemma hastyp_arm_mov_imm:
+  forall op Rd imm16 size shift,
+    hastyp_stmt armc armc (arm_mov_imm2il op Rd imm16 size shift) armc.
+Proof.
+Admitted.
+
 
 Theorem welltyped_arm82il:
   forall a n, hastyp_stmt armc armc (arm2il a (arm_decode n)) arm8typctx.
 Proof.
   intros. unfold_stmt. styp. now apply N.mod_lt.
-  remember (arm_decode n) as i. revert Heqi.
-  do 2 des_match i. intros. rewrite Heqi. styp. 
-  des_match i. intros. rewrite Heqi. styp.
-  des_match i. intros. rewrite Heqi. styp.
-  des_match i. intros. rewrite Heqi. styp.
-  des_match i. intros. rewrite Heqi.
+  remember (arm_decode n) as i. 
+  destruct i. apply hastyp_arm_data_imm. admit.
+Admitted. 
 
-
-
-   
-  
-  unfold rv_decode, rv_decode_op, rv_decode_op_imm, rv_decode_fence,
-                 rv_decode_load, rv_decode_store, rv_decode_binop, rv_decode_branch.
-
-  repeat match goal with |- context [ match ?x with _ => _ end ] =>
-    let op := fresh "op" in
-    generalize x; intro op;
-    first [ destruct op as [|op] | destruct op as [op|op|] ];
-    try apply TExn
-  end.
 
 

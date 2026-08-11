@@ -230,3 +230,5 @@ Notation "x .^ y" := (N.lxor x y) (at level 57, left associativity). (* logical 
 Notation "x .| y" := (N.lor x y) (at level 58, left associativity). (* logical or *)
 
 End ARM7Notations.
+
+Local Definition arm7typctx_temp := arm7typctx[V_TEMP 0 := Some 32].
