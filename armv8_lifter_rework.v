@@ -4707,7 +4707,7 @@ Local Lemma hastyp_Replicate:
     w <> 0 -> w' <> 0 -> w <= w' -> t <> rettemp ->
     hastyp_exp c x w ->
     hastyp_stmt armc c (Replicate rettemp t w w' x)
-      (update (update c (V_TEMP t) (Some w')) (V_TEMP rettemp) (Some w')).
+      (update c (V_TEMP rettemp) (Some w')).
 Proof.
 Admitted.
 
