@@ -4382,12 +4382,6 @@ Local Ltac etyp' :=
     | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
     | |- hastyp_exp ?c1 (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof_c c1 v)
     | |- hastyp_exp ?c1 (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof_c c1 v)
-
-    (**| |- hastyp_exp _ (BinOp OP_EQ ?x _) 1 => eapply TBinOp
-    | |- hastyp_exp _ (BinOp OP_LT ?x _) 1 => eapply TBinOp
-    | |- hastyp_exp _ (BinOp OP_SLT ?x _) 1 => eapply TBinOp
-    | |- hastyp_exp _ (BinOp OP_LE ?x _) 1 => eapply TBinOp*)
-(*^^corner cases^^*)
     | |- hastyp_exp _ (Concat (Word _ ?cw1) (Word _ ?cw2)) _ => apply TConcat with (w1 := cw1) (w2 := cw2)
     | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
     | |- hastyp_exp _ (BinOp _ _ _) ?sw => apply TBinOp with (w := sw)
@@ -4420,20 +4414,13 @@ Local Ltac etyp :=
         
          | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
 
-(* --- NEW CONCAT RULE --- *)
-         (* eapply leaves w1 and w2 as existential variables, solved by the sub-expressions *)
-
          | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
 
-         (* --- NEW CAST RULES --- *)
-         (* Extracts the inner expression's width automatically if it's a Word or Var *)
          | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
          | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
          | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
-         (* Fallback for general Cast expressions *)
          | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
 
-         (* --- NEW CAST SIDE-CONDITION SOLVERS --- *)
          | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
          
          (*| |- _ <= _ => easy lets see if it works*)
