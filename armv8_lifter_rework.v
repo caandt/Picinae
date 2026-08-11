@@ -143,7 +143,7 @@ Notation "'temp[' n ']'" := (V_TEMP n) (at level 65, no associativity).
 Definition arm_assign_R n val := Move (arm_varid n) val. (*TODO: Need to fix this*)
 Definition arm_assign_flags flags :=
     let '(n, z, c, v) := Unpack_NZCV flags in
-    
+
     (Seq (Move R_NG n) (Seq (Move R_ZR z) (Seq (Move R_CY c) (Move R_OV v)))).
 
 Definition arm64_R n N :=
@@ -287,12 +287,12 @@ Variant arm_add_sub_imm :=
   | ARM_SUBS_IMM.
 (*Logical (imm), Bitfield*)
 Variant arm_logical_imm :=
-  | ARM_AND_IMM 
+  | ARM_AND_IMM
   | ARM_ANDS_IMM
   | ARM_EOR_IMM
   | ARM_ORR_IMM
-  | ARM_BFM_IMM 
-  | ARM_SBFM_IMM 
+  | ARM_BFM_IMM
+  | ARM_SBFM_IMM
   | ARM_UBFM_IMM.
 (*Move (imm)*)
 Variant arm_move_imm :=
@@ -308,16 +308,16 @@ Variant arm_data_shifted :=
   | ARM_SUBS_SHIFTED_REG.
 
 Variant arm_log_shifted :=
-  | ARM_AND_LOG_REG 
-  | ARM_ANDS_LOG_REG 
-  | ARM_BIC_LOG_REG 
-  | ARM_BICS_LOG_REG 
-  | ARM_EON_LOG_REG 
-  | ARM_EOR_LOG_REG 
-  | ARM_ORR_LOG_REG 
-  | ARM_MVN_LOG_REG 
-  | ARM_ORN_LOG_REG 
-  | ARM_TST_LOG_REG 
+  | ARM_AND_LOG_REG
+  | ARM_ANDS_LOG_REG
+  | ARM_BIC_LOG_REG
+  | ARM_BICS_LOG_REG
+  | ARM_EON_LOG_REG
+  | ARM_EOR_LOG_REG
+  | ARM_ORR_LOG_REG
+  | ARM_MVN_LOG_REG
+  | ARM_ORN_LOG_REG
+  | ARM_TST_LOG_REG
   | ARM_MOV_LOG_REG.
 (*Add/Sub Extended*)
 Variant arm_extended :=
@@ -327,22 +327,22 @@ Variant arm_extended :=
   | ARM_SUBS_EXTENDED_REG.
 (*Add/Sub With Carry*)
 Variant arm_carry :=
-  | ARM_ADC 
-  | ARM_ADCS 
-  | ARM_SBC 
+  | ARM_ADC
+  | ARM_ADCS
+  | ARM_SBC
   | ARM_SBCS.
 (*Shift Register*)
 Variant arm_shift_reg :=
-  | ARM_ASRV_REG 
-  | ARM_LSLV_REG 
-  | ARM_LSRV_REG 
+  | ARM_ASRV_REG
+  | ARM_LSLV_REG
+  | ARM_LSRV_REG
   | ARM_RORV_REG.
 (*Bitops*)
 Variant arm_bitops :=
-  | ARM_CLS  
-  | ARM_CLZ  
-  | ARM_RBIT 
-  | ARM_REV  
+  | ARM_CLS
+  | ARM_CLZ
+  | ARM_RBIT
+  | ARM_REV
   | ARM_REV16
   | ARM_REV32
   | ARM_REV64.
@@ -354,7 +354,7 @@ Variant arm_load_gen :=
   | ARM_LDAPURH     | ARM_LDAPURSH
   | ARM_LDAPUR      | ARM_LDAPURSW
   | ARM_STLUR       | ARM_PRFM
-  | ARM_PRFM_IMM 
+  | ARM_PRFM_IMM
   (*load/store register (unscaled immediate)*)
   | ARM_STURB       | ARM_LDURB
   | ARM_LDURSB      | ARM_STURH
@@ -363,82 +363,82 @@ Variant arm_load_gen :=
   | ARM_LDURSW.
 (*Atomic*)
 Variant arm_atomic :=
-  | ARM_LDADDB      | ARM_LDCLRB 
-  | ARM_LDEORB      | ARM_LDSETB 
-  | ARM_LDSMAXB     | ARM_LDSMINB 
-  | ARM_LDUMAXB     | ARM_LDUMINB 
-  | ARM_SWPB        | ARM_LDADDH 
-  | ARM_LDCLRH      | ARM_LDEORH 
-  | ARM_LDSETH      | ARM_LDSMAXH 
-  | ARM_LDSMINH     | ARM_LDUMAXH 
+  | ARM_LDADDB      | ARM_LDCLRB
+  | ARM_LDEORB      | ARM_LDSETB
+  | ARM_LDSMAXB     | ARM_LDSMINB
+  | ARM_LDUMAXB     | ARM_LDUMINB
+  | ARM_SWPB        | ARM_LDADDH
+  | ARM_LDCLRH      | ARM_LDEORH
+  | ARM_LDSETH      | ARM_LDSMAXH
+  | ARM_LDSMINH     | ARM_LDUMAXH
   | ARM_LDUMINH     | ARM_SWPH
-  | ARM_LDADD       | ARM_LDCLR 
-  | ARM_LDEOR       | ARM_LDSET 
+  | ARM_LDADD       | ARM_LDCLR
+  | ARM_LDEOR       | ARM_LDSET
   | ARM_LDSMAX      | ARM_LDSMIN
   | ARM_LDUMAX      | ARM_LDUMIN
   | ARM_SWP         | ARM_LDAPRB
-  | ARM_LDAPRH      | ARM_LDAPR. 
+  | ARM_LDAPRH      | ARM_LDAPR.
 Variant arm_ldstr_reg :=
-  | ARM_STRB_REG 
-  | ARM_LDRB_REG 
-  | ARM_LDRSB_REG 
-  | ARM_STRH_REG 
-  | ARM_LDRH_REG 
-  | ARM_LDRSH_REG 
-  | ARM_STR_REG 
-  | ARM_LDR_REG 
-  | ARM_LDRSW_REG 
+  | ARM_STRB_REG
+  | ARM_LDRB_REG
+  | ARM_LDRSB_REG
+  | ARM_STRH_REG
+  | ARM_LDRH_REG
+  | ARM_LDRSH_REG
+  | ARM_STR_REG
+  | ARM_LDR_REG
+  | ARM_LDRSW_REG
   | ARM_PRFM_REG.
 Variant arm_unpriv :=
-  | ARM_STTRB 
-  | ARM_LDTRB 
-  | ARM_LDTRSB 
-  | ARM_STTRH 
-  | ARM_LDTRH 
-  | ARM_LDTRSH 
-  | ARM_STTR 
-  | ARM_LDTR 
-  | ARM_LDTRSW. 
+  | ARM_STTRB
+  | ARM_LDTRB
+  | ARM_LDTRSB
+  | ARM_STTRH
+  | ARM_LDTRH
+  | ARM_LDTRSH
+  | ARM_STTR
+  | ARM_LDTR
+  | ARM_LDTRSW.
 Variant arm_indexed :=
-  | ARM_STRB_IMM 
-  | ARM_LDRB_IMM 
-  | ARM_LDRSB_IMM 
-  | ARM_LDR_IMM 
-  | ARM_STRH_IMM 
-  | ARM_LDRH_IMM 
-  | ARM_LDRSH_IMM 
-  | ARM_STR_IMM 
-  | ARM_LDRSW_IMM. 
+  | ARM_STRB_IMM
+  | ARM_LDRB_IMM
+  | ARM_LDRSB_IMM
+  | ARM_LDR_IMM
+  | ARM_STRH_IMM
+  | ARM_LDRH_IMM
+  | ARM_LDRSH_IMM
+  | ARM_STR_IMM
+  | ARM_LDRSW_IMM.
 Variant arm_ld_reg_lit :=
-  | ARM_LDR_LIT 
+  | ARM_LDR_LIT
   | ARM_LDRSW_LIT
   | ARM_PRFM_LIT.
 Variant arm_ldstr_reg_pair :=
   | ARM_STP
   | ARM_LDP
   | ARM_LDPSW
-  | ARM_STGP. 
+  | ARM_STGP.
 Variant arm_exclusive :=
-  | ARM_STXRB       | ARM_STLXRB 
-  | ARM_LDXRB       | ARM_LDXRH 
-  | ARM_LDAXRB      | ARM_STLLRB 
-  | ARM_STLLRH      | ARM_STLRH 
-  | ARM_STLRB       | ARM_STXRH 
+  | ARM_STXRB       | ARM_STLXRB
+  | ARM_LDXRB       | ARM_LDXRH
+  | ARM_LDAXRB      | ARM_STLLRB
+  | ARM_STLLRH      | ARM_STLRH
+  | ARM_STLRB       | ARM_STXRH
   | ARM_STLXRH      | ARM_LDLARB
   | ARM_LDARB       | ARM_LDARH
-  | ARM_LDLARH      | ARM_STXR 
-  | ARM_STLXR       | ARM_STXP 
-  | ARM_STLXP       | ARM_LDXR 
-  | ARM_LDAXR       | ARM_LDXP 
+  | ARM_LDLARH      | ARM_STXR
+  | ARM_STLXR       | ARM_STXP
+  | ARM_STLXP       | ARM_LDXR
+  | ARM_LDAXR       | ARM_LDXP
   | ARM_LDAXP       | ARM_STLLR
   | ARM_STLR        | ARM_LDLAR
-  | ARM_LDAR        | ARM_CASP 
+  | ARM_LDAR        | ARM_CASP
   | ARM_CASB        | ARM_CASH
   | ARM_CAS         | ARM_LDAXRH.
 Variant inst :=
 (*DP imm*)
   | ARM_DATA_IMM (op: arm_add_sub_imm) (sf s sh imm12 Rn Rd : N)
-  (*v8.5: with tag, not implemented : ARM_ADDG, ARM_SUBG*)    
+  (*v8.5: with tag, not implemented : ARM_ADDG, ARM_SUBG*)
   | ARM_LOGICAL_IMM (op: arm_logical_imm) (Rn Rd immr imms sf n_:N)
   | ARM_MOVE_IMM (op: arm_move_imm) (Rd imm16 size shift:N)
   (*| TODO: ARM_MOV_IMM bitmask imm/wide imm/inverted wide imm*)
@@ -737,7 +737,7 @@ Section Decoder.
     | "1  0  0" => ARM_DATA_IMM ARM_ADD_IMM sf s sh imm12 Rn Rd (* ADD (immediate) - 64-bit variant on page C6-761 *)
     | "1  0  1" => ARM_DATA_IMM ARM_ADDS_IMM sf s sh imm12 Rn Rd (* ADDS (immediate) - 64-bit variant on page C6-769 *)
     | "1  1  0" => ARM_DATA_IMM ARM_SUB_IMM sf s sh imm12 Rn Rd (* SUB (immediate) - 64-bit variant on page C6-1311 *)
-    | "1  1  1" => ARM_DATA_IMM ARM_SUBS_IMM sf s sh imm12 Rn Rd (* SUBS (immediate) - 64-bit variant on page C6-1321 *)  
+    | "1  1  1" => ARM_DATA_IMM ARM_SUBS_IMM sf s sh imm12 Rn Rd (* SUBS (immediate) - 64-bit variant on page C6-1321 *)
     else UDF end.
 
 (**  (*immediate, with tags*)
@@ -3958,19 +3958,19 @@ Section Decoder.
     | ARM_ORN_LOG_REG |ARM_MVN_LOG_REG  => arm_shiftc true false (fun a b => BinOp OP_OR a (UnOp OP_NOT b))
     | ARM_EOR_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_XOR a b) (*TODO: EORS?*)
     | ARM_EON_LOG_REG => arm_shiftc true false (fun a b => BinOp OP_XOR a (UnOp OP_NOT b))
-  
+
     end.
 
   Definition arm_withcarry_2il op (sf Rm Rn Rd:N) :=
     (*assign function here -> completed in the op_il function*)
     let datasize := if sf =? 1 then 64 else 32 in
     let arm_addwithcarry := arm_data_r_with_carry sf Rm Rn Rd in
-    match op with 
+    match op with
     | ARM_ADC => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a b (Var R_CY))
     | ARM_ADCS => arm_addwithcarry true true (fun a b _ => AddWithCarry datasize a b (Var R_CY))
     | ARM_SBC => arm_addwithcarry true false (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Var R_CY))
     | ARM_SBCS => arm_addwithcarry true true (fun a b _ => AddWithCarry datasize a (UnOp OP_NOT b) (Var R_CY))
-    end.   
+    end.
 
 (**  Definition arm_data_r_il_shft op (cond sf s shift Rm Rd:N) imm6 (Rn:N) :=
     let arm_addwithcarry := arm_data_r_addwithcarry cond sf s shift Rm imm6 Rn in
@@ -4031,7 +4031,7 @@ Section Decoder.
     (*if condition holds, nzcv final is the new flags from AddWithCarry else its just the value we read in*)
     let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
     arm_data_il false true Rn result64 nzcv_final.
-  
+
   Definition arm_data_imm2il op sf s sh imm12 Rn Rd:=
   let datasize := if sf =? 1 then 64 else 32 in
   match op with
@@ -4053,7 +4053,7 @@ Section Decoder.
   end.
 
   Definition arm_mov_imm2il op Rd imm16 size shift :=
-  match op with 
+  match op with
   | ARM_MOVZ_IMM  => arm_movz_imm2il Rd imm16 size shift
   | ARM_MOVN_IMM  => arm_movn_imm2il Rd imm16 size shift
   | ARM_MOVK_IMM  => arm_movk_imm2il Rd imm16 size shift
@@ -4123,8 +4123,8 @@ Section Decoder.
   (*exclusive/others*)
   | ARM_EXCLUSIVE ARM_STXRB size Xn Xs Xt Xt2 => arm_stxrb2il Xn Xs Xt
   | ARM_EXCLUSIVE ARM_STLXRB size Xn Xs Xt Xt2 => arm_stlxrb2il Xn Xs Xt
-  | ARM_EXCLUSIVE ARM_LDXRB size Xn Xs Xt Xt2 => arm_ldxrb2il Xn Xt 
-  | ARM_EXCLUSIVE ARM_LDXRH size Xn Xs Xt Xt2 => arm_ldxrh2il Xn Xt 
+  | ARM_EXCLUSIVE ARM_LDXRB size Xn Xs Xt Xt2 => arm_ldxrb2il Xn Xt
+  | ARM_EXCLUSIVE ARM_LDXRH size Xn Xs Xt Xt2 => arm_ldxrh2il Xn Xt
   | ARM_EXCLUSIVE ARM_LDAXRH size Xn Xs Xt Xt2 => arm_ldaxrh2il Xn Xt
   | ARM_EXCLUSIVE ARM_LDAXRB size Xn Xs Xt Xt2 => arm_ldaxrb2il Xn Xt
   | ARM_EXCLUSIVE ARM_STLLRB size Xn Xs Xt Xt2 => arm_stllrb2il Xn Xt
@@ -4137,10 +4137,10 @@ Section Decoder.
   | ARM_EXCLUSIVE ARM_LDARB size Xn Xs Xt Xt2 => arm_ldarb2il Xn Xt
   | ARM_EXCLUSIVE ARM_LDARH size Xn Xs Xt Xt2 => arm_ldarh2il Xn Xt
   | ARM_EXCLUSIVE ARM_LDLARH size Xn Xs Xt Xt2 => arm_ldlarh2il Xn Xt
-  | ARM_EXCLUSIVE ARM_STXR size Xn Xs Xt Xt2 => arm_stxr2il size Xn Xs Xt 
+  | ARM_EXCLUSIVE ARM_STXR size Xn Xs Xt Xt2 => arm_stxr2il size Xn Xs Xt
   | ARM_EXCLUSIVE ARM_STLXR size Xn Xs Xt Xt2 => arm_stxr2il_size size Xn Xs Xt
   | ARM_EXCLUSIVE ARM_STXP size Xn Xs Xt Xt2 => arm_stxp2il size Xn Xs Xt Xt2
-  | ARM_EXCLUSIVE ARM_STLXP size Xn Xs Xt Xt2 => arm_stlxp2il size Xn Xs Xt Xt2 
+  | ARM_EXCLUSIVE ARM_STLXP size Xn Xs Xt Xt2 => arm_stlxp2il size Xn Xs Xt Xt2
   | ARM_EXCLUSIVE ARM_LDXR size Xn Xs Xt Xt2 => arm_ldxr2il size Xn Xt
   | ARM_EXCLUSIVE ARM_LDAXR size Xn Xs Xt Xt2 => arm_ldaxr2il size Xn Xt
   | ARM_EXCLUSIVE ARM_LDXP size Xn Xs Xt Xt2 => arm_ldxp2il size Xn Xt Xt2
@@ -4158,7 +4158,7 @@ Section Decoder.
   | ARM_LOAD_GEN ARM_STLURB Xn Xt imm9 size => arm_stlurb2il Xn Xt imm9
   | ARM_LOAD_GEN ARM_LDAPURB Xn Xt imm9 size => arm_ldapurb2il Xn Xt (Word imm9 64)
   | ARM_LOAD_GEN ARM_LDAPURSB Xn Xt imm9 size => arm_ldapursb2il Xn Xt (Word imm9 64) size
-  | ARM_LOAD_GEN ARM_STLURH Xn Xt imm9 size => arm_stlurh2il Xn Xt (Word imm9 64) 
+  | ARM_LOAD_GEN ARM_STLURH Xn Xt imm9 size => arm_stlurh2il Xn Xt (Word imm9 64)
   | ARM_LOAD_GEN ARM_LDAPURH Xn Xt imm9 size => arm_ldapurh2il Xn Xt (Word imm9 64)
   | ARM_LOAD_GEN ARM_LDAPURSH Xn Xt imm9 size => arm_ldapursh2il Xn Xt (Word imm9 64) size
   | ARM_LOAD_GEN ARM_LDAPUR Xn Xt imm9 size => arm_ldapur2il Xn Xt (Word imm9 64) size
@@ -4172,7 +4172,7 @@ Section Decoder.
   (*load/store memory tags*)
   | ARM_STG Xn Xt imm9 writeback printindex => arm_stg2il Xn Xt imm9 writeback printindex
   | ARM_STZG Xn Xt imm9 writeback printindex => arm_stzg2il Xn Xt imm9 writeback printindex
-  | ARM_STZGM Xn Xt => arm_stzgm2il Xt Xn         
+  | ARM_STZGM Xn Xt => arm_stzgm2il Xt Xn
   | ARM_LDG Xn Xt imm9 => arm_ldg2il Xn Xt imm9
   | ARM_ST2G Xn Xt imm9 writeback printindex => arm_st2g2il Xn Xt imm9 writeback printindex
   | ARM_STGM Xn Xt => arm_stgm2il Xn Xt
@@ -4183,13 +4183,13 @@ Section Decoder.
   | ARM_LD_REG_LIT ARM_LDRSW_LIT Xt imm19 size => arm_ldrsw_lit2il Xt imm19
   | ARM_LD_REG_LIT ARM_PRFM_LIT Xt imm19 size => arm_prfm_lit2il Xt imm19
   (*load/store no-allocate pair (offset)*)
-  | ARM_STNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale 
-  | ARM_LDNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale 
+  | ARM_STNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale
+  | ARM_LDNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale
   (*load/store register pair (post-indexed, pre-indexed, offset)*)
-  | ARM_LD_STR_REG_PAIR ARM_STP Xn Xt Xt2 imm7 scale wback postindex => arm_stp2il Xn Xt Xt2 imm7 scale wback postindex 
-  | ARM_LD_STR_REG_PAIR ARM_LDP Xn Xt Xt2 imm7 scale wback postindex => arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex 
-  | ARM_LD_STR_REG_PAIR ARM_LDPSW Xn Xt Xt2 imm7 scale wback postindex => arm_ldpsw2il Xn Xt Xt2 imm7 wback postindex 
-  | ARM_LD_STR_REG_PAIR ARM_STGP Xn Xt Xt2 imm7 scale wback postindex => arm_stgp2il Xn Xt Xt2 imm7 wback postindex 
+  | ARM_LD_STR_REG_PAIR ARM_STP Xn Xt Xt2 imm7 scale wback postindex => arm_stp2il Xn Xt Xt2 imm7 scale wback postindex
+  | ARM_LD_STR_REG_PAIR ARM_LDP Xn Xt Xt2 imm7 scale wback postindex => arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex
+  | ARM_LD_STR_REG_PAIR ARM_LDPSW Xn Xt Xt2 imm7 scale wback postindex => arm_ldpsw2il Xn Xt Xt2 imm7 wback postindex
+  | ARM_LD_STR_REG_PAIR ARM_STGP Xn Xt Xt2 imm7 scale wback postindex => arm_stgp2il Xn Xt Xt2 imm7 wback postindex
   (*load/store register (unscaled immediate)*)
   | ARM_LOAD_GEN ARM_STURB Xn Xt imm9 _ => arm_sturb2il Xn Xt imm9
   | ARM_LOAD_GEN ARM_LDURB Xn Xt imm9 _ => arm_ldurb2il Xn Xt imm9
@@ -4202,9 +4202,9 @@ Section Decoder.
   | ARM_LOAD_GEN ARM_LDURSW Xn Xt imm9 _ => arm_ldursw2il Xn Xt imm9
   (*imm pre/post-indexed*)
   | ARM_INDEXED ARM_STRB_IMM Xn Xt imm912 size signed wback postindex => arm_strb_imm2il Xn Xt imm912 signed wback postindex
-  | ARM_INDEXED ARM_LDRB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrb_imm2il Xn Xt imm912 signed wback postindex 
+  | ARM_INDEXED ARM_LDRB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrb_imm2il Xn Xt imm912 signed wback postindex
   | ARM_INDEXED ARM_LDRSB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsb_imm2il Xn Xt imm912 size signed wback postindex
-  | ARM_INDEXED ARM_LDR_IMM Xn Xt imm912 size signed wback postindex => arm_ldr_imm2il Xn Xt imm912 size signed wback postindex 
+  | ARM_INDEXED ARM_LDR_IMM Xn Xt imm912 size signed wback postindex => arm_ldr_imm2il Xn Xt imm912 size signed wback postindex
   | ARM_INDEXED ARM_STRH_IMM Xn Xt imm912 size signed wback postindex => arm_strh_imm2il Xn Xt imm912 size signed wback postindex (*TODO: whats size?*)
   | ARM_INDEXED ARM_LDRH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrh_imm2il Xn Xt imm912 signed wback postindex
   | ARM_INDEXED ARM_LDRSH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsh_imm2il Xn Xt imm912 size signed wback postindex
@@ -4219,7 +4219,7 @@ Section Decoder.
   | ARM_REG_UNPRIVILEGED ARM_LDTRSH Rn Rt imm9 size => arm_ldtrsh2il Rn Rt imm9 size
   | ARM_REG_UNPRIVILEGED ARM_STTR Rn Rt imm9 size => arm_sttr2il Rn Rt imm9 size
   | ARM_REG_UNPRIVILEGED ARM_LDTR Rn Rt imm9 size => arm_ldtr2il Rn Rt imm9 size
-  | ARM_REG_UNPRIVILEGED ARM_LDTRSW Rn Rt imm9 size => arm_ldtrsw2il Rn Rt imm9 
+  | ARM_REG_UNPRIVILEGED ARM_LDTRSW Rn Rt imm9 size => arm_ldtrsw2il Rn Rt imm9
   (*atomic memory ops*)
   | ARM_ATOMIC ARM_LDADDB size Xn Xs Xt => arm_ldaddb2il Xn Xs Xt
   | ARM_ATOMIC ARM_LDCLRB size Xn Xs Xt => arm_ldclrb2il Xn Xs Xt
@@ -4229,7 +4229,7 @@ Section Decoder.
   | ARM_ATOMIC ARM_LDSMINB size Xn Xs Xt => arm_ldsminb2il Xn Xs Xt
   | ARM_ATOMIC ARM_LDUMINB size Xn Xs Xt => arm_lduminb2il Xn Xs Xt
   | ARM_ATOMIC ARM_SWPB size Xn Xs Xt => arm_swpb2il Xn Xs Xt
-  | ARM_ATOMIC ARM_LDADDH size Xn Xs Xt => arm_ldaddh2il Xn Xs Xt 
+  | ARM_ATOMIC ARM_LDADDH size Xn Xs Xt => arm_ldaddh2il Xn Xs Xt
   | ARM_ATOMIC ARM_LDCLRH size Xn Xs Xt => arm_ldclrh2il Xn Xs Xt
   | ARM_ATOMIC ARM_LDEORH size Xn Xs Xt => arm_ldeorh2il Xn Xs Xt
   | ARM_ATOMIC ARM_LDSETH size Xn Xs Xt => arm_ldseth2il Xn Xs Xt
@@ -4375,7 +4375,7 @@ Qed.
 Import Lia.
 
 Local Ltac etyp' :=
-  repeat match goal with 
+  repeat match goal with
     | |- hastyp_exp _ (R[_,?s]) ?s => unfold arm64_R; cbn
     | |- hastyp_exp _ (SP_read ?s) ?s => unfold SP_read; cbn
     | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
@@ -4411,7 +4411,7 @@ Local Ltac etyp :=
          | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
          | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
          | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
-        
+
          | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
 
          | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
@@ -4422,7 +4422,7 @@ Local Ltac etyp :=
          | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
 
          | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
-         
+
          (*| |- _ <= _ => easy lets see if it works*)
 
          | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
@@ -4507,6 +4507,7 @@ Local Ltac styp := stypc armc.
 Local Ltac styp_w w c1 c2 := stypc_w armc w c1 c2.
 Local Ltac estyp := e_stypc armc .
 
+(* @kjee: should not be too hard *)
 Local Lemma hastyp_HighestSetBit:
   forall w e,
     w <> 0 -> w <= 64 ->
@@ -4514,9 +4515,9 @@ Local Lemma hastyp_HighestSetBit:
     hastyp_stmt armc armc (HighestSetBit w e)
       (update (update armc (V_TEMP 301) (Some w)) (V_TEMP 300) (Some w)).
 Proof.
-  intros. assert(w < 2 ^ w) by apply lt_pow2_lin. 
+  intros. assert(w < 2 ^ w) by apply lt_pow2_lin.
   unfold_stmt. estyp.
-  all: try lia; try reflexivity. 
+  all: try lia; try reflexivity.
   eapply hastyp_exp_weaken. eassumption.
   eapply update_fresh. reflexivity.
   rewrite update_cancel. reflexivity.
@@ -4574,12 +4575,12 @@ Lemma hastyp_arm_assign_flags:
     hastyp_exp armc flags 4 ->
     hastyp_stmt armc c (arm_assign_flags flags) armc.
 Proof.
-  intros. unfold arm_assign_flags. 
+  intros. unfold arm_assign_flags.
   destruct (Unpack_NZCV flags) as [[[n z] c0] v] eqn:Hunpack.
   pose proof (hastyp_Unpack_NZCV arm8typctx flags H0) as Hcomp.
   rewrite Hunpack in Hcomp. destruct Hcomp as [Hn [Hz [Hc0 Hc]]].
   styp; cbn; try eassumption. eapply hastyp_exp_weaken with (c1:= arm8typctx) (c2:=c); eassumption.
-Qed.  
+Qed.
 
 Lemma hastyp_AddWithCarry:
   forall c datasize x y carry_in,
@@ -4591,11 +4592,11 @@ Lemma hastyp_AddWithCarry:
     hastyp_exp c result datasize /\ hastyp_exp c nzcv 4.
 Proof.
   intros c datasize x y carry_in Hd Hx Hy Hcarry.
-  unfold AddWithCarry. 
+  unfold AddWithCarry.
   split.
   etyp; try eassumption. lia.
-  apply hastyp_Pack_NZCV. 
-  all: etyp; try eassumption. all: try unfold widthof_binop. all: try lia. 
+  apply hastyp_Pack_NZCV.
+  all: etyp; try eassumption. all: try unfold widthof_binop. all: try lia.
   all: try rewrite N.ones_equiv; apply N.lt_pred_l; apply N.pow_nonzero; try lia.
 
 Qed.
@@ -4606,9 +4607,9 @@ Local Lemma hastyp_assign_R:
     hastyp_exp armc e 64 ->
     hastyp_stmt armc c (arm_assign_R n e) armc.
 Proof.
-  intros. unfold arm_assign_R. styp. 
+  intros. unfold arm_assign_R. styp.
   rewrite sizeof_arm_varid. apply typeof_arm_varid.
-  rewrite sizeof_arm_varid. 
+  rewrite sizeof_arm_varid.
   apply hastyp_exp_weaken with (c1:= arm8typctx) (c2:= c);
   assumption.
   rewrite sizeof_arm_varid. apply typeof_arm_varid. assumption.
@@ -4655,15 +4656,15 @@ Ltac awc_branch32 e sh Rn:=
   destruct_match_rmr; destruct sh in e;
   try awc_sub_branch e;
   try first[reflexivity|assumption|left;reflexivity];
-  try apply TCast with (w:=32); try assumption; try lia; 
-  try new_etyp; try reflexivity;try lia; 
+  try apply TCast with (w:=32); try assumption; try lia;
+  try new_etyp; try reflexivity;try lia;
   try destruct (Rn=?31) eqn:Hrn;
   try new_etyp; try rewrite sizeof_arm_varid; try apply typeof_arm_varid; try reflexivity; try lia.
 
 Ltac awc sf Rn sh:=
   unfold_stmt; destruct (sf =? 1) eqn:?; destruct (Rn =? 31) eqn:?;
-  destruct_match_rmr; 
-  match goal with 
+  destruct_match_rmr;
+  match goal with
   | e: _ = (_,_) |- _ => awc_branch32 e sh Rn
   end.
 
@@ -4677,15 +4678,15 @@ Proof.
   - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
   + awc_branch e sh.
   + awc_branch e sh.
-  + awc_branch32 e sh Rn. 
+  + awc_branch32 e sh Rn.
   - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
   + awc_branch e sh.
   + awc_branch e sh.
-  + awc_branch32 e sh Rn. 
+  + awc_branch32 e sh Rn.
   - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
   + awc_branch e sh.
   + awc_branch e sh.
-  + awc_branch32 e sh Rn. 
+  + awc_branch32 e sh Rn.
   - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
   + awc_branch e sh.
   + awc_branch e sh.
@@ -4728,6 +4729,7 @@ Local Ltac solve_armc_sub_fresh :=
   repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
   exact Hv.
 
+(* @kjee: read it again later *)
 Local Lemma hastyp_DecodeBitMasks:
   forall immN imms immr immediate,
     (immediate = 0 \/ immediate = 1) ->
@@ -4736,7 +4738,7 @@ Local Lemma hastyp_DecodeBitMasks:
       c_final (V_TEMP 980) = Some 64 /\
       c_final (V_TEMP 990) = Some 64.
 Proof.
-  intros. eexists. split. 
+  intros. eexists. split.
   unfold_stmt. estyp.
   eapply hastyp_HighestSetBit. 1-2: lia.
   admit.
@@ -4753,7 +4755,7 @@ Proof.
   all: try solve_armc_sub_fresh.
 
 Admitted.
-  
+
 Local Lemma hastyp_arm_log_imm:
   forall op Rn Rd immr imms sf n_,
     hastyp_stmt armc armc (arm_log_imm2il op Rn Rd immr imms sf n_) armc.
@@ -4775,9 +4777,9 @@ Theorem welltyped_arm82il:
   forall a n, hastyp_stmt armc armc (arm2il a (arm_decode n)) arm8typctx.
 Proof.
   intros. unfold_stmt. styp. now apply N.mod_lt.
-  remember (arm_decode n) as i. 
+  remember (arm_decode n) as i.
   destruct i. apply hastyp_arm_data_imm. admit.
-Admitted. 
+Admitted.
 
 
 
