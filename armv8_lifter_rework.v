@@ -181,7 +181,7 @@ Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custo
 Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
 
 Definition CheckSPAlignment :=
-  <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
+  <{ if {Var SCTLR_E1}[4] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
 
 (* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
 Definition AddressWithAllocationTag (Xt tag:exp) := <{
@@ -4372,7 +4372,7 @@ Proof.
   intros. unfold arm_varid. now destruct_match.
 Qed.
 
-Import Lia.
+Require Import Lia ZifyN ZifyBool.
 
 Local Ltac etyp' :=
   repeat match goal with 
@@ -4412,7 +4412,9 @@ Local Ltac etyp :=
   | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
   | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
 
-  | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
+  | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a =>
+      match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
+         || match eval compute in (widthof_binop o 0 =? 1) with true => replace a with (widthof_binop o a); apply TBinOp with (w:=a) end
 
   | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
 
@@ -4431,8 +4433,9 @@ Local Ltac etyp :=
   | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
   | |- hastyp_exp _ (Unknown _) _ => apply TUnknown
   | |- hastyp_exp _ (Word _ _) _ => apply TWord
-  | |- hastyp_exp _ (Load _ _ _ _) _ => apply TLoad with (w := 32)
-  | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 32)
+  | |- hastyp_exp _ (Load _ _ _ _) _ => apply TLoad with (w := 64)
+  | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 64)
+  | |- hastyp_exp _ (Extract ?hi ?lo ?e) ?n => replace n with (N.succ hi - lo);[eapply TExtract|]
   | X: hastyp_exp _ ?x ?a, Y: hastyp_exp _ ?y ?b |- hastyp_exp _ (Concat ?x ?y) _ => apply TConcat with (w1 := a) (w2 := b)
   | |- pfsub arm8typctx arm8typctx  => reflexivity
   | |- _ < _ => reflexivity
@@ -4728,15 +4731,86 @@ Local Ltac solve_armc_sub_fresh :=
   repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
   exact Hv.
 
-Local Lemma hastyp_ConditionHolds:
-  forall c n (PFSUB: pfsub arm8typctx c),  n<2^4 -> hastyp_exp c (ConditionHolds n) 1.
-Proof.
-  intros. unfold ConditionHolds.
-  etyp; try easy;
+Local Ltac etypeasy :=
   match goal with
   | H: pfsub ?c ?c' |- ?c' _ = _ => apply H; try reflexivity
   | |- _ => try repeat (econstructor || assumption || lia)
   end.
+
+Local Lemma hastyp_ConditionHolds:
+  forall c n (PFSUB: pfsub arm8typctx c),  n<2^4 -> hastyp_exp c (ConditionHolds n) 1.
+Proof.
+  intros. unfold ConditionHolds.
+  etyp; try easy; etypeasy.
+Qed.
+
+Local Lemma hastyp_XtoVar:
+  forall n c (PFSUB: pfsub arm8typctx c), n < 2^5 -> hastyp_exp c (XtoVar n) 64.
+Proof.
+  intros. unfold XtoVar.
+  etyp; try easy; etypeasy.
+Qed.
+
+Local Lemma hastyp_AllocationTagFromAddress:
+  forall e n c (PFSUB:pfsub arm8typctx c), hastyp_exp c e n -> n >= 60 -> hastyp_exp c (AllocationTagFromAddress e) 4.
+Proof.
+  unfold AllocationTagFromAddress; intros.
+  etyp; try easy; eassumption || etypeasy.
+Qed.
+
+Local Lemma hastyp_b2exp:
+  forall b c, hastyp_exp c (b2exp b) 1.
+Proof.
+  destruct b; repeat econstructor.
+Qed.
+
+Local Lemma hastyp_AlignPow2:
+  forall c e w p (T:hastyp_exp c e w) (PFSUB:pfsub arm8typctx c), 8 < 2^w -> hastyp_exp c (AlignPow2 e w p) w.
+Proof.
+  unfold AlignPow2. intros.
+  destruct_match; try assumption; etyp; lia || assumption.
+Qed.
+
+Local Lemma hastyp_AlignCheck:
+  forall c e w a (T:hastyp_exp c e w) (PFSUB:pfsub arm8typctx c), a < 2^w -> hastyp_exp c (AlignCheck e w a) 1.
+Proof.
+  unfold AlignCheck. intros.
+  etyp; lia || assumption.
+Qed.
+
+Local Lemma hastyp_CheckSPAlignment:
+  forall c (PFSUB:pfsub arm8typctx c), hastyp_stmt arm8typctx c (CheckSPAlignment) c.
+Proof.
+  intros; unfold CheckSPAlignment, AlignCheck.
+  repeat econstructor; etypeasy. etyp. all: try lia || reflexivity.
+  1,3: apply PFSUB; reflexivity. lia.
+Qed.
+
+Local Lemma hastyp_MemSingleWrite:
+  forall a sz v c (T:hastyp_exp c a 64) (T2:hastyp_exp c v (sz*8)) (PFSUB:pfsub arm8typctx c),
+  sz < 2^64 -> hastyp_stmt armc c (MemSingleWrite a sz v) c.
+Proof.
+  intros; unfold MemSingleWrite. stypc c. apply hastyp_AlignCheck.
+  all: try assumption || reflexivity. 
+  apply TMove with (w := sizeof V_MEM64).
+    right. 3: apply update_some. 3: apply PFSUB.
+    all:try reflexivity. etyp; etypeasy.
+Qed.
+
+Definition hastyp_MemWrite := hastyp_MemSingleWrite.
+
+Local Lemma hastyp_MemRead:
+  forall c a sz (T:hastyp_exp c a 64) (PFSUB:pfsub armc c), sz < 2^64 -> hastyp_exp c (MemRead a sz) (sz*8).
+Proof.
+  intros; unfold MemRead. etyp; etypeasy.
+Qed.
+
+Print BranchTo.
+Local Lemma hastyp_BranchTo:
+  forall c t (T:hastyp_exp c t 64) (PFSUB:pfsub armc c), hastyp_stmt armc c (BranchTo 64 t) c.
+Proof.
+  intros; unfold BranchTo, UsingAArch32.
+  stypc c; etypeasy; try apply lt_pow2_lin || eassumption || reflexivity. 
 Qed.
 
 Local Lemma hastyp_DecodeBitMasks:
