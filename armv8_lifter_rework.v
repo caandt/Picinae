@@ -226,7 +226,7 @@ Definition ConditionHolds (cond:N) : exp :=
   let GE_LT := <{case = 5#3}> in
   let GT_LE := <{case = 6#3}> in
   let AL    := <{case = 7#3}> in
-  <{ite (cond#4 = 0xF#4) 1#0
+  <{ite (cond#4 = 0xF#4) 1#1
       (cond#4[0] ^ (* First bit negates condition *)
         (ite EQ_NE (Z=1#1) (
         ite CS_CC (C=1#1) (
@@ -4405,39 +4405,39 @@ Local Ltac new_etyp := repeat etyp'.
 
 Local Ltac etyp :=
   repeat match goal with
-         | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
-         | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
-         | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
-         | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
-         | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
-         | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
-        
-         | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
+  | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
+  | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
+  | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
 
-         | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
+  | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
 
-         | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
-         | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
-         | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
-         | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
+  | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
 
-         | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
-         
-         (*| |- _ <= _ => easy lets see if it works*)
+  | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
+  | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
+  | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
+  | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
 
-         | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
-         | |- hastyp_exp _ (Var _) _ => apply TVar
-         | |- hastyp_exp _ (Ite _ _ _) ?a => apply TIte with (w := 1)
-         | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
-         | |- hastyp_exp _ (Unknown _) _ => apply TUnknown
-         | |- hastyp_exp _ (Word _ _) _ => apply TWord
-         | |- hastyp_exp _ (Load _ _ _ _) _ => apply TLoad with (w := 32)
-         | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 32)
-         | X: hastyp_exp _ ?x ?a, Y: hastyp_exp _ ?y ?b |- hastyp_exp _ (Concat ?x ?y) _ => apply TConcat with (w1 := a) (w2 := b)
-         | |- pfsub arm8typctx arm8typctx  => reflexivity
-         | |- _ < _ => reflexivity
-         | |- _ _ = Some _ => reflexivity
-         end.
+  | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
+  
+  (*| |- _ <= _ => easy lets see if it works*)
+
+  | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
+  | |- hastyp_exp _ (Var _) _ => apply TVar
+  | |- hastyp_exp _ (Ite _ _ _) ?a => apply TIte with (w := 1)
+  | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
+  | |- hastyp_exp _ (Unknown _) _ => apply TUnknown
+  | |- hastyp_exp _ (Word _ _) _ => apply TWord
+  | |- hastyp_exp _ (Load _ _ _ _) _ => apply TLoad with (w := 32)
+  | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 32)
+  | X: hastyp_exp _ ?x ?a, Y: hastyp_exp _ ?y ?b |- hastyp_exp _ (Concat ?x ?y) _ => apply TConcat with (w1 := a) (w2 := b)
+  | |- pfsub arm8typctx arm8typctx  => reflexivity
+  | |- _ < _ => reflexivity
+  | |- _ _ = Some _ => reflexivity
+  end.
 
 Local Ltac etypn size :=
   match goal with
@@ -4727,6 +4727,17 @@ Local Ltac solve_armc_sub_fresh :=
   intros v k Hv;
   repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
   exact Hv.
+
+Local Lemma hastyp_ConditionHolds:
+  forall c n (PFSUB: pfsub arm8typctx c),  n<2^4 -> hastyp_exp c (ConditionHolds n) 1.
+Proof.
+  intros. unfold ConditionHolds.
+  etyp; try easy;
+  match goal with
+  | H: pfsub ?c ?c' |- ?c' _ = _ => apply H; try reflexivity
+  | |- _ => try repeat (econstructor || assumption || lia)
+  end.
+Qed.
 
 Local Lemma hastyp_DecodeBitMasks:
   forall immN imms immr immediate,
