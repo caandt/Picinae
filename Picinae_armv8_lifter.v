@@ -644,6 +644,12 @@ Definition Replicate rettemp t w w' x := <{
   rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
 }>.
 
+Lemma meow:
+forall a b,
+1 + a = 2 + b.
+Proof.
+  Compute (<{1#64 << ucast 64 32#64}>).
+
 (* J1-7389 *)
 (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
 Definition DecodeBitMasks (immN imms immr immediate M:N) :=
@@ -660,7 +666,7 @@ Definition DecodeBitMasks (immN imms immr immediate M:N) :=
   let esize := <{Xtemp[404]}> in
   let d := <{Xtemp[405]}> in
   <{
-    (* lenw7 *) {HighestSetBit 7 immNNOTimms};
+     {HighestSetBit 7 immNNOTimms};
     (* The highest setbit position of w bits is w-1;
         casting the len down to 6-bits does not lose information
         and is useful below. *)
@@ -674,11 +680,6 @@ Definition DecodeBitMasks (immN imms immr immediate M:N) :=
     (* R *) temp[402] := immr & levels;
     (* diff *) temp[403] := S-R;
     (* esize *) temp[404] := 1#7 << lenw7;
-    (* TODO: Shreya double check this logic please.
-        I'm encoding `d = UInt(diff<lenw7-1:0>`) as a bit-and with levels,
-        the Ones run of length lenw7. I think this correctly takes the lower
-        lenw7 bits; cannot use an lcast because the cast-lenw7gth has to be N, not exp. *)
-
     (* d *) temp[405] := Xtemp[403] & levels;
     if lenw6 = 1#6 then
     (* welem *) temp[410] := {Ones 2 <{S+1#6}>};
@@ -712,6 +713,8 @@ Definition DecodeBitMasks (immN imms immr immediate M:N) :=
     (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
     exn 0 end end end end end end
 }>.
+
+
 
 Section Decoder.
   Variable n : N.

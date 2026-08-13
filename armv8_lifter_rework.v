@@ -649,67 +649,68 @@ Definition Replicate rettemp t w w' x := <{
 
 (* J1-7389 *)
 (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
-Definition DecodeBitMasks (immN imms immr immediate M:N) :=
-  let imms := <{imms#6}> in
-  let immr := <{immr#6}> in
-  let immN := Word immN 1 in
-  let immediate := Word immediate 1 in
-  let immNNOTimms := <{immN ++ imms}> in
-  let levels := <{Xtemp[400]}> in
-  let S := <{Xtemp[401]}> in
-  let R := <{Xtemp[402]}> in
-  let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
-  let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
-  let esize := <{Xtemp[404]}> in
-  let d := <{Xtemp[405]}> in
-  <{
-    (* lenw7 *) {HighestSetBit 7 immNNOTimms};
-    (* The highest setbit position of w bits is w-1;
-        casting the len down to 6-bits does not lose information
-        and is useful below. *)
-    (* lenw6 *) temp[301] := lcast 6 lenw7;
-    if Xtemp[300] < 1#7 then exn 0 else nop end;
-    if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
-
-    (* levels *) temp[400] := {Ones 6 lenw6};
-    if immediate & (imms & levels = levels) then exn 0 else nop end;
-    (* S *) temp[401] := imms & levels;
-    (* R *) temp[402] := immr & levels;
-    (* diff *) temp[403] := S-R;
-    (* esize *) temp[404] := 1#7 << lenw7;
-    (* d *) temp[405] := Xtemp[403] & levels;
-    if lenw6 = 1#6 then
-    (* welem *) temp[410] := {Ones 2 (Cast CAST_LOW 2 (BinOp OP_PLUS (Var (V_TEMP 401)) (Word 1 6)))};
-    (* telem *) temp[411] := {Ones 2 <{lcast {2} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
-    if lenw6 = 2#6 then
-    (* welem *) temp[410] := {Ones 4 <{lcast {4} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 4 <{lcast {4} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
-    if lenw6 = 3#6 then
-    (* welem *) temp[410] := {Ones 8 <{ucast {8} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 8 <{ucast {8} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
-    if lenw6 = 4#6 then
-    (* welem *) temp[410] := {Ones 16 <{ucast {16} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 16 <{ucast {16} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
-    if lenw6 = 5#6 then
-    (* welem *) temp[410] := {Ones 32 <{ucast {32} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] :=  {Ones 32 <{ucast {32} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
-    if lenw6 = 6#6 then
-    (* welem *) temp[410] := {Ones 64 <{ucast {64} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 64 <{ucast {64} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 64 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
-    exn 0 end end end end end end
-}>.
+  Definition DecodeBitMasks (immN imms immr immediate M:N) :=
+    let imms := <{imms#6}> in
+    let immr := <{immr#6}> in
+    let immN := Word immN 1 in
+    let immediate := Word immediate 1 in
+    let immNNOTimms := <{immN ++ imms}> in
+    let levels := <{Xtemp[400]}> in
+    let S := <{Xtemp[401]}> in
+    let R := <{Xtemp[402]}> in
+    let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
+    let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
+    let esize := <{Xtemp[404]}> in
+    let d := <{Xtemp[405]}> in
+    <{
+      (* lenw7 *) 
+      {HighestSetBit 7 immNNOTimms};
+      (* The highest setbit position of w bits is w-1;
+          casting the len down to 6-bits does not lose information
+          and is useful below. *)
+      (* lenw6 *) temp[301] := lcast 6 lenw7;
+      if Xtemp[300] < 1#7 then exn 0 else nop end;
+      if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
+      (* levels *) temp[400] := {Ones 6 lenw6};
+      if immediate & (imms & levels = levels) then exn 0 else nop end;
+      (* S *) temp[401] := imms & levels;
+      (* R *) temp[402] := immr & levels;
+      (* diff *) temp[403] := S-R;
+      (* esize *) temp[404] := 1#7 << lenw7;
+      (* d *) temp[405] := Xtemp[403] & levels;
+      if lenw6 = 1#6 then
+      (* welem *) temp[410] := {Ones 2 (Cast CAST_LOW 2 (BinOp OP_PLUS (Var (V_TEMP 401)) (Word 1 6)))};
+      (* telem *) temp[411] := {Ones 2 <{lcast {2} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
+      if lenw6 = 2#6 then
+      (* welem *) temp[410] := {Ones 4 <{lcast {4} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 4 <{lcast {4} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
+      if lenw6 = 3#6 then
+      (* welem *) temp[410] := {Ones 8 <{ucast {8} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 8 <{ucast {8} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
+      if lenw6 = 4#6 then
+      (* welem *) temp[410] := {Ones 16 <{ucast {16} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 16 <{ucast {16} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
+      if lenw6 = 5#6 then
+      (* welem *) temp[410] := {Ones 32 <{ucast {32} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] :=  {Ones 32 <{ucast {32} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
+      if lenw6 = 6#6 then
+      (*M cannot be 32 here*)
+      (* welem *) temp[410] := {Ones 64 <{ucast {64} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 64 <{ucast {64} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 64 64 <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 64 64 <{Xtemp[411]}>} else
+      exn 0 end end end end end end
+  }>.
 
 Section Decoder.
   Variable n : N.
@@ -779,7 +780,7 @@ Section Decoder.
       {DecodeBitMasks n imms immr 1 datasize};
       (* imm: temp[980] *)
       (* operand1 *) temp[1000] := lcast datasize X[Xn];
-       {arm_varid Xd} := Xtemp[1000] & imm
+       {arm_varid Xd} := ucast 64 (Xtemp[1000] & imm)
     }>.
 
   Definition arm_eor_imm2il (Xn Xd immr imms sf n:N) :=
@@ -4385,9 +4386,10 @@ Local Ltac etyp' :=
     | |- hastyp_exp _ (Concat (Word _ ?cw1) (Word _ ?cw2)) _ => apply TConcat with (w1 := cw1) (w2 := cw2)
     | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
     | |- hastyp_exp _ (BinOp _ _ _) ?sw => apply TBinOp with (w := sw)
-    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]
+    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]; idtac "TCAST"
     | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
     | |- hastyp_exp ?c1 (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof_c c1 v)
+    | |- hastyp_exp _ (Cast _ _ (XtoVar _)) _ => eapply TCast with (w := 64)
     | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
     | |- hastyp_exp _ (Extract _ _ _) ?sw => apply TExtract with (w := sw)
     | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
@@ -4490,6 +4492,8 @@ Local Ltac stypc_w c w' c1 c2 :=
          | |- hastyp_exp _ _ _  => etyp
   end.
 
+
+  Print TMove.
 Local Ltac e_stypc c :=
   cbn; repeat match goal with
          | |- hastyp_stmt _ _ (Seq _ _) _ => eapply TSeq
@@ -4498,10 +4502,14 @@ Local Ltac e_stypc c :=
          | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep
          | |- hastyp_stmt _ _ Nop _ => apply TNop
          | |- hastyp_stmt _ ?c1 (Move (V_TEMP ?v) _) _ =>
-             eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
-         | |- hastyp_stmt _ ?c1 (Move ?v _) _ => apply TMove with (w := sizeof_c c1 v); [> right | | apply update_some_c]; try reflexivity
+              eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
+         | |- hastyp_stmt _ ?c1 (Move (arm_varid _) _) _ =>
+              apply TMove with (w := 64) (c' := c1); [right | | ]
+         | |- hastyp_stmt _ ?c1 (Move ?v _) _ => 
+              eapply TMove with (w := sizeof_c c1 v)
+              (c' := update c1 (?v) (Some _)); [> right | | apply update_some_c]; try reflexivity
 
-         | |- _ = None \/ _ = Some _ => try left; try reflexivity
+         | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
          | |- hastyp_exp _ _ _  => new_etyp
   end.
 
@@ -4510,20 +4518,6 @@ Local Ltac styp := stypc armc.
 Local Ltac styp_w w c1 c2 := stypc_w armc w c1 c2.
 Local Ltac estyp := e_stypc armc .
 
-Local Lemma hastyp_HighestSetBit:
-  forall w e,
-    w <> 0 -> w <= 64 ->
-    hastyp_exp armc e w ->
-    hastyp_stmt armc armc (HighestSetBit w e)
-      (update (update armc (V_TEMP 301) (Some w)) (V_TEMP 300) (Some w)).
-Proof.
-  intros. assert(w < 2 ^ w) by apply lt_pow2_lin. 
-  unfold_stmt. estyp.
-  all: try lia; try reflexivity. 
-  eapply hastyp_exp_weaken. eassumption.
-  eapply update_fresh. reflexivity.
-  rewrite update_cancel. reflexivity.
-Admitted.
 
 (*Local Ltac hammer :=
   repeat match goal with
@@ -4710,8 +4704,9 @@ Local Lemma hastyp_Replicate:
     w <> 0 -> w' <> 0 -> w <= w' -> t <> rettemp ->
     hastyp_exp c x w ->
     hastyp_stmt armc c (Replicate rettemp t w w' x)
-      (update c (V_TEMP rettemp) (Some w')).
-Proof.
+      (update (update c (V_TEMP rettemp) (Some w')) (V_TEMP t)
+      (Some w)).
+Proof. (*Todo- now easier that DecodeBitMasks is done.*)
 Admitted.
 
 
@@ -4813,19 +4808,48 @@ Proof.
   stypc c; etypeasy; try apply lt_pow2_lin || eassumption || reflexivity. 
 Qed.
 
-Local Lemma hastyp_DecodeBitMasks:
-  forall immN imms immr immediate,
-    (immediate = 0 \/ immediate = 1) ->
-    exists c_final,
-      hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate 64) c_final /\
-      c_final (V_TEMP 980) = Some 64 /\
-      c_final (V_TEMP 990) = Some 64.
+Local Lemma hastyp_HighestSetBit:
+  forall w e c,
+    pfsub armc c ->
+    w <> 0 -> w <= 64 ->
+    hastyp_exp armc e w ->
+    hastyp_stmt armc armc (HighestSetBit w e)
+      (update (update armc (V_TEMP 301) (Some w)) (V_TEMP 300) (Some w)).
 Proof.
-  intros. eexists. split. 
-  unfold_stmt. estyp.
-  eapply hastyp_HighestSetBit. 1-2: lia.
-  admit.
-  estyp. all: try eapply hastyp_Replicate.
+  intros. assert(w < 2 ^ w) by apply lt_pow2_lin.
+  unfold_stmt.
+  eapply TSeq.
+  eapply TMove. left. reflexivity.
+  eapply TBinOp. eapply TWord. assumption.
+  eapply TWord. lia.
+  reflexivity. 
+  eapply TSeq.
+  eapply TRep. unfold widthof_binop. eapply TWord. assumption.
+  reflexivity.
+  estyp. 
+  all: try unfold widthof_binop. all: try rewrite update_cancel. all: try lia; try reflexivity.
+  2: rewrite update_cancel; reflexivity. 
+
+  eapply hastyp_exp_weaken. eassumption. apply update_fresh. reflexivity.
+  eapply TMove. left. reflexivity. 
+  etyp. reflexivity.  
+Qed.
+
+
+Local Lemma hastyp_DecodeBitMasks:
+  forall immN imms immr immediate M,
+    (immN < 2) -> (imms < 2^6) -> (immr < 2^6) ->
+    (immediate = 0 \/ immediate = 1) ->
+    (M=32 \/ M=64)->
+      exists c, hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate M) c
+       /\ armc ⊆ c.
+Proof.
+  intros. eexists. split.
+  unfold_stmt. (*split. *)
+  estyp.
+  eapply hastyp_HighestSetBit. reflexivity. 1-2: lia. 
+
+  replace 7 with (1 + 6) by lia. eapply TConcat. etyp. assumption. etyp. assumption. reflexivity.
   all: try eapply hastyp_Ones.
   all: try rewrite update_frame by congruence;
   try rewrite update_updated; try reflexivity.
@@ -4833,20 +4857,45 @@ Proof.
   rewrite update_swap. rewrite update_updated. lia.
   congruence.
   rewrite update_swap. rewrite update_cancel. rewrite update_swap. estyp. apply update_updated.
-  1-2: congruence. 1-3: admit. (*should just be assumptions*)
+  1-2: congruence.
   all: repeat estyp; repeat (rewrite update_frame; [| congruence]); try apply update_updated.
-  all: try solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate.  solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. all: try lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - solve_armc_sub_fresh.
+Qed.
 
-Admitted.
-  
 Local Lemma hastyp_arm_log_imm:
   forall op Rn Rd immr imms sf n_,
+   (n_ < 2)->(sf < 2)->(imms < 2^6) -> (immr < 2^6)->
     hastyp_stmt armc armc (arm_log_imm2il op Rn Rd immr imms sf n_) armc.
 Proof.
   intros. unfold_stmt.
   destruct op eqn:?.
-  - unfold_stmt. styp. admit. admit. admit.
-  all: try rewrite sizeof_arm_varid; try apply typeof_arm_varid; try reflexivity.
+  - unfold_stmt. estyp.
+  6: { 
+    destruct (sf=?1). edestruct (hastyp_DecodeBitMasks n_ imms immr 1 64) as [c10 [Htyp Hsub]].
+    1-3: assumption. 1-2: lia. eapply hastyp_stmt_weaken'.
+    exact Htyp. eassumption.
+    edestruct (hastyp_DecodeBitMasks n_ imms immr 1 32) as [c10 [Htyp Hsub]].
+    1-3: assumption. 1-2: lia. eapply hastyp_stmt_weaken'.
+    exact Htyp. eassumption.
+  } assumption. assumption.
+  1-3: 
+  reflexivity. admit. (*XtoVar- ez, doable*)
+  admit. (*ez*)
+  eapply pfsub_refl. admit. (*ez from here*)
+
+
 Admitted.
 
 Local Lemma hastyp_arm_mov_imm:
