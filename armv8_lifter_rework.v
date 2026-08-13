@@ -4407,23 +4407,12 @@ Local Ltac new_etyp := repeat etyp'.
 
 Local Ltac etyp :=
   repeat match goal with
-<<<<<<< HEAD
-         | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
-         | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
-         | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
-         | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
-         | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
-         | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
-
-         | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
-=======
   | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
   | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
   | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
   | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
   | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
   | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
->>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
 
   | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a =>
       match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
@@ -4431,16 +4420,10 @@ Local Ltac etyp :=
 
   | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
 
-<<<<<<< HEAD
-         | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
-
-         (*| |- _ <= _ => easy lets see if it works*)
-=======
   | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
   | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
   | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
   | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
->>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
 
   | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
 
@@ -4743,22 +4726,6 @@ Local Ltac solve_armc_sub_fresh :=
   repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
   exact Hv.
 
-<<<<<<< HEAD
-(* @kjee: read it again later *)
-Local Lemma hastyp_DecodeBitMasks:
-  forall immN imms immr immediate,
-    (immediate = 0 \/ immediate = 1) ->
-    exists c_final,
-      hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate 64) c_final /\
-      c_final (V_TEMP 980) = Some 64 /\
-      c_final (V_TEMP 990) = Some 64.
-Proof.
-  intros. eexists. split.
-  unfold_stmt. estyp.
-  eapply hastyp_HighestSetBit. 1-2: lia.
-  admit.
-  estyp. all: try eapply hastyp_Replicate.
-=======
 Local Ltac etypeasy :=
   match goal with
   | H: pfsub ?c ?c' |- ?c' _ = _ => apply H; try reflexivity
@@ -4883,7 +4850,6 @@ Proof.
   eapply hastyp_HighestSetBit. reflexivity. 1-2: lia.
 
   replace 7 with (1 + 6) by lia. eapply TConcat. etyp. assumption. etyp. assumption. reflexivity.
->>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
   all: try eapply hastyp_Ones.
   all: try rewrite update_frame by congruence;
   try rewrite update_updated; try reflexivity.
@@ -4908,11 +4874,6 @@ Proof.
   - solve_armc_sub_fresh.
 Qed.
 
-<<<<<<< HEAD
-Admitted.
-
-=======
->>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
 Local Lemma hastyp_arm_log_imm:
   forall op Rn Rd immr imms sf n_,
    (n_ < 2)->(sf < 2)->(imms < 2^6) -> (immr < 2^6)->
