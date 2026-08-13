@@ -2215,7 +2215,8 @@ Local Lemma hastyp_arm_blx_r:
   forall cond Rm,
     hastyp_stmt armc armc (arm_blx_r_il cond Rm) armc.
 Proof.
-  intros. unfold_stmt. apply hastyp_arm_cond. stypc armct; [ now left | now hammer .. ].
+  intros. unfold_stmt. apply hastyp_arm_cond.
+   stypc armct; [ now left | now hammer .. ].
 Qed.
 Local Lemma hastyp_arm_b:
   forall cond imm24,

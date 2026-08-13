@@ -181,7 +181,7 @@ Notation "'Aligned[' e , alignment ']'" := (AlignCheck e 64 alignment) (in custo
 Notation "'TagAligned[' e ']'" := (AlignCheck e 64 16) (in custom PIL at level 65, no associativity).
 
 Definition CheckSPAlignment :=
-  <{ temp[100] := {Var SCTLR_E1} [4]; if Xtemp[100] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
+  <{ if {Var SCTLR_E1}[4] & ! TagAligned[{Var R_SP}] then exn 0 else nop end}>.
 
 (* Assume AllocationTagAccess is disabled, just turn off the tag bits 59:56. *)
 Definition AddressWithAllocationTag (Xt tag:exp) := <{
@@ -226,7 +226,7 @@ Definition ConditionHolds (cond:N) : exp :=
   let GE_LT := <{case = 5#3}> in
   let GT_LE := <{case = 6#3}> in
   let AL    := <{case = 7#3}> in
-  <{ite (cond#4 = 0xF#4) 1#0
+  <{ite (cond#4 = 0xF#4) 1#1
       (cond#4[0] ^ (* First bit negates condition *)
         (ite EQ_NE (Z=1#1) (
         ite CS_CC (C=1#1) (
@@ -649,67 +649,68 @@ Definition Replicate rettemp t w w' x := <{
 
 (* J1-7389 *)
 (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
-Definition DecodeBitMasks (immN imms immr immediate M:N) :=
-  let imms := <{imms#6}> in
-  let immr := <{immr#6}> in
-  let immN := Word immN 1 in
-  let immediate := Word immediate 1 in
-  let immNNOTimms := <{immN ++ imms}> in
-  let levels := <{Xtemp[400]}> in
-  let S := <{Xtemp[401]}> in
-  let R := <{Xtemp[402]}> in
-  let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
-  let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
-  let esize := <{Xtemp[404]}> in
-  let d := <{Xtemp[405]}> in
-  <{
-    (* lenw7 *) {HighestSetBit 7 immNNOTimms};
-    (* The highest setbit position of w bits is w-1;
-        casting the len down to 6-bits does not lose information
-        and is useful below. *)
-    (* lenw6 *) temp[301] := lcast 6 lenw7;
-    if Xtemp[300] < 1#7 then exn 0 else nop end;
-    if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
-
-    (* levels *) temp[400] := {Ones 6 lenw6};
-    if immediate & (imms & levels = levels) then exn 0 else nop end;
-    (* S *) temp[401] := imms & levels;
-    (* R *) temp[402] := immr & levels;
-    (* diff *) temp[403] := S-R;
-    (* esize *) temp[404] := 1#7 << lenw7;
-    (* d *) temp[405] := Xtemp[403] & levels;
-    if lenw6 = 1#6 then
-    (* welem *) temp[410] := {Ones 2 (Cast CAST_LOW 2 (BinOp OP_PLUS (Var (V_TEMP 401)) (Word 1 6)))};
-    (* telem *) temp[411] := {Ones 2 <{lcast {2} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
-    if lenw6 = 2#6 then
-    (* welem *) temp[410] := {Ones 4 <{lcast {4} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 4 <{lcast {4} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
-    if lenw6 = 3#6 then
-    (* welem *) temp[410] := {Ones 8 <{ucast {8} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 8 <{ucast {8} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
-    if lenw6 = 4#6 then
-    (* welem *) temp[410] := {Ones 16 <{ucast {16} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 16 <{ucast {16} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
-    if lenw6 = 5#6 then
-    (* welem *) temp[410] := {Ones 32 <{ucast {32} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] :=  {Ones 32 <{ucast {32} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
-    if lenw6 = 6#6 then
-    (* welem *) temp[410] := {Ones 64 <{ucast {64} ({S} + {1}#{6})}>};
-    (* telem *) temp[411] := {Ones 64 <{ucast {64} ({d} + {1}#{6})}>};
-    (* wmask *) {Replicate 980 406 64 M <{Xtemp[410]}>};
-    (* tmask *) {Replicate 990 406 64 M <{Xtemp[411]}>} else
-    exn 0 end end end end end end
-}>.
+  Definition DecodeBitMasks (immN imms immr immediate M:N) :=
+    let imms := <{imms#6}> in
+    let immr := <{immr#6}> in
+    let immN := Word immN 1 in
+    let immediate := Word immediate 1 in
+    let immNNOTimms := <{immN ++ imms}> in
+    let levels := <{Xtemp[400]}> in
+    let S := <{Xtemp[401]}> in
+    let R := <{Xtemp[402]}> in
+    let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
+    let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
+    let esize := <{Xtemp[404]}> in
+    let d := <{Xtemp[405]}> in
+    <{
+      (* lenw7 *)
+      {HighestSetBit 7 immNNOTimms};
+      (* The highest setbit position of w bits is w-1;
+          casting the len down to 6-bits does not lose information
+          and is useful below. *)
+      (* lenw6 *) temp[301] := lcast 6 lenw7;
+      if Xtemp[300] < 1#7 then exn 0 else nop end;
+      if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
+      (* levels *) temp[400] := {Ones 6 lenw6};
+      if immediate & (imms & levels = levels) then exn 0 else nop end;
+      (* S *) temp[401] := imms & levels;
+      (* R *) temp[402] := immr & levels;
+      (* diff *) temp[403] := S-R;
+      (* esize *) temp[404] := 1#7 << lenw7;
+      (* d *) temp[405] := Xtemp[403] & levels;
+      if lenw6 = 1#6 then
+      (* welem *) temp[410] := {Ones 2 (Cast CAST_LOW 2 (BinOp OP_PLUS (Var (V_TEMP 401)) (Word 1 6)))};
+      (* telem *) temp[411] := {Ones 2 <{lcast {2} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 2 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 2 M <{Xtemp[411]}>} else
+      if lenw6 = 2#6 then
+      (* welem *) temp[410] := {Ones 4 <{lcast {4} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 4 <{lcast {4} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 4 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 4 M <{Xtemp[411]}>} else
+      if lenw6 = 3#6 then
+      (* welem *) temp[410] := {Ones 8 <{ucast {8} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 8 <{ucast {8} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 8 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 8 M <{Xtemp[411]}>} else
+      if lenw6 = 4#6 then
+      (* welem *) temp[410] := {Ones 16 <{ucast {16} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 16 <{ucast {16} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 16 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 16 M <{Xtemp[411]}>} else
+      if lenw6 = 5#6 then
+      (* welem *) temp[410] := {Ones 32 <{ucast {32} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] :=  {Ones 32 <{ucast {32} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 32 M <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 32 M <{Xtemp[411]}>} else
+      if lenw6 = 6#6 then
+      (*M cannot be 32 here*)
+      (* welem *) temp[410] := {Ones 64 <{ucast {64} ({S} + {1}#{6})}>};
+      (* telem *) temp[411] := {Ones 64 <{ucast {64} ({d} + {1}#{6})}>};
+      (* wmask *) {Replicate 980 406 64 64 <{Xtemp[410]}>};
+      (* tmask *) {Replicate 990 406 64 64 <{Xtemp[411]}>} else
+      exn 0 end end end end end end
+  }>.
 
 Section Decoder.
   Variable n : N.
@@ -779,7 +780,7 @@ Section Decoder.
       {DecodeBitMasks n imms immr 1 datasize};
       (* imm: temp[980] *)
       (* operand1 *) temp[1000] := lcast datasize X[Xn];
-       {arm_varid Xd} := Xtemp[1000] & imm
+       {arm_varid Xd} := ucast 64 (Xtemp[1000] & imm)
     }>.
 
   Definition arm_eor_imm2il (Xn Xd immr imms sf n:N) :=
@@ -4372,7 +4373,7 @@ Proof.
   intros. unfold arm_varid. now destruct_match.
 Qed.
 
-Import Lia.
+Require Import Lia ZifyN ZifyBool.
 
 Local Ltac etyp' :=
   repeat match goal with
@@ -4385,9 +4386,10 @@ Local Ltac etyp' :=
     | |- hastyp_exp _ (Concat (Word _ ?cw1) (Word _ ?cw2)) _ => apply TConcat with (w1 := cw1) (w2 := cw2)
     | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
     | |- hastyp_exp _ (BinOp _ _ _) ?sw => apply TBinOp with (w := sw)
-    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]
+    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]; idtac "TCAST"
     | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
     | |- hastyp_exp ?c1 (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof_c c1 v)
+    | |- hastyp_exp _ (Cast _ _ (XtoVar _)) _ => eapply TCast with (w := 64)
     | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
     | |- hastyp_exp _ (Extract _ _ _) ?sw => apply TExtract with (w := sw)
     | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
@@ -4405,6 +4407,7 @@ Local Ltac new_etyp := repeat etyp'.
 
 Local Ltac etyp :=
   repeat match goal with
+<<<<<<< HEAD
          | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
          | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
          | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
@@ -4413,31 +4416,50 @@ Local Ltac etyp :=
          | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
 
          | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a => match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
+=======
+  | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ ?x _) _ => apply TBinOp with (w := s)
+  | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
+  | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
+>>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
 
-         | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
+  | |- hastyp_exp _ (BinOp ?o ?x ?y) ?a =>
+      match eval compute in (widthof_binop o 0 =? 0) with true => apply TBinOp with (w := a) end
+         || match eval compute in (widthof_binop o 0 =? 1) with true => replace a with (widthof_binop o a); apply TBinOp with (w:=a) end
 
-         | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
-         | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
-         | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
-         | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
+  | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
 
+<<<<<<< HEAD
          | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
 
          (*| |- _ <= _ => easy lets see if it works*)
+=======
+  | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
+  | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
+  | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
+  | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
+>>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
 
-         | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
-         | |- hastyp_exp _ (Var _) _ => apply TVar
-         | |- hastyp_exp _ (Ite _ _ _) ?a => apply TIte with (w := 1)
-         | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
-         | |- hastyp_exp _ (Unknown _) _ => apply TUnknown
-         | |- hastyp_exp _ (Word _ _) _ => apply TWord
-         | |- hastyp_exp _ (Load _ _ _ _) _ => apply TLoad with (w := 32)
-         | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 32)
-         | X: hastyp_exp _ ?x ?a, Y: hastyp_exp _ ?y ?b |- hastyp_exp _ (Concat ?x ?y) _ => apply TConcat with (w1 := a) (w2 := b)
-         | |- pfsub arm8typctx arm8typctx  => reflexivity
-         | |- _ < _ => reflexivity
-         | |- _ _ = Some _ => reflexivity
-         end.
+  | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
+
+  (*| |- _ <= _ => easy lets see if it works*)
+
+  | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
+  | |- hastyp_exp _ (Var _) _ => apply TVar
+  | |- hastyp_exp _ (Ite _ _ _) ?a => apply TIte with (w := 1)
+  | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
+  | |- hastyp_exp _ (Unknown _) _ => apply TUnknown
+  | |- hastyp_exp _ (Word _ _) _ => apply TWord
+  | |- hastyp_exp _ (Load _ _ _ _) _ => apply TLoad with (w := 64)
+  | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 64)
+  | |- hastyp_exp _ (Extract ?hi ?lo ?e) ?n => replace n with (N.succ hi - lo);[eapply TExtract|]
+  | X: hastyp_exp _ ?x ?a, Y: hastyp_exp _ ?y ?b |- hastyp_exp _ (Concat ?x ?y) _ => apply TConcat with (w1 := a) (w2 := b)
+  | |- pfsub arm8typctx arm8typctx  => reflexivity
+  | |- _ < _ => reflexivity
+  | |- _ _ = Some _ => reflexivity
+  end.
 
 Local Ltac etypn size :=
   match goal with
@@ -4487,6 +4509,8 @@ Local Ltac stypc_w c w' c1 c2 :=
          | |- hastyp_exp _ _ _  => etyp
   end.
 
+
+  Print TMove.
 Local Ltac e_stypc c :=
   cbn; repeat match goal with
          | |- hastyp_stmt _ _ (Seq _ _) _ => eapply TSeq
@@ -4495,10 +4519,14 @@ Local Ltac e_stypc c :=
          | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep
          | |- hastyp_stmt _ _ Nop _ => apply TNop
          | |- hastyp_stmt _ ?c1 (Move (V_TEMP ?v) _) _ =>
-             eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
-         | |- hastyp_stmt _ ?c1 (Move ?v _) _ => apply TMove with (w := sizeof_c c1 v); [> right | | apply update_some_c]; try reflexivity
+              eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
+         | |- hastyp_stmt _ ?c1 (Move (arm_varid _) _) _ =>
+              apply TMove with (w := 64) (c' := c1); [right | | ]
+         | |- hastyp_stmt _ ?c1 (Move ?v _) _ =>
+              eapply TMove with (w := sizeof_c c1 v)
+              (c' := update c1 (?v) (Some _)); [> right | | apply update_some_c]; try reflexivity
 
-         | |- _ = None \/ _ = Some _ => try left; try reflexivity
+         | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
          | |- hastyp_exp _ _ _  => new_etyp
   end.
 
@@ -4507,21 +4535,6 @@ Local Ltac styp := stypc armc.
 Local Ltac styp_w w c1 c2 := stypc_w armc w c1 c2.
 Local Ltac estyp := e_stypc armc .
 
-(* @kjee: should not be too hard *)
-Local Lemma hastyp_HighestSetBit:
-  forall w e,
-    w <> 0 -> w <= 64 ->
-    hastyp_exp armc e w ->
-    hastyp_stmt armc armc (HighestSetBit w e)
-      (update (update armc (V_TEMP 301) (Some w)) (V_TEMP 300) (Some w)).
-Proof.
-  intros. assert(w < 2 ^ w) by apply lt_pow2_lin.
-  unfold_stmt. estyp.
-  all: try lia; try reflexivity.
-  eapply hastyp_exp_weaken. eassumption.
-  eapply update_fresh. reflexivity.
-  rewrite update_cancel. reflexivity.
-Admitted.
 
 (*Local Ltac hammer :=
   repeat match goal with
@@ -4708,8 +4721,9 @@ Local Lemma hastyp_Replicate:
     w <> 0 -> w' <> 0 -> w <= w' -> t <> rettemp ->
     hastyp_exp c x w ->
     hastyp_stmt armc c (Replicate rettemp t w w' x)
-      (update c (V_TEMP rettemp) (Some w')).
-Proof.
+      (update (update c (V_TEMP rettemp) (Some w')) (V_TEMP t)
+      (Some w)).
+Proof. (*Todo- now easier that DecodeBitMasks is done.*)
 Admitted.
 
 
@@ -4729,6 +4743,7 @@ Local Ltac solve_armc_sub_fresh :=
   repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
   exact Hv.
 
+<<<<<<< HEAD
 (* @kjee: read it again later *)
 Local Lemma hastyp_DecodeBitMasks:
   forall immN imms immr immediate,
@@ -4743,6 +4758,132 @@ Proof.
   eapply hastyp_HighestSetBit. 1-2: lia.
   admit.
   estyp. all: try eapply hastyp_Replicate.
+=======
+Local Ltac etypeasy :=
+  match goal with
+  | H: pfsub ?c ?c' |- ?c' _ = _ => apply H; try reflexivity
+  | |- _ => try repeat (econstructor || assumption || lia)
+  end.
+
+Local Lemma hastyp_ConditionHolds:
+  forall c n (PFSUB: pfsub arm8typctx c),  n<2^4 -> hastyp_exp c (ConditionHolds n) 1.
+Proof.
+  intros. unfold ConditionHolds.
+  etyp; try easy; etypeasy.
+Qed.
+
+Local Lemma hastyp_XtoVar:
+  forall n c (PFSUB: pfsub arm8typctx c), n < 2^5 -> hastyp_exp c (XtoVar n) 64.
+Proof.
+  intros. unfold XtoVar.
+  etyp; try easy; etypeasy.
+Qed.
+
+Local Lemma hastyp_AllocationTagFromAddress:
+  forall e n c (PFSUB:pfsub arm8typctx c), hastyp_exp c e n -> n >= 60 -> hastyp_exp c (AllocationTagFromAddress e) 4.
+Proof.
+  unfold AllocationTagFromAddress; intros.
+  etyp; try easy; eassumption || etypeasy.
+Qed.
+
+Local Lemma hastyp_b2exp:
+  forall b c, hastyp_exp c (b2exp b) 1.
+Proof.
+  destruct b; repeat econstructor.
+Qed.
+
+Local Lemma hastyp_AlignPow2:
+  forall c e w p (T:hastyp_exp c e w) (PFSUB:pfsub arm8typctx c), 8 < 2^w -> hastyp_exp c (AlignPow2 e w p) w.
+Proof.
+  unfold AlignPow2. intros.
+  destruct_match; try assumption; etyp; lia || assumption.
+Qed.
+
+Local Lemma hastyp_AlignCheck:
+  forall c e w a (T:hastyp_exp c e w) (PFSUB:pfsub arm8typctx c), a < 2^w -> hastyp_exp c (AlignCheck e w a) 1.
+Proof.
+  unfold AlignCheck. intros.
+  etyp; lia || assumption.
+Qed.
+
+Local Lemma hastyp_CheckSPAlignment:
+  forall c (PFSUB:pfsub arm8typctx c), hastyp_stmt arm8typctx c (CheckSPAlignment) c.
+Proof.
+  intros; unfold CheckSPAlignment, AlignCheck.
+  repeat econstructor; etypeasy. etyp. all: try lia || reflexivity.
+  1,3: apply PFSUB; reflexivity. lia.
+Qed.
+
+Local Lemma hastyp_MemSingleWrite:
+  forall a sz v c (T:hastyp_exp c a 64) (T2:hastyp_exp c v (sz*8)) (PFSUB:pfsub arm8typctx c),
+  sz < 2^64 -> hastyp_stmt armc c (MemSingleWrite a sz v) c.
+Proof.
+  intros; unfold MemSingleWrite. stypc c. apply hastyp_AlignCheck.
+  all: try assumption || reflexivity.
+  apply TMove with (w := sizeof V_MEM64).
+    right. 3: apply update_some. 3: apply PFSUB.
+    all:try reflexivity. etyp; etypeasy.
+Qed.
+
+Definition hastyp_MemWrite := hastyp_MemSingleWrite.
+
+Local Lemma hastyp_MemRead:
+  forall c a sz (T:hastyp_exp c a 64) (PFSUB:pfsub armc c), sz < 2^64 -> hastyp_exp c (MemRead a sz) (sz*8).
+Proof.
+  intros; unfold MemRead. etyp; etypeasy.
+Qed.
+
+Print BranchTo.
+Local Lemma hastyp_BranchTo:
+  forall c t (T:hastyp_exp c t 64) (PFSUB:pfsub armc c), hastyp_stmt armc c (BranchTo 64 t) c.
+Proof.
+  intros; unfold BranchTo, UsingAArch32.
+  stypc c; etypeasy; try apply lt_pow2_lin || eassumption || reflexivity.
+Qed.
+
+Local Lemma hastyp_HighestSetBit:
+  forall w e c,
+    pfsub armc c ->
+    w <> 0 -> w <= 64 ->
+    hastyp_exp armc e w ->
+    hastyp_stmt armc armc (HighestSetBit w e)
+      (update (update armc (V_TEMP 301) (Some w)) (V_TEMP 300) (Some w)).
+Proof.
+  intros. assert(w < 2 ^ w) by apply lt_pow2_lin.
+  unfold_stmt.
+  eapply TSeq.
+  eapply TMove. left. reflexivity.
+  eapply TBinOp. eapply TWord. assumption.
+  eapply TWord. lia.
+  reflexivity.
+  eapply TSeq.
+  eapply TRep. unfold widthof_binop. eapply TWord. assumption.
+  reflexivity.
+  estyp.
+  all: try unfold widthof_binop. all: try rewrite update_cancel. all: try lia; try reflexivity.
+  2: rewrite update_cancel; reflexivity.
+
+  eapply hastyp_exp_weaken. eassumption. apply update_fresh. reflexivity.
+  eapply TMove. left. reflexivity.
+  etyp. reflexivity.
+Qed.
+
+
+Local Lemma hastyp_DecodeBitMasks:
+  forall immN imms immr immediate M,
+    (immN < 2) -> (imms < 2^6) -> (immr < 2^6) ->
+    (immediate = 0 \/ immediate = 1) ->
+    (M=32 \/ M=64)->
+      exists c, hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate M) c
+       /\ armc ⊆ c.
+Proof.
+  intros. eexists. split.
+  unfold_stmt. (*split. *)
+  estyp.
+  eapply hastyp_HighestSetBit. reflexivity. 1-2: lia.
+
+  replace 7 with (1 + 6) by lia. eapply TConcat. etyp. assumption. etyp. assumption. reflexivity.
+>>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
   all: try eapply hastyp_Ones.
   all: try rewrite update_frame by congruence;
   try rewrite update_updated; try reflexivity.
@@ -4750,20 +4891,50 @@ Proof.
   rewrite update_swap. rewrite update_updated. lia.
   congruence.
   rewrite update_swap. rewrite update_cancel. rewrite update_swap. estyp. apply update_updated.
-  1-2: congruence. 1-3: admit. (*should just be assumptions*)
+  1-2: congruence.
   all: repeat estyp; repeat (rewrite update_frame; [| congruence]); try apply update_updated.
-  all: try solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate.  solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - eapply hastyp_Replicate. solve_armc_sub_fresh. all: try lia. etyp.
+  - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
+  - solve_armc_sub_fresh.
+Qed.
 
+<<<<<<< HEAD
 Admitted.
 
+=======
+>>>>>>> 605d7cd8ec85479ab1562b5628486ba7f863bd55
 Local Lemma hastyp_arm_log_imm:
   forall op Rn Rd immr imms sf n_,
+   (n_ < 2)->(sf < 2)->(imms < 2^6) -> (immr < 2^6)->
     hastyp_stmt armc armc (arm_log_imm2il op Rn Rd immr imms sf n_) armc.
 Proof.
   intros. unfold_stmt.
   destruct op eqn:?.
-  - unfold_stmt. styp. admit. admit. admit.
-  all: try rewrite sizeof_arm_varid; try apply typeof_arm_varid; try reflexivity.
+  - unfold_stmt. estyp.
+  6: {
+    destruct (sf=?1). edestruct (hastyp_DecodeBitMasks n_ imms immr 1 64) as [c10 [Htyp Hsub]].
+    1-3: assumption. 1-2: lia. eapply hastyp_stmt_weaken'.
+    exact Htyp. eassumption.
+    edestruct (hastyp_DecodeBitMasks n_ imms immr 1 32) as [c10 [Htyp Hsub]].
+    1-3: assumption. 1-2: lia. eapply hastyp_stmt_weaken'.
+    exact Htyp. eassumption.
+  } assumption. assumption.
+  1-3:
+  reflexivity. admit. (*XtoVar- ez, doable*)
+  admit. (*ez*)
+  eapply pfsub_refl. admit. (*ez from here*)
+
+
 Admitted.
 
 Local Lemma hastyp_arm_mov_imm:
