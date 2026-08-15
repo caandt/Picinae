@@ -641,11 +641,10 @@ Definition ROR w x shift := <{ite (shift#w = 0#w) x ((x >> shift#w) | (x << (w#w
 (* Replicate w-bit expression x until it is w' bits *)
 Definition Replicate rettemp t w w' x := <{
   if w'#w' % w#w' <> 0#w' then exn 0 else nop end;
-  temp[t] := 0#w';
+  temp[t] := 0#w;
   temp[rettemp] := 0#w';
-  rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
+  rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << ((ucast w' Xtemp[t]) * w'#w')); temp[t] := Xtemp[t]+1#w end
 }>.
-
 
 (* J1-7389 *)
 (* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
@@ -4377,6 +4376,8 @@ Require Import Lia ZifyN ZifyBool.
 
 Local Ltac etyp' :=
   repeat match goal with 
+    | H : hastyp_exp ?c ?x ?w0 |- hastyp_exp ?c' (Cast _ _ ?x) _ =>
+    eapply TCast with (w:= w0)
     | |- hastyp_exp _ (R[_,?s]) ?s => unfold arm64_R; cbn
     | |- hastyp_exp _ (SP_read ?s) ?s => unfold SP_read; cbn
     | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
@@ -4411,6 +4412,7 @@ Local Ltac etyp :=
   | H: hastyp_exp _ ?x ?s |- hastyp_exp _ (BinOp _ _ ?x) _ => apply TBinOp with (w := s)
   | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
   | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
+  | |- hastyp_exp _ (BinOp ?bop _ _) _ => eapply TBinOp with (bop := bop)
   | |- hastyp_exp _ (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof v)
   | |- hastyp_exp _ (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof v)
 
@@ -4422,7 +4424,9 @@ Local Ltac etyp :=
 
   | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
   | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
-  | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
+  | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end  
+  | _ : hastyp_exp _ ?e ?w0 |- hastyp_exp _ (Cast _ _ ?e) _ =>
+    eapply TCast with (w := w0); eassumption 
   | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
 
   | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
@@ -4517,6 +4521,8 @@ Local Ltac e_stypc c :=
 Local Ltac styp := stypc armc.
 Local Ltac styp_w w c1 c2 := stypc_w armc w c1 c2.
 Local Ltac estyp := e_stypc armc .
+Local Ltac estyp_c c:= e_stypc c .
+
 
 
 (*Local Ltac hammer :=
@@ -4698,18 +4704,6 @@ Proof.
   unfold Ones. new_etyp. all: first[lia|assumption].
 Qed.
 
-Local Lemma hastyp_Replicate:
-  forall c rettemp t w w' x,
-    armc ⊆ c ->
-    w <> 0 -> w' <> 0 -> w <= w' -> t <> rettemp ->
-    hastyp_exp c x w ->
-    hastyp_stmt armc c (Replicate rettemp t w w' x)
-      (update (update c (V_TEMP rettemp) (Some w')) (V_TEMP t)
-      (Some w)).
-Proof. (*Todo- now easier that DecodeBitMasks is done.*)
-Admitted.
-
-
 Local Lemma sizeof_c_lookup:
   forall c v w,
     c v = Some w ->
@@ -4725,6 +4719,43 @@ Local Ltac solve_armc_sub_fresh :=
   intros v k Hv;
   repeat (rewrite update_frame; [| intro Heq; subst v; discriminate Hv]);
   exact Hv.
+
+  Local Lemma hastyp_Replicate:
+  forall rettemp t w w' c x,
+    armc ⊆ c ->
+    w <> 0 -> w' <> 0 -> w <= w' -> t <> rettemp ->
+       hastyp_exp (update (update c (V_TEMP rettemp) (Some w')) (V_TEMP t)
+      (Some w)) x w ->
+    hastyp_stmt armc c (Replicate rettemp t w w' x)
+      (update (update c (V_TEMP rettemp) (Some w')) (V_TEMP t)
+      (Some w)).
+Proof.
+   (*Todo- now easier that DecodeBitMasks is done.*)
+   intros. unfold Replicate. assert(w' < 2 ^ w') by apply lt_pow2_lin.
+   all: estyp. all: try lia. all: try reflexivity.
+   all: try rewrite update_updated; unfold sizeof_c.
+   rewrite update_updated. reflexivity.
+   rewrite update_updated. estyp. 
+   rewrite update_swap. 
+   eapply hastyp_exp_weaken. eassumption. 
+   eapply pfsub_update. eapply pfsub_update. 
+   easy. congruence.
+   rewrite update_updated. rewrite update_swap. 
+   new_etyp. rewrite update_updated. 
+   unfold sizeof_c. rewrite update_updated. reflexivity.
+   unfold sizeof_c. rewrite update_updated. assumption.
+   congruence.
+   rewrite update_updated. rewrite update_swap. estyp. lia. congruence.
+   rewrite update_updated. unfold widthof_binop.
+   rewrite update_cancel. rewrite update_swap, update_updated. reflexivity. congruence.
+   assert (w < 2^w') by lia. assert (0<w) by lia. 
+   rewrite <- N.pow_0_r with (n:=2). eapply N.pow_lt_mono_r. lia. assumption. 
+   rewrite update_updated. unfold widthof_binop.
+   rewrite update_cancel. rewrite update_swap. rewrite update_cancel. reflexivity.
+   congruence. rewrite update_swap. reflexivity. congruence. 
+Qed. 
+
+
 
 Local Ltac etypeasy :=
   match goal with
@@ -4835,16 +4866,23 @@ Proof.
   etyp. reflexivity.  
 Qed.
 
-
 Local Lemma hastyp_DecodeBitMasks:
   forall immN imms immr immediate M,
     (immN < 2) -> (imms < 2^6) -> (immr < 2^6) ->
     (immediate = 0 \/ immediate = 1) ->
     (M=32 \/ M=64)->
-      exists c, hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate M) c
-       /\ armc ⊆ c.
+    hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate M) 
+    (update (update (update (update (update (update (update (update armc
+    (V_TEMP 301) (Some 6))
+    (V_TEMP 300) (Some 7))
+    (V_TEMP 400) (Some 6))
+    (V_TEMP 401) (Some 6))
+    (V_TEMP 402) (Some 6))
+    (V_TEMP 403) (Some 6))
+    (V_TEMP 404) (Some 7))
+    (V_TEMP 405) (Some 6)).
 Proof.
-  intros. eexists. split.
+  intros.
   unfold_stmt. (*split. *)
   estyp.
   eapply hastyp_HighestSetBit. reflexivity. 1-2: lia. 
@@ -4857,7 +4895,7 @@ Proof.
   rewrite update_swap. rewrite update_updated. lia.
   congruence.
   rewrite update_swap. rewrite update_cancel. rewrite update_swap. estyp. apply update_updated.
-  1-2: congruence.
+  1-2: try congruence.
   all: repeat estyp; repeat (rewrite update_frame; [| congruence]); try apply update_updated.
   - eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp.
   - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate.  solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
@@ -4871,7 +4909,11 @@ Proof.
   - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
   - eapply hastyp_Replicate. solve_armc_sub_fresh. all: try lia. etyp.
   - eapply hastyp_stmt_weaken'. eapply hastyp_Replicate. solve_armc_sub_fresh. 1-4: lia. etyp. solve_armc_sub_fresh.
-  - solve_armc_sub_fresh.
+  -  
+  rewrite update_updated. rewrite update_frame by discriminate.
+  rewrite update_updated. 
+  rewrite update_swap with (x1:= temp[300])(x2:=temp[301])
+  (y1:=(Some 7))(y2:=(Some 6)) by congruence. rewrite update_cancel by congruence. reflexivity.
 Qed.
 
 Local Lemma hastyp_arm_log_imm:
@@ -4883,13 +4925,9 @@ Proof.
   destruct op eqn:?.
   - unfold_stmt. estyp.
   6: { 
-    destruct (sf=?1). edestruct (hastyp_DecodeBitMasks n_ imms immr 1 64) as [c10 [Htyp Hsub]].
-    1-3: assumption. 1-2: lia. eapply hastyp_stmt_weaken'.
-    exact Htyp. eassumption.
-    edestruct (hastyp_DecodeBitMasks n_ imms immr 1 32) as [c10 [Htyp Hsub]].
-    1-3: assumption. 1-2: lia. eapply hastyp_stmt_weaken'.
-    exact Htyp. eassumption.
-  } assumption. assumption.
+    destruct (sf=?1). all:  eapply hastyp_DecodeBitMasks.
+    all: admit.
+  } 
   1-3: 
   reflexivity. admit. (*XtoVar- ez, doable*)
   admit. (*ez*)
