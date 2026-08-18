@@ -1248,7 +1248,7 @@ Section Decoder.
   Definition arm_drps2il := havoc.
 
   Definition arm_br2il Xn := <{branch X[Xn]}>.
-  Definition arm_blr2il Xn := <{temp[1]:=X[Xn]; var[30] := PC+4#64; branch Xtemp[1]}>.
+  Definition arm_blr2il Xn := <{temp[1]:=X[Xn]; var[30] := PC+4#64; (branch Xtemp[1]); nop}>.
   Definition arm_ret2il Xn := <{branch X[Xn]}>.
 
   Definition uncond_b_reg :=
@@ -3163,21 +3163,14 @@ Section Decoder.
 
   (* exttype - 3bit encoding of the type of extension. See J1-7387 and 7388 *)
   (* Assign the extended value ro regt *)
-  Definition ExtendReg regt (w regn exttype shift:N) :=
+  Definition ExtendReg regt (regn exttype shift:N) :=
+    let len := N.min (N.shiftl 8 (N.land exttype 3)) (64-shift) in
     let exttype := <{exttype#3}> in
     let signed  := <{exttype [2]}> in
     <{if 4#3 < (shift#3) then exn 0 else nop end;
-      temp[200] := lcast w X[regn];
-      if exttype = 0#3 then (* UXTB *) temp[201] := ucast 8  Xtemp[200] else
-      if exttype = 1#3 then (* UXTH *) temp[201] := ucast 16 Xtemp[200] else
-      if exttype = 2#3 then (* UXTW *) temp[201] := ucast 32 Xtemp[200] else
-      if exttype = 3#3 then (* UXTX *) temp[201] := ucast 64 Xtemp[200] else
-      if exttype = 4#3 then (* SXTB *) temp[201] := scast 8  Xtemp[200] else
-      if exttype = 5#3 then (* SXTH *) temp[201] := scast 16 Xtemp[200] else
-      if exttype = 6#3 then (* SXTW *) temp[201] := scast 32 Xtemp[200] else
-                            (* SXTX *) temp[201] := scast 64 Xtemp[200]
-      end end end end end end end;
-      regt := Xtemp[201]
+      if signed then regt := scast 64 ((lcast {len} X[regn])++0#shift)
+      else           regt := ucast 64 ((lcast {len} X[regn])++0#shift)
+      end
     }>.
 
   Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
@@ -3185,7 +3178,7 @@ Section Decoder.
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
     let dbytes := N.shiftl 1 size in
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend shift in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend shift in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset ;
@@ -3199,7 +3192,7 @@ Section Decoder.
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
     let dbytes := N.shiftl 1 size in
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend shift in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend shift in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset ;
@@ -3210,7 +3203,7 @@ Section Decoder.
     }>.
 
   Definition arm_ldrb_reg2il (Xn Xm Xt extend:N) :=
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend 0 in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend 0 in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -3220,7 +3213,7 @@ Section Decoder.
     }>.
 
   Definition arm_ldrsb_reg2il (Xn Xm Xt size extend:N) :=
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend 0 in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend 0 in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -3230,7 +3223,7 @@ Section Decoder.
     }>.
 
   Definition arm_ldrh_reg2il (Xn Xm Xt extend S:N) :=
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -3240,7 +3233,7 @@ Section Decoder.
     }>.
 
   Definition arm_ldrsh_reg2il (Xn Xm Xt extend size S:N) :=
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -3251,7 +3244,7 @@ Section Decoder.
 
   Definition arm_ldrsw_reg2il (Xn Xm Xt extend S:N) :=
     let shift := match S with 0 => 0 | _ => 2 end in
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -3261,7 +3254,7 @@ Section Decoder.
     }>.
 
   Definition arm_strb_reg2il (Xn Xm Xt extend:N) :=
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend 0 in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend 0 in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -3271,7 +3264,7 @@ Section Decoder.
     }>.
 
   Definition arm_strh_reg2il (Xn Xm Xt extend S:N) :=
-    let calc_offset := ExtendReg (temp[9000]) 64 Xm extend S in
+    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset;
@@ -4594,7 +4587,7 @@ Print TSeq.
 
 Local Ltac styp := stypc armc.
 Local Ltac styp_w w c1 c2 := stypc_w armc w c1 c2.
-Local Ltac estyp := e_stypc armc .
+Local Ltac estyp := e_stypc armc. (* choice of context has no effect. *)
 Local Ltac estyp_c c:= e_stypc c .
 
 
@@ -4789,16 +4782,45 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma pfsub_remove {A B:Type} {Eq:EqDec A}:
+  forall (c:A->option B) v, pfsub (update c v None) c.
+Proof.
+  intros. intros x y H. destruct (iseq x v).
+    subst. rewrite update_updated in H. discriminate.
+    rewrite update_frame in H; assumption.
+Qed.
+
+Local Ltac etypeasy :=
+  match goal with
+  | H: pfsub ?c ?c' |- ?c' _ = _ => apply H; try reflexivity
+  | |- _ => try repeat (econstructor || assumption || lia || discriminate)
+  end.
+
 Local Ltac solve_armc_sub :=
   match goal with
   | |- ?c ⊆ update ?c' ?x (Some ?y) =>
       first
         [ apply update_some;  [ reflexivity | solve_armc_sub ]
-        | apply update_fresh2; [ reflexivity | solve_armc_sub ]
-        | ((apply update_some; solve_armc_sub) + (apply update_fresh2; solve_armc_sub))]
+        | apply update_fresh2; [ reflexivity | solve_armc_sub ]]
+  | |- update ?c _ None ⊆ ?c2 => apply pfsub_remove
   | |- ?c ⊆ ?c2 => reflexivity || assumption
   | H: pfsub armc ?c |- ?c _ = _ => apply H; reflexivity
   end.
+
+Local Ltac solve_armc_sub' :=
+  match goal with
+  | |- ?c ⊆ update ?c' ?x (Some ?y) =>
+      first
+        [ apply update_some;  [ (repeat rewrite update_frame in c by etypeasy); try rewrite update_updated; reflexivity || etypeasy
+                              | solve_armc_sub ]
+        | apply update_fresh2; [ (repeat rewrite update_frame in c by etypeasy); try rewrite update_updated; reflexivity || etypeasy
+                              | solve_armc_sub ]
+        | ((apply update_some; solve_armc_sub) + (apply update_fresh2; solve_armc_sub))]
+  | |- update ?c _ None ⊆ ?c2 => apply pfsub_remove
+  | |- ?c ⊆ ?c2 => reflexivity || assumption
+  | H: pfsub armc ?c |- ?c _ = _ => apply H; reflexivity
+  end.
+
 
   Local Lemma hastyp_Replicate:
   forall rettemp t w w' c x,
@@ -4838,12 +4860,6 @@ Proof.
 Qed. 
 
 
-
-Local Ltac etypeasy :=
-  match goal with
-  | H: pfsub ?c ?c' |- ?c' _ = _ => apply H; try reflexivity
-  | |- _ => try repeat (econstructor || assumption || lia)
-  end.
 
 Local Lemma hastyp_ConditionHolds:
   forall c n (PFSUB: pfsub arm8typctx c),  n<2^4 -> hastyp_exp c (ConditionHolds n) 1.
@@ -4947,28 +4963,24 @@ Proof.
   intros; unfold_stmt. apply hastyp_BranchTo;[apply hastyp_XtoVar|]; assumption.
 Qed.
 
-Print arm_blr2il.
-Lemma pfsub_remove {A B:Type} {Eq:EqDec A}:
-  forall (c:A->option B) v, pfsub (update c v None) c.
+Lemma pfsub_remove2 {A B:Type} {E:EqDec A}:
+  forall c1 c2 var (val:B), (forall x y, x<>var -> c1 x = Some y -> c2 x = Some y) -> update c1 var None ⊆ update c2 var (Some val).
 Proof.
-  intros. intros x y H. destruct (iseq x v).
-    subst. rewrite update_updated in H. discriminate.
-    rewrite update_frame in H; assumption.
+  intros. intros x y H2. destruct (iseq x var0).
+    subst. rewrite update_updated in H2; discriminate.
+    rewrite update_frame in * by assumption. apply H; assumption.
 Qed.
 
 Local Lemma hastyp_arm_blr2il:
-  forall c (Xn:N) (B:Xn < 2^5) (PF:pfsub armc c), hastyp_stmt armc c (arm_blr2il Xn) (update c (V_TEMP 1) (Some 64)).
+  forall c (Xn:N) (B:Xn < 2^5) (PF:pfsub armc c), hastyp_stmt armc c (arm_blr2il Xn) (update c (V_TEMP 1) None).
 Proof.
-  intros. unfold_stmt. estyp_c (update c (V_TEMP 1) (Some 64)). 
-    apply hastyp_XtoVar; easy.
-    reflexivity.
-    econstructor. right; reflexivity. etyp; rewrite update_frame; try apply PF; discriminate || reflexivity.
-      reflexivity.
-    apply hastyp_BranchTo. etyp.
-    solve_armc_sub.
-    reflexivity.
-    apply update_some. apply PF; reflexivity.
-    reflexivity.
+  intros. unfold_stmt. econstructor. estyp_c (update c (V_TEMP 1) None); try apply hastyp_XtoVar; etypeasy. reflexivity.
+  econstructor. econstructor. right; cbn; reflexivity. etyp; rewrite update_frame; etypeasy. reflexivity.
+  econstructor. apply hastyp_BranchTo. etyp. apply update_some; etypeasy. apply update_fresh2; etypeasy.
+  econstructor. 2-4:reflexivity. 
+  apply update_some.
+    repeat rewrite update_frame by etypeasy. try rewrite update_updated. etypeasy.
+    apply pfsub_remove2. intros. assumption.
 Qed.
 
 Local Lemma hastyp_arm_ret2il:
@@ -4997,10 +5009,9 @@ Local Lemma hastyp_arm_bl2il:
 Proof.
   intros; unfold_stmt. econstructor.
   econstructor. right; reflexivity. etyp; etypeasy. eapply (update_some _ _ c). etypeasy. easy.
-  styp; etypeasy. unfold sizeof; simpl; lia. all: reflexivity.
+  styp; etypeasy. all: reflexivity.
 Qed.
 
-Print arm_tbz2il.
 Local Lemma hastyp_arm_tbz2il:
   forall c (Rt imm14 b5 b40:N) (B1:Rt<2^5) (B2:imm14<2^14) (B3:b5<2^1) (B4:b40<2^2) (PF:pfsub armc c),
   hastyp_stmt armc c (arm_tbz2il Rt imm14 b5 b40) c.
@@ -5057,14 +5068,14 @@ Local Lemma hastyp_DecodeBitMasks:
     (M=32 \/ M =64)->
     hastyp_stmt armc armc (DecodeBitMasks immN imms immr immediate M) 
     (update (update (update (update (update (update (update (update (update (update armc
-    (V_TEMP 301) (Some 6))
-    (V_TEMP 300) (Some 7))
-    (V_TEMP 400) (Some 6))
-    (V_TEMP 401) (Some 6))
-    (V_TEMP 402) (Some 6))
-    (V_TEMP 403) (Some 6))
-    (V_TEMP 404) (Some 7))
-    (V_TEMP 405) (Some 6))
+    (V_TEMP 301) (None))
+    (V_TEMP 300) (None))
+    (V_TEMP 400) (None))
+    (V_TEMP 401) (None))
+    (V_TEMP 402) (None))
+    (V_TEMP 403) (None))
+    (V_TEMP 404) (None))
+    (V_TEMP 405) (None))
     (V_TEMP 990) (Some M))
     (V_TEMP 980) (Some M)).
 Proof.
@@ -5149,7 +5160,12 @@ Proof.
     rewrite update_swap with (x1:=temp[980]) (x2:=temp[990]) by congruence.
     rewrite update_swap with (x1:=temp[980]) (x2:=temp[405]) by congruence.
     rewrite update_swap with (x1:=temp[990]) (x2:=temp[405]) by congruence.
-    reflexivity.
+    repeat apply pfsub_update.
+    intros x y PF.
+    repeat match goal with
+           |- update ?c ?v _ _= _ => destruct (iseq x v);[subst; (repeat rewrite update_frame in PF by intro;discriminate); rewrite update_updated in PF; discriminate| rewrite update_frame in * by assumption ]
+           end.
+    assumption.
 Qed.
 
 Local Lemma update_sub :
@@ -5161,6 +5177,204 @@ Proof.
     subst; rewrite H2 in H; inversion H; subst. rewrite update_updated. reflexivity.
     rewrite update_frame; assumption.
 Qed.
+
+Local Lemma hastyp_ExtendReg:
+  forall c regt regn exttype shift (PF:pfsub armc c) (B1:regn<2^5) (B2:shift<2^3) (B3:exttype<2^3),
+  hastyp_stmt armc c (ExtendReg (V_TEMP regt) regn exttype shift) (update c (V_TEMP regt) (Some 64)).
+Proof.
+  intros. unfold ExtendReg. 
+  econstructor. estyp;lia || reflexivity.
+  remember (N.min _ _) as min. econstructor. etyp;lia. estyp; try lia. apply hastyp_XtoVar; assumption.
+  all: try reflexivity.
+  assert (min <= 64). { rewrite Heqmin, N.min_le_iff. right. lia.  }
+  estyp; try lia.
+  apply hastyp_XtoVar; etypeasy.
+  reflexivity.
+Qed.
+
+
+Local Lemma hastyp_arm_strb_reg2il:
+  forall c (Xn Xm Xt extend:N) (B1:Xn < 2^5) (B2:Xm < 2^5) (B3:Xt < 2^5) 
+    (PF:pfsub armc c), hastyp_stmt armc c (arm_strb_reg2il Xn Xm Xt extend) c.
+Proof.
+
+Admitted.
+
+(*
+Local Lemma hastyp_arm_ldrb_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldrsb_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_strh_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldrh_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldrsh_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_str_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldr_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldrsw_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_prfm_reg2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_stlurb2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldapurb2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldapursb2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_stlurh2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldapurh2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldapursh2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldapur2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldapursw2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_stlur2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_prfm2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_prfm_imm2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_sturb2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldurb2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldursb2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_sturh2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldurh2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldursh2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_stur2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldur2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+
+Local Lemma hastyp_arm_ldursw2il:
+  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+Proof.
+
+Admitted.
+ *)
 
 Lemma varid_neq_temp :
  forall v a, <{ var[ {v} ] }> <> (V_TEMP a).
