@@ -1353,13 +1353,13 @@ Section Decoder.
   Definition arm_cbz2il Xn imm19 size :=
     let offset := <{scast 64 (imm19#21 << 2#21)}> in
     let target := <{PC + offset}> in <{
-    if lcast size X[Xn] = 0#size then {BranchTo size target} else nop end
+    if (lcast size X[Xn]) = 0#size then {BranchTo size target} else nop end
   }>.
 
   Definition arm_cbnz2il Xn imm19 size :=
     let offset := <{scast 64 (imm19#21 << 2#21)}> in
     let target := <{PC + offset}> in <{
-    if !(lcast size X[Xn] = 0#size) then {BranchTo size target} else nop end
+    if !((lcast size X[Xn]) = 0#size) then {BranchTo size target} else nop end
   }>.
 
   Definition comp_and_b :=
@@ -4359,7 +4359,9 @@ Local Ltac unfold_stmt := match goal with | |- hastyp_stmt _ _ ?a _ => unfold_re
 Local Ltac unfold_exp := match goal with | |- hastyp_exp _ _ ?a _ => unfold_rec a end.
 Local Lemma armct_sub sf: armc ⊆ armct sf.
 Proof.
-Admitted.
+  intros x y H. unfold arm8typctx_temp. rewrite ?update_frame by (intro; subst; discriminate).
+  assumption.
+Qed.
 
 Definition sizeof_c (c : typctx) (v : var) : bitwidth :=
   match c v with
@@ -4792,8 +4794,10 @@ Local Ltac solve_armc_sub :=
   | |- ?c ⊆ update ?c' ?x (Some ?y) =>
       first
         [ apply update_some;  [ reflexivity | solve_armc_sub ]
-        | apply update_fresh2; [ reflexivity | solve_armc_sub ] ]
-  | |- ?c ⊆ ?c => reflexivity
+        | apply update_fresh2; [ reflexivity | solve_armc_sub ]
+        | ((apply update_some; solve_armc_sub) + (apply update_fresh2; solve_armc_sub))]
+  | |- ?c ⊆ ?c2 => reflexivity || assumption
+  | H: pfsub armc ?c |- ?c _ = _ => apply H; reflexivity
   end.
 
   Local Lemma hastyp_Replicate:
@@ -4909,12 +4913,112 @@ Proof.
   intros; unfold MemRead. etyp; etypeasy.
 Qed.
 
-Print BranchTo.
 Local Lemma hastyp_BranchTo:
   forall c t (T:hastyp_exp c t 64) (PFSUB:pfsub armc c), hastyp_stmt armc c (BranchTo 64 t) c.
 Proof.
   intros; unfold BranchTo, UsingAArch32.
   stypc c; etypeasy; try apply lt_pow2_lin || eassumption || reflexivity. 
+Qed.
+
+Local Lemma hastyp_arm_cbnz2il:
+  forall c Xn imm19 (B1:imm19 < 2^21) (B2:Xn<2^5) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_cbnz2il Xn imm19 64) c.
+Proof.
+  intros. unfold_stmt. estyp; try (reflexivity || lia). 
+  apply hastyp_XtoVar; assumption. apply hastyp_BranchTo; etyp; try assumption.
+  apply PF. reflexivity.
+  unfold sizeof; simpl. lia.
+Qed.
+
+Local Lemma hastyp_arm_cbz2il:
+  forall c Xn imm19 (B1:imm19 < 2^21) (B2:Xn<2^5) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_cbz2il Xn imm19 64) c.
+Proof.
+  intros. unfold_stmt. estyp; try (reflexivity || lia). 
+  apply hastyp_XtoVar; assumption. apply hastyp_BranchTo; etyp; try assumption.
+  apply PF. reflexivity.
+  unfold sizeof; simpl. lia.
+Qed.
+
+Print arm_br2il.
+Local Lemma hastyp_arm_br2il:
+  forall c (Xn:N) (B:Xn < 2^5) (PF:pfsub armc c), hastyp_stmt armc c (arm_br2il Xn) c.
+Proof.
+  intros; unfold_stmt. apply hastyp_BranchTo;[apply hastyp_XtoVar|]; assumption.
+Qed.
+
+Print arm_blr2il.
+Lemma pfsub_remove {A B:Type} {Eq:EqDec A}:
+  forall (c:A->option B) v, pfsub (update c v None) c.
+Proof.
+  intros. intros x y H. destruct (iseq x v).
+    subst. rewrite update_updated in H. discriminate.
+    rewrite update_frame in H; assumption.
+Qed.
+
+Local Lemma hastyp_arm_blr2il:
+  forall c (Xn:N) (B:Xn < 2^5) (PF:pfsub armc c), hastyp_stmt armc c (arm_blr2il Xn) (update c (V_TEMP 1) (Some 64)).
+Proof.
+  intros. unfold_stmt. estyp_c (update c (V_TEMP 1) (Some 64)). 
+    apply hastyp_XtoVar; easy.
+    reflexivity.
+    econstructor. right; reflexivity. etyp; rewrite update_frame; try apply PF; discriminate || reflexivity.
+      reflexivity.
+    apply hastyp_BranchTo. etyp.
+    solve_armc_sub.
+    reflexivity.
+    apply update_some. apply PF; reflexivity.
+    reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ret2il:
+  forall c (Xn:N) (B:Xn < 2^5) (PF:pfsub armc c), hastyp_stmt armc c (arm_ret2il Xn) c.
+Proof.
+  intros; unfold_stmt. apply hastyp_BranchTo;[etyp|assumption]. apply hastyp_XtoVar; assumption || lia.
+Qed.
+
+Definition hastyp_arm_eret2il := hastyp_havoc.
+Definition hastyp_arm_drps2il:= hastyp_havoc.
+Definition hastyp_arm_braaz2il := hastyp_havoc.
+Definition hastyp_arm_braa_reg2il := hastyp_havoc.
+Definition hastyp_arm_blraa_reg2il := hastyp_havoc.
+Definition hastyp_arm_blraaz2il := hastyp_havoc.
+Definition hastyp_arm_retaa2il := hastyp_havoc.
+Definition hastyp_arm_eretaa2il := hastyp_havoc.
+
+Local Lemma hastyp_arm_b2il:
+  forall c (imm26:N) (B:imm26 < 2^26) (PF:pfsub armc c), hastyp_stmt armc c (arm_b2il imm26) c.
+Proof.
+  intros; unfold_stmt. styp; etypeasy; easy. 
+Qed.
+
+Local Lemma hastyp_arm_bl2il:
+  forall c (imm26:N) (B:imm26<2^26) (PF:pfsub armc c), hastyp_stmt armc c (arm_bl2il imm26) c.
+Proof.
+  intros; unfold_stmt. econstructor.
+  econstructor. right; reflexivity. etyp; etypeasy. eapply (update_some _ _ c). etypeasy. easy.
+  styp; etypeasy. unfold sizeof; simpl; lia. all: reflexivity.
+Qed.
+
+Print arm_tbz2il.
+Local Lemma hastyp_arm_tbz2il:
+  forall c (Rt imm14 b5 b40:N) (B1:Rt<2^5) (B2:imm14<2^14) (B3:b5<2^1) (B4:b40<2^2) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_tbz2il Rt imm14 b5 b40) c.
+Proof.
+  intros. unfold_stmt. stypc c. eapply hastyp_XtoVar; etypeasy.
+  unfold cbits. change 64 with (2^(1+5)); eapply concat_bound; lia. lia.
+  eapply hastyp_BranchTo; etypeasy; etyp; etypeasy; easy.
+  all: reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_tbnz2il:
+  forall c (Rt imm14 b5 b40:N) (B1:Rt<2^5) (B2:imm14<2^14) (B3:b5<2^1) (B4:b40<2^2) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_tbnz2il Rt imm14 b5 b40) c.
+Proof.
+  intros. unfold_stmt. stypc c. eapply hastyp_XtoVar; etypeasy.
+  unfold cbits. change 64 with (2^(1+5)); eapply concat_bound; lia. lia.
+  eapply hastyp_BranchTo; etypeasy; etyp; etypeasy; easy.
+  all: reflexivity.
 Qed.
 
 Local Lemma hastyp_HighestSetBit:
@@ -5052,9 +5156,11 @@ Local Lemma update_sub :
   forall (c : typctx) (v : N) (w : bitwidth),
     c (arm_varid v) = Some w ->
     c ⊆ update c (arm_varid v) (Some w).
-    (*temp context=c*)
 Proof.
-Admitted.
+  intros c v w H x y H2. destruct (iseq x (arm_varid v)).
+    subst; rewrite H2 in H; inversion H; subst. rewrite update_updated. reflexivity.
+    rewrite update_frame; assumption.
+Qed.
 
 Lemma varid_neq_temp :
  forall v a, <{ var[ {v} ] }> <> (V_TEMP a).
