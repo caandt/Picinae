@@ -1875,7 +1875,7 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       temp[1000] := Xtemp[1000] + offset;
       temp[2000] := X[Xt];
-      store[Xtemp[1000],Xtemp[2000],LittleE,1]
+      store[Xtemp[1000],Xtemp[2000],1]
     }>.
 
   (* C6-928 *)
@@ -1889,64 +1889,45 @@ Section Decoder.
 
   Definition arm_ldapursb2il Xn Xt imm9 (size:N) :=
     let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000],LittleE,1];
-      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {arm_varid Xt} := scast 64 Xtemp[2000]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      temp[2000] := load[X[Xn]+offset,LittleE,1];
+      {arm_varid Xt} := ucast 64 (scast {size} Xtemp[2000])
     }>.
 
   Definition arm_stlurh2il Xn Xt imm9 :=
     let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := X[Xt];
-      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      store[Xtemp[1000],Xtemp[2000],LittleE,2]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      store[X[Xn]+offset,X[Xt],2]
     }>.
 
   Definition arm_ldapurh2il Xn Xt imm9 :=
     let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000],LittleE,1];
-      {arm_varid Xt} := ucast 64 Xtemp[2000]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      {arm_varid Xt} := ucast 64 (load[X[Xn]+offset,LittleE,2])
     }>.
 
   Definition arm_ldapursh2il Xn Xt imm9 (size:N) :=
     let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000],LittleE,2];
-      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {arm_varid Xt} := ucast 64 Xtemp[2000]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      {arm_varid Xt} := ucast 64 (scast {size} load[X[Xn]+offset,2])
     }>.
 
   Definition arm_stlur2il Xn Xt imm9 (size:N) :=
     let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := X[Xt];
-      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      store[Xtemp[1000],Xtemp[2000],LittleE,{N.shiftr size 3}]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      store[X[Xn]+offset,X[Xt],{N.shiftr size 3}]
     }>.
 
   Definition arm_ldapur2il Xn Xt imm9 (size:N) :=
     let offset := <{scast 64 imm9}> in <{
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000],LittleE,{N.shiftr size 3}];
-      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {arm_varid Xt} := Xtemp[2000]
+      {arm_varid Xt} := ucast 64 (load[X[Xn]+offset,{N.shiftr size 3}])
     }>.
 
   Definition arm_ldapursw2il Xn Xt imm9 (size:N) :=
     let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000],LittleE,4];
-      (* Question: for the 32-bit variant do we only sign-extend up to 32 bits then 0-extend? *)
-      {arm_varid Xt} := scast 64 Xtemp[2000]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      {arm_varid Xt} := ucast 64 (scast {size} load[X[Xn]+offset,4])
     }>.
 
   (*LDAPR/STLR unscaled immediate C4-279*)
@@ -4447,7 +4428,7 @@ Local Ltac etyp' :=
     | |- hastyp_exp _ (Concat (Word _ ?cw1) (Word _ ?cw2)) _ => apply TConcat with (w1 := cw1) (w2 := cw2)
     | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
     | |- hastyp_exp _ (BinOp _ _ _) ?sw => apply TBinOp with (w := sw)
-    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]; idtac "TCAST"
+    | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]
     | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
     | |- hastyp_exp ?c1 (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof_c c1 v)
     | |- hastyp_exp _ (Cast _ _ (XtoVar _)) _ => eapply TCast with (w := 64)
@@ -4559,22 +4540,25 @@ Local Ltac stypc_w c w' c1 c2 :=
 
   Print TMove.
 Local Ltac e_stypc c :=
-  cbn; repeat match goal with
-         | |- hastyp_stmt _ _ (Seq _ _) _ => eapply TSeq
-         | |- hastyp_stmt _ _ (If _ _ _) _ => eapply TIf
-         | |- hastyp_stmt _ _ (Exn _) _ => apply TExn
-         | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep
-         | |- hastyp_stmt _ _ Nop _ => apply TNop
-         | |- hastyp_stmt _ ?c1 (Move (V_TEMP ?v) _) _ =>
-              eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
-         | |- hastyp_stmt _ ?c1 (Move (arm_varid _) _) _ =>
-              apply TMove with (w := 64) (c' := c1); [right | | ]
-         | |- hastyp_stmt _ ?c1 (Move ?v _) _ =>
-              eapply TMove with (w := sizeof_c c1 v)
-              (c' := update c1 (v) (Some _)); [> right | | try apply update_some_c]; try reflexivity
+  (* Do not simplify the memory bitwidth and massage it into
+     the TStore/TLoad format. *)
+  cbn -[N.mul N.pow]; rewrite ?(N.mul_comm 8 (2^64));
+  repeat match goal with
+  | |- hastyp_stmt _ _ (Seq _ _) _ => eapply TSeq
+  | |- hastyp_stmt _ _ (If _ _ _) _ => eapply TIf
+  | |- hastyp_stmt _ _ (Exn _) _ => apply TExn
+  | |- hastyp_stmt _ _ (Rep _ _) _ => eapply TRep
+  | |- hastyp_stmt _ _ Nop _ => apply TNop
+  | |- hastyp_stmt _ ?c1 (Move (V_TEMP ?v) _) _ =>
+      eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
+  | |- hastyp_stmt _ ?c1 (Move (arm_varid _) _) _ =>
+      apply TMove with (w := 64) (c' := c1); [right | | ]
+  | |- hastyp_stmt _ ?c1 (Move ?v _) _ =>
+      eapply TMove with (w := sizeof_c c1 v)
+      (c' := update c1 (v) (Some _)); [> right | | try apply update_some_c]; try reflexivity
 
-         | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
-         | |- hastyp_exp _ _ _  => new_etyp
+  | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
+  | |- hastyp_exp _ _ _  => new_etyp
   end.
 
 Print TSeq.
@@ -5297,7 +5281,17 @@ Ltac subsolve :=
 
 (* Step through a hastyp_stmt proof, solving trivially solvable cases. *)
 
-Ltac casesolve := assumption || apply pfsub_refl || apply eq_refl
+Ltac destruct_oreq :=
+  try match goal with
+  | H: ?x = _ \/ ?x = _ |- context[?x] => destruct H; subst
+  end.
+
+Ltac casesolve := 
+  assumption || apply pfsub_refl || apply eq_refl
+  (* Some functions take the minimum of two values. *)
+  || (apply N.min_le_iff; first [left;lia | right;lia])
+  (* For N.shiftl 1 size <= 64 goals *)
+  || (rewrite N.shiftl_mul_pow2; destruct_oreq; lia)
   (* armc _ = None \/ armc _ = Some _ *)
   || first [left;reflexivity | right;(reflexivity || apply typeof_arm_varid)]
   (* pfsub *)
@@ -5305,7 +5299,8 @@ Ltac casesolve := assumption || apply pfsub_refl || apply eq_refl
   (* hastyp_exp *)
   || esolve.
 
-Ltac econs := econstructor; simpl_c; try solve [(try ssolve); casesolve].
+Ltac econs := econstructor; simpl_c; repeat destruct_match;
+  try solve [(try ssolve); (casesolve || (try destruct_oreq; repeat (try etyp; casesolve)))].
 
 Local Lemma hastyp_arm_strb_reg2il:
   forall c (Xn Xm Xt extend:N) (B1:Xn < 2^5) (B2:Xm < 2^5) (B3:Xt < 2^5) (B4:extend<2^3)
@@ -5328,196 +5323,176 @@ Proof.
   intros; unfold_stmt. repeat econs. lia.
 Qed.
 
-(*
 Local Lemma hastyp_arm_strh_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_strh_reg2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt extend S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_strh_reg2il Xn Xm Xt extend S) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldrh_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldrh_reg2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt extend S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrh_reg2il Xn Xm Xt extend S) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldrsh_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldrsh_reg2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt extend size S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsh_reg2il Xn Xm Xt extend size S) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs. lia.
+Qed.
 
 Local Lemma hastyp_arm_str_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_str_reg2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt extend size S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (B6:size=2\/size=3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_str_reg2il Xn Xm Xt extend size S) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+  all:casesolve.
+Qed.
 
 Local Lemma hastyp_arm_ldr_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldr_reg2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt extend size S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (B6:size=2\/size=3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldr_reg2il Xn Xm Xt extend size S) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldrsw_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldrsw_reg2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt extend S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsw_reg2il Xn Xm Xt extend S) armc.
 Proof.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
-Admitted.
-
-Local Lemma hastyp_arm_prfm_reg2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_prfm_reg2il Xn Xm Xt extend) c.
-Proof.
-
-Admitted.
+Definition hastyp_arm_prfm_lit2il  := hastyp_havoc.
 
 Local Lemma hastyp_arm_stlurb2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_stlurb2il Xn Xm Xt extend) c.
+  forall c Xn Xm Xt imm9 (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:imm9<2^9)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stlurb2il Xn Xt imm9) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldapurb2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldapurb2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapurb2il Xn Xt (Word imm9 64)) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldapursb2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldapursb2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapursb2il Xn Xt (Word imm9 64) size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_stlurh2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_stlurh2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5)  (B3:Xt<2^5) (B4:imm9<2^9)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stlurh2il Xn Xt (Word imm9 9)) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldapurh2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldapurh2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapurh2il Xn Xt (Word imm9 9)) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldapursh2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldapursh2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapursh2il Xn Xt (Word imm9 9) size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs. lia.
+Qed.
 
 Local Lemma hastyp_arm_ldapur2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldapur2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapur2il Xn Xt (Word imm9 9) size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldapursw2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldapursw2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapursw2il Xn Xt (Word imm9 9) size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs. lia.
+Qed.
 
 Local Lemma hastyp_arm_stlur2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_stlur2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stlur2il Xn Xt (Word imm9 9) size) armc.
 Proof.
-
-Admitted.
-
-Local Lemma hastyp_arm_prfm2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_prfm2il Xn Xm Xt extend) c.
-Proof.
-
-Admitted.
-
-Local Lemma hastyp_arm_prfm_imm2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_prfm_imm2il Xn Xm Xt extend) c.
-Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_sturb2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_sturb2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_sturb2il Xn Xt imm9) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldurb2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldurb2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldurb2il Xn Xt imm9) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldursb2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldursb2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldursb2il Xn Xt imm9 size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs. lia.
+Qed.
 
 Local Lemma hastyp_arm_sturh2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_sturh2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_sturh2il Xn Xt imm9) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldurh2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldurh2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9)(PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldurh2il Xn Xt imm9) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldursh2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldursh2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldursh2il Xn Xt imm9 size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs. lia.
+Qed.
 
 Local Lemma hastyp_arm_stur2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_stur2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stur2il Xn Xt imm9 size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldur2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldur2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 size (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) (B6:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldur2il Xn Xt imm9 size) armc.
 Proof.
-
-Admitted.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldursw2il:
-  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_ldursw2il Xn Xm Xt extend) c.
+  forall c Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldursw2il Xn Xt imm9) armc.
 Proof.
-
-Admitted.
- *)
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Lemma varid_neq_temp :
  forall v a, <{ var[ {v} ] }> <> (V_TEMP a).
