@@ -2882,13 +2882,12 @@ Section Decoder.
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1359 *)
     else UDF end.
 
-  (* We assume address translation succeed and is apparent. That is, we do not
+  (* We assume address translation succeeds and is apparent. That is, we do not
      model it. *)
   Definition MemAtomic (op:exp) (w:N) (value address:exp) (rettemp:N):=
     let bytes := N.shiftr w 3 in
     let oldvalue := <{Xtemp[rettemp]}> in
     let nvtemp := N.succ rettemp in
-    let newvalue := <{Xtemp[nvtemp]}> in
     <{
       temp[rettemp] := ucast 64 {MemRead address bytes};
       if op = MemAtomicOp_ADD  then temp[nvtemp] := oldvalue + value  else
@@ -2901,7 +2900,7 @@ Section Decoder.
       if op = MemAtomicOp_UMIN then temp[nvtemp] := ite (oldvalue  > value) value oldvalue else
       (* op = MemAtomicOP_SWP  *)   temp[nvtemp] := value
       end end end end end end end end;
-      store[address,newvalue,bytes]
+      store[address,Xtemp[nvtemp],bytes]
     }>.
 
   Definition arm_ldatomic2il_size (op:exp) (size Xn Xs Xt:N) :=
@@ -2963,8 +2962,8 @@ Section Decoder.
 
   Definition arm_ldapr2il_size (size Xn Xt:N) :=
     let bytes := N.shiftr size 3 in  <{
-      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      var[Xt] := {MemRead <{Xtemp[1000]}> bytes}
+      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      var[Xt] := ucast 64 {MemRead <{X[Xn]}> bytes}
     }>.
 
   Definition arm_ldaprb2il := arm_ldapr2il_size 8.
@@ -5157,6 +5156,12 @@ Proof.
     rewrite update_frame; assumption.
 Qed.
 
+Local Lemma armvarid_neq_temp:
+  forall n t, arm_varid n <> V_TEMP t.
+Proof.
+  intros. unfold arm_varid. destruct_match; discriminate.
+Qed.
+
 Local Lemma hastyp_ExtendReg:
   forall c regt regn exttype shift (PF:pfsub armc c) (B1:regn<2^5) (B2:shift<2^3) (B3:exttype<2^3),
   hastyp_stmt armc c (ExtendReg (V_TEMP regt) regn exttype shift) (update c (V_TEMP regt) (Some 64)).
@@ -5213,12 +5218,15 @@ Local Ltac simpl_c :=
         NEQ0 : x <> temp[ 1000]
 *)
 Local Ltac red_ccases :=
-  match goal with
+  repeat match goal with
   | H: update _ _ None _ = Some _ |- _ => repeat (
       let NEQ := fresh "NEQ" in
       pose proof (NEQ:=context_update_some _ _ _ _ H);
       rewrite update_frame in H by assumption
       )
+  | HNone: ?c ?v = None, HSome: ?c ?v2 = Some _ |- _ =>
+      assert (v2<>v) by (intro;subst;now rewrite HNone in HSome);
+      clear HNone
   | _ => idtac
   end.
 
@@ -5234,6 +5242,14 @@ H : (c[temp[ 1000] := None][temp[ 9000] := None]) x = Some y
 Ltac c_varx :=
   red_ccases;
   repeat match goal with
+  (* Solvers *)
+  | NE: ?x <> ?v |- update _ ?v _ ?x = _ => rewrite update_frame by assumption
+  | H: ?x |- ?x => assumption
+  | H: ?x = Some _, H2: ?x = None |- _ => now rewrite H in H2
+  (* Used when proving that armc is a satisfactory output context. *)
+  | PF: pfsub armc ?c |- ?c _ = _ => apply PF; assumption
+  | PF: pfsub armc ?c |- context[?c ?v] => rewrite (PF v _ (eq_refl _)); rewrite ?(N.mul_comm 8); reflexivity
+  (* Reducers *)
   | PF:arm8typctx ⊆ _, EQ:?c' ?x = _ |- update ?c ?v  (Some ?val) ?x = Some ?y =>
         destruct (x == v);
           [ subst; rewrite update_updated;
@@ -5252,10 +5268,17 @@ Ltac c_varx :=
   | PF: pfsub armc _, EQ: ?c' ?x = _|- update ?c ?v (Some ?val) ?x = Some ?y => destruct (iseq x v);
       [subst;rewrite update_updated; (specialize (PF v val (eq_refl _)) || specialize (PF v val (typeof_arm_varid _))); rewrite PF, <-EQ in *; reflexivity
       |rewrite update_frame by assumption]
-  | NE: ?x <> ?v |- update _ ?v _ ?x = _ => rewrite update_frame by assumption
-  | H: ?x |- ?x => assumption
-  (* Used when proving that armc is a satisfactory output context. *)
-  | PF: pfsub armc ?c |- ?c _ = _ => apply PF; assumption
+  | EQ: _ _ = ?y |- update _ ?v _ ?x = ?y => destruct (x==v);
+      [subst;rewrite update_updated,?update_frame in * by (discriminate||apply armvarid_neq_temp||intros H;inversion H;lia);
+         rewrite <-EQ
+         |rewrite update_frame by assumption]
+  end.
+
+(* Prove pfsub goals. *)
+Ltac subsolve :=
+  match goal with |- pfsub _ _ => 
+      let EQ := fresh "EQ" in let x := fresh "x" in let y := fresh "y" in
+      simpl_c; intros x y EQ; c_varx
   end.
 
 (* Try to solve a hastyp_exp goal, dealing with fairly complex context subset subgoals. *)
@@ -5273,14 +5296,6 @@ Local Ltac ssolve :=
     || apply hastyp_HighestSetBit
     || apply hastyp_DecodeBitMasks.
 
-Ltac subsolve :=
-  match goal with |- pfsub _ _ => 
-      let EQ := fresh "EQ" in let x := fresh "x" in let y := fresh "y" in
-      simpl_c; intros x y EQ; c_varx
-  end.
-
-(* Step through a hastyp_stmt proof, solving trivially solvable cases. *)
-
 Ltac destruct_oreq :=
   try match goal with
   | H: ?x = _ \/ ?x = _ |- context[?x] => destruct H; subst
@@ -5291,7 +5306,7 @@ Ltac casesolve :=
   (* Some functions take the minimum of two values. *)
   || (apply N.min_le_iff; first [left;lia | right;lia])
   (* For N.shiftl 1 size <= 64 goals *)
-  || (rewrite N.shiftl_mul_pow2; destruct_oreq; lia)
+  || (rewrite ?N.shiftl_mul_pow2, ?N.shiftr_div_pow2; try destruct_oreq; lia)
   (* armc _ = None \/ armc _ = Some _ *)
   || first [left;reflexivity | right;(reflexivity || apply typeof_arm_varid)]
   (* pfsub *)
@@ -5299,7 +5314,15 @@ Ltac casesolve :=
   (* hastyp_exp *)
   || esolve.
 
-Ltac econs := econstructor; simpl_c; repeat destruct_match;
+(* Step through a hastyp_stmt proof, solving trivially solvable cases. *)
+Ltac econs :=
+  (* econstructor by default, but prefer special cases for TLoad and TStore
+     to unify the memory bitwidth early and allow the solvers to solve the other
+     goals. *)
+  ( (eapply TLoad;[|etyp;casesolve|])
+    || (eapply TStore;[|etyp;casesolve| | ])
+    || econstructor);
+  simpl_c; repeat destruct_match;
   try solve [(try ssolve); (casesolve || (try destruct_oreq; repeat (try etyp; casesolve)))].
 
 Local Lemma hastyp_arm_strb_reg2il:
@@ -5329,6 +5352,7 @@ Local Lemma hastyp_arm_strh_reg2il:
 Proof.
   intros; unfold_stmt. repeat econs.
 Qed.
+
 
 Local Lemma hastyp_arm_ldrh_reg2il:
   forall c Xn Xm Xt extend S (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (PF:pfsub armc c),
@@ -5492,6 +5516,263 @@ Local Lemma hastyp_arm_ldursw2il:
   hastyp_stmt armc c (arm_ldursw2il Xn Xt imm9) armc.
 Proof.
   intros; unfold_stmt. repeat econs.
+Qed.
+
+Local Lemma hastyp_MemAtomic:
+  forall c op w value address rettemp 
+    (B1:op<2^5) (B2:hastyp_exp c address 64) (B3:w<=64) (B4:hastyp_exp c value 64)
+    (PF:pfsub armc c) (PF':c (V_TEMP rettemp) = None) (PF'':c (V_TEMP (N.succ rettemp)) = None),
+  hastyp_stmt armc c (MemAtomic (Word op 5) w value address rettemp) (update c (V_TEMP rettemp) (Some 64)).
+Proof.
+  intros; unfold_stmt. repeat econs. casesolve.
+  all: etyp; try (rewrite update_updated; reflexivity).
+  1-14: try apply hastyp_exp_weaken with (c1:=c); try eassumption; try subsolve.
+  rewrite N.mul_comm; econs.
+Qed.
+
+Local Lemma hastyp_arm_ldatomic2il_size:
+  forall c op size Xn Xs Xt 
+  (B1:op<2^5) (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size<=64) 
+  (PF:pfsub armc c) (PF':c (V_TEMP 4000) = None) (PF'':c (V_TEMP 4001) = None),
+  hastyp_stmt armc c (arm_ldatomic2il_size (Word op 5) size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. do 4 econs.
+  eapply hastyp_MemAtomic; repeat econs. all:try lia.
+  subsolve.
+  1-2:c_varx.
+  repeat econs.
+  subsolve.
+  symmetry. apply PF, typeof_arm_varid.
+Qed.
+
+Local Lemma hastyp_arm_swp2il_size:
+  forall c op size Xn Xs Xt 
+  (B1:op<2^5) (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size<=64) 
+  (PF:pfsub armc c) (PF':c (V_TEMP 4000) = None) (PF'':c (V_TEMP 4001) = None),
+  hastyp_stmt armc c (arm_swp2il_size (Word op 5) size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. do 4 econs.
+  eapply hastyp_MemAtomic; repeat econs. all:try lia.
+  subsolve.
+  1-2:c_varx.
+  repeat econs.
+Qed.
+
+Local Lemma hastyp_arm_ldaddb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldaddb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldclrb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldclrb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldeorb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldeorb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsetb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldsetb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsmaxb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldsmaxb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsminb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldsminb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldumaxb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldumaxb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_lduminb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_lduminb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_swpb2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_swpb2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_swp2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldaddh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldaddh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldclrh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldclrh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldeorh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldeorh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldseth2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldseth2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsmaxh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldsmaxh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsminh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldsminh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldumaxh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldumaxh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_lduminh2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_lduminh2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_swph2il:
+  forall Xn Xs Xt (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_swph2il Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_swp2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldadd2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldadd2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldclr2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldclr2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldeor2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldeor2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldset2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldset2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsmax2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldsmax2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldsmin2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldsmin2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldumax2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldumax2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldumin2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldumin2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldatomic2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_swp2il:
+  forall Xn Xs Xt size (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_swp2il size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_swp2il_size; lia || reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_ldapr2il_size:
+  forall Xn Xt size (B1:Xn<2^5) (B2:Xt<2^5) (B3:size<=64),
+  hastyp_stmt armc armc (arm_ldapr2il_size size Xn Xt) armc.
+Proof.
+  intros; unfold_stmt. repeat econs. all:casesolve. symmetry; apply typeof_arm_varid.
+Qed.
+
+Local Lemma hastyp_arm_ldaprb2il:
+  forall Xn Xt (B1:Xn<2^5)  (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldaprb2il Xn Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldapr2il_size; lia.
+Qed.
+
+Local Lemma hastyp_arm_ldaprh2il:
+  forall Xn Xt (B1:Xn<2^5)  (B3:Xt<2^5),
+  hastyp_stmt armc armc (arm_ldaprh2il Xn Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldapr2il_size; lia.
+Qed.
+
+Local Lemma hastyp_arm_ldapr2il:
+  forall Xn Xt size (B1:Xn<2^5)  (B3:Xt<2^5) (B4:size<=64),
+  hastyp_stmt armc armc (arm_ldapr2il size Xn Xt) armc.
+Proof.
+  intros; unfold_stmt. apply hastyp_arm_ldapr2il_size; lia.
 Qed.
 
 Lemma varid_neq_temp :
