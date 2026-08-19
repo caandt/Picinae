@@ -3174,7 +3174,6 @@ Section Decoder.
     }>.
 
   Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
-    let scale := Word size 64 in
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
     let dbytes := N.shiftl 1 size in
@@ -3182,13 +3181,11 @@ Section Decoder.
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset ;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      store[Xtemp[1000],X[Xt],dbytes]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      store[X[Xn]+Xtemp[9000],X[Xt],dbytes]
     }>.
 
   Definition arm_str_reg2il (Xn Xm Xt extend size S:N) :=
-    let scale := Word size 64 in
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
     let dbytes := N.shiftl 1 size in
@@ -3196,10 +3193,8 @@ Section Decoder.
     let undefined := <{extend#3 & 2#3 = 0#3}> in <{
       if undefined then exn 0 else nop end;
       calc_offset ;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      temp[2000] := load[Xtemp[1000],LittleE,dbytes];
-      var[Xt] := ucast 64 Xtemp[2000]
+      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      var[Xt] := ucast 64 (load[X[Xn]+Xtemp[9000],LittleE,dbytes])
     }>.
 
   Definition arm_ldrb_reg2il (Xn Xm Xt extend:N) :=
@@ -3209,7 +3204,7 @@ Section Decoder.
       calc_offset;
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      var[Xt] := load[Xtemp[1000],1]
+      var[Xt] := ucast 64 load[Xtemp[1000],1]
     }>.
 
   Definition arm_ldrsb_reg2il (Xn Xm Xt size extend:N) :=
@@ -3286,10 +3281,10 @@ Section Decoder.
     match[bits] size, v_, opc, option_ with
     | "-   -  -   x0x  " => UDF (* Unallocated. *)
     | "x1  1  1x  -    " => UDF (* Unallocated. *)
-    | "00  0  00  !=011" => ARM_LD_STR_REG ARM_STRB_REG Rn Rm Rt option_ size S(* STRB (register) - Extended register variant on page C6-877 *)
-    | "00  0  00  011  " => ARM_LD_STR_REG ARM_STRB_REG Rn Rm Rt option_ size S(* STRB (register) - Shifted register variant on page C6-877 *)
-    | "00  0  01  !=011" => ARM_LD_STR_REG ARM_LDRB_REG Rn Rm Rt option_ size S(* LDRB (register) - Extended register variant on page C6-679 *)
-    | "00  0  01  011  " => ARM_LD_STR_REG ARM_LDRB_REG Rn Rm Rt option_ size S(* LDRB (register) - Shifted register variant on page C6-679 *)
+    | "00  0  00  !=011" => ARM_LD_STR_REG ARM_STRB_REG Rn Rm Rt  option_  8 S(* STRB (register) - Extended register variant on page C6-877 *)
+    | "00  0  00  011  " => ARM_LD_STR_REG ARM_STRB_REG Rn Rm Rt  option_  8 S(* STRB (register) - Shifted register variant on page C6-877 *)
+    | "00  0  01  !=011" => ARM_LD_STR_REG ARM_LDRB_REG Rn Rm Rt  option_  8 S(* LDRB (register) - Extended register variant on page C6-679 *)
+    | "00  0  01  011  " => ARM_LD_STR_REG ARM_LDRB_REG Rn Rm Rt  option_  8 S(* LDRB (register) - Shifted register variant on page C6-679 *)
     | "00  0  10  !=011" => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 64 S(* LDRSB (register) - 64-bit with extended register offset variant on page C6-688 *)
     | "00  0  10  011  " => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 64 S(* LDRSB (register) - 64-bit with shifted register offset variant on page C6-688 *)
     | "00  0  11  !=011" => ARM_LD_STR_REG ARM_LDRSB_REG Rn Rm Rt option_ 32 S(* LDRSB (register) - 32-bit with extended register offset variant on page C6-688 *)
@@ -3300,16 +3295,16 @@ Section Decoder.
     | "00  1  01  011  " => UDF (* LDR (register, SIMD&FP) *)
     | "00  1  10  -    " => UDF (* STR (register, SIMD&FP) *)
     | "00  1  11  -    " => UDF (* LDR (register, SIMD&FP) *)
-    | "01  0  00  -    " => ARM_LD_STR_REG ARM_STRH_REG Rn Rm Rt option_ size S (* STRH (register) *)
-    | "01  0  01  -    " => ARM_LD_STR_REG ARM_LDRH_REG Rn Rm Rt option_ size S (* LDRH (register) *) (*TODO: Check this*)
-    | "01  0  10  -    " => ARM_LD_STR_REG ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 64-bit variant on page C6-693 *)
-    | "01  0  11  -    " => ARM_LD_STR_REG ARM_LDRSH_REG Rn Rm Rt option_ 64 S (* LDRSH (register) - 32-bit variant on page C6-693 *)
+    | "01  0  00  -    " => ARM_LD_STR_REG ARM_STRH_REG Rn Rm Rt  option_ 16 S (* STRH (register) *)
+    | "01  0  01  -    " => ARM_LD_STR_REG ARM_LDRH_REG Rn Rm Rt  option_ 16 S (* LDRH (register) *) (*TODO: Check this*)
+    | "01  0  10  -    " => ARM_LD_STR_REG ARM_LDRSH_REG Rn Rm Rt option_ 16 S (* LDRSH (register) - 64-bit variant on page C6-693 *)
+    | "01  0  11  -    " => ARM_LD_STR_REG ARM_LDRSH_REG Rn Rm Rt option_ 16 S (* LDRSH (register) - 32-bit variant on page C6-693 *)
     | "01  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "01  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     | "1x  0  11  -    " => UDF (* Unallocated. *)
     | "1x  1  1x  -    " => UDF (* Unallocated. *)
-    | "10  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt option_ 2 S (* STR (register) - 32-bit variant on page C6-873 *)
-    | "10  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt option_ 2 S (* LDR (register) - 32-bit variant on page C6-675 *)
+    | "10  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt   option_    2 S (* STR (register) - 32-bit variant on page C6-873 *)
+    | "10  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt   option_    2 S (* LDR (register) - 32-bit variant on page C6-675 *)
     | "10  0  10  -    " => ARM_LD_STR_REG ARM_LDRSW_REG Rn Rm Rt option_ size S (* LDRSW (register) *)
     | "10  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "10  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
@@ -5192,12 +5187,12 @@ Proof.
   reflexivity.
 Qed.
 
-Ltac econs := econstructor.
 
 
 Local Ltac c_var :=
   repeat rewrite update_frame by discriminate;
   match goal with H: pfsub armc ?c |- ?c _ = _ => apply H; reflexivity end.
+
 Local Ltac solve_TagAligned :=
   apply hastyp_AlignCheck; lia || etyp || solve_armc_sub; c_var.
 
@@ -5209,229 +5204,316 @@ Proof.
     assumption.
 Qed.
 
+(* Simplifies goals reading vars from a context that is a superset of armc. Example simplified expression:
+
+   (sizeof_c (c[temp[ 9000] := Some 64][temp[ 1000] := Some 64][temp[ 1000] := Some 64]) V_MEM64) *)
+Local Ltac simpl_c :=
+  unfold sizeof_c, widthof_binop; repeat rewrite update_frame by discriminate; repeat rewrite update_updated;
+  repeat match goal with
+  | PF: pfsub armc ?c |- context[?c ?v] =>
+      match v with V_TEMP _ => fail | _ => idtac end;
+      let PFspec := fresh "PF" in
+      pose proof (PFspec:=PF v); cbn -[N.pow N.mul] in PFspec;
+      try rewrite (N.mul_comm 8) in PFspec; (*rewrite memory bitwidth for the static semantics*)
+      rewrite (PFspec _ (eq_refl _));
+      clear PFspec
+  end.
+
+(* [red_ccases] reduces the cases to consider in a context-read equality goal
+    by discriminating on variables that have been updated to [None].  E.g.,
+   turns
+        H : (c[temp[ 1000] := None][temp[ 9000] := None]) x = Some y
+   into
+        H : c x = Some y
+        NEQ : x <> temp[ 9000]
+        NEQ0 : x <> temp[ 1000]
+*)
+Local Ltac red_ccases :=
+  match goal with
+  | H: update _ _ None _ = Some _ |- _ => repeat (
+      let NEQ := fresh "NEQ" in
+      pose proof (NEQ:=context_update_some _ _ _ _ H);
+      rewrite update_frame in H by assumption
+      )
+  | _ => idtac
+  end.
+
 (* c_varx solves more complicated context equations like the one below:
+
 PF : arm8typctx ⊆ c
-H : c x = Some y
-H1 : x <> temp[ 9000]
-H2 : x <> temp[ 1000]
+H : (c[temp[ 1000] := None][temp[ 9000] := None]) x = Some y
 
 ========================= (1 / 1)
 
 (c[temp[ 9000] := Some 64][temp[ 1000] := Some 64][temp[ 1000] := Some 64]
- [V_MEM64 := Some (8 * 2 ^ 64)]) x =
-Some y *)
+ [V_MEM64 := Some (8 * 2 ^ 64)]) x = Some y *)
 Ltac c_varx :=
+  red_ccases;
   repeat match goal with
+  | PF:arm8typctx ⊆ _, EQ:?c' ?x = _ |- update ?c ?v  (Some ?val) ?x = Some ?y =>
+        destruct (x == v);
+          [ subst; rewrite update_updated;
+            (* First case solves when the output context is a modification of the input;
+                second case solves when the output context is weakend to arm8typctx.
+                The latter case is useful for simplifying and indicating the theorems for
+                terminal lifter code as opposed to internal auxiliary functions. *)
+            first [ specialize (PF v val eq_refl) || specialize (PF v val (typeof_arm_varid _));
+                    rewrite PF, <- EQ in *; reflexivity
+                  | discriminate ||
+                    match goal with | EQ: armc _ = Some ?y |- _ = Some ?y =>
+                      rewrite <-EQ, ?typeof_arm_varid; reflexivity
+                    end
+                  ]
+          | rewrite update_frame by assumption ]
   | PF: pfsub armc _, EQ: ?c' ?x = _|- update ?c ?v (Some ?val) ?x = Some ?y => destruct (iseq x v);
-      [subst;rewrite update_updated; specialize (PF v val (eq_refl _)); rewrite PF, <-EQ in *; reflexivity
+      [subst;rewrite update_updated; (specialize (PF v val (eq_refl _)) || specialize (PF v val (typeof_arm_varid _))); rewrite PF, <-EQ in *; reflexivity
       |rewrite update_frame by assumption]
   | NE: ?x <> ?v |- update _ ?v _ ?x = _ => rewrite update_frame by assumption
   | H: ?x |- ?x => assumption
+  (* Used when proving that armc is a satisfactory output context. *)
+  | PF: pfsub armc ?c |- ?c _ = _ => apply PF; assumption
   end.
+
+(* Try to solve a hastyp_exp goal, dealing with fairly complex context subset subgoals. *)
+Local Ltac esolve :=
+  simpl_c; etyp; try apply hastyp_XtoVar; try etypeasy; try solve_armc_sub; try c_var; try c_varx.
+
+(* Try to solve a hastyp_stmt goal using aux-function lemmas. *)
+Local Ltac ssolve :=
+  estyp
+    || apply hastyp_havoc
+    || apply hastyp_CheckSPAlignment
+    || apply hastyp_BranchTo
+    || apply hastyp_ExtendReg
+    || apply hastyp_Replicate
+    || apply hastyp_HighestSetBit
+    || apply hastyp_DecodeBitMasks.
+
+Ltac subsolve :=
+  match goal with |- pfsub _ _ => 
+      let EQ := fresh "EQ" in let x := fresh "x" in let y := fresh "y" in
+      simpl_c; intros x y EQ; c_varx
+  end.
+
+(* Step through a hastyp_stmt proof, solving trivially solvable cases. *)
+
+Ltac casesolve := assumption || apply pfsub_refl || apply eq_refl
+  (* armc _ = None \/ armc _ = Some _ *)
+  || first [left;reflexivity | right;(reflexivity || apply typeof_arm_varid)]
+  (* pfsub *)
+  || subsolve
+  (* hastyp_exp *)
+  || esolve.
+
+Ltac econs := econstructor; simpl_c; try solve [(try ssolve); casesolve].
 
 Local Lemma hastyp_arm_strb_reg2il:
   forall c (Xn Xm Xt extend:N) (B1:Xn < 2^5) (B2:Xm < 2^5) (B3:Xt < 2^5) (B4:extend<2^3)
     (PF:pfsub armc c), hastyp_stmt armc c (arm_strb_reg2il Xn Xm Xt extend) (update (update c (V_TEMP 1000) None) (V_TEMP 9000) None).
 Proof.
-  intros; unfold_stmt. 
-  econstructor. estyp; assumption || reflexivity.
-  econstructor. apply hastyp_ExtendReg; assumption || lia.
-  econs. { repeat (econs || apply hastyp_CheckSPAlignment || reflexivity || etyp); cycle 1.
-    rewrite update_frame by discriminate. apply PF; reflexivity.
-    all: try lia.
-    solve_TagAligned.
-  }
-  econs. estyp. apply hastyp_XtoVar; etypeasy. solve_armc_sub. reflexivity.
-  econs. estyp; etypeasy. reflexivity.
-
-  unfold sizeof_c; rewrite update_updated. estyp.
-  Print pfsub.
-  specialize (PF V_MEM64); cbn -[N.pow N.mul] in PF.
-  unfold sizeof_c; repeat rewrite update_frame by discriminate; rewrite (PF _ (eq_refl _)). reflexivity.
-  pose proof (PF':=PF V_MEM64); cbn -[N.pow N.mul] in PF'. rewrite N.mul_comm in PF'.
-  unfold sizeof_c; repeat rewrite update_frame by discriminate; rewrite (PF' _ (eq_refl _)). etyp; try lia || c_var.
-  apply hastyp_XtoVar; etypeasy. solve_armc_sub. lia.
-
-  (* context alignment *)
-  all: try reflexivity.
-  intros x y H.
-  pose proof (H1:=context_update_some _ _ _ _ H); rewrite update_frame in H by assumption.
-  pose proof (H2:=context_update_some _ _ _ _ H); rewrite update_frame in H by assumption.
-  unfold sizeof_c. repeat rewrite (update_frame _ _ _ V_MEM64) by discriminate. rewrite (PF V_MEM64 _ (eq_refl _)).
-
-  c_varx.
+  intros; unfold_stmt. repeat econs.
 Qed.
-(* TODO: continue here.  Try to generalize the proof above to the rest of the load/store instructions.
-Local Lemma hastyp_arm_ldrb_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
-Proof.
 
-Admitted.
+Local Lemma hastyp_arm_ldrb_reg2il:
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrb_reg2il Xn Xm Xt extend) (update (update c (V_TEMP 1000) None) (V_TEMP 9000) None).
+Proof.
+  intros; unfold_stmt. repeat econs.
+Qed.
 
 Local Lemma hastyp_arm_ldrsb_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt size extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:size=32\/size=64) (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsb_reg2il Xn Xm Xt size extend) armc.
 Proof.
+  intros; unfold_stmt. repeat econs. lia.
+Qed.
 
-Admitted.
-
+(*
 Local Lemma hastyp_arm_strh_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_strh_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldrh_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrh_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldrsh_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsh_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_str_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_str_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldr_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldr_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldrsw_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsw_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_prfm_reg2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_prfm_reg2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_stlurb2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stlurb2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldapurb2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapurb2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldapursb2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapursb2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_stlurh2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stlurh2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldapurh2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapurh2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldapursh2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapursh2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldapur2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapur2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldapursw2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldapursw2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_stlur2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stlur2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_prfm2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_prfm2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_prfm_imm2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_prfm_imm2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_sturb2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_sturb2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldurb2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldurb2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldursb2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldursb2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_sturh2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_sturh2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldurh2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldurh2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldursh2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldursh2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_stur2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stur2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldur2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldur2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.
 
 Local Lemma hastyp_arm_ldursw2il:
-  forall c (PF:pfsub armc c), hastyp_stmt armc c () c.
+  forall c Xn Xm Xt extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3)  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldursw2il Xn Xm Xt extend) c.
 Proof.
 
 Admitted.

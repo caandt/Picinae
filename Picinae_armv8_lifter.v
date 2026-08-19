@@ -3130,7 +3130,7 @@ Section Decoder.
       regt := Xtemp[201]
     }>.
 
-  Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
+  Definition arm_str_reg2il (Xn Xm Xt extend size S:N) :=
     let scale := Word size 64 in
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
@@ -3144,7 +3144,7 @@ Section Decoder.
       store[Xtemp[1000],X[Xt],dbytes]
     }>.
 
-  Definition arm_str_reg2il (Xn Xm Xt extend size S:N) :=
+  Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
     let scale := Word size 64 in
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
