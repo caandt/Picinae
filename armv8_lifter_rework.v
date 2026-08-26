@@ -238,7 +238,7 @@ Definition ConditionHolds (cond:N) : exp :=
 
 (* Assume LittleE only execution. The documentation for Big Endian
    is a little confusing and sparse (J1-7567). *)
-Definition BigEndian : exp := <{0#0}>.
+Definition BigEndian : exp := <{0#1}>.
 
 (* Configure Atomic extension, for now it seems to be supportable.
    We do not model concurrency so these are just regular operations. *)
@@ -1631,7 +1631,7 @@ Section Decoder.
 
   Definition arm_stxr2il_size (size Xn Xs Xt:N) :=
     let constraint1 := <{Xs#5 = Xt#5}> in
-    let constraint2 := <{Xs#5 = Xn#5 & Xn#5 <> 31#5}> in <{
+    let constraint2 := <{(Xs#5 = Xn#5) & (Xn#5 <> 31#5)}> in <{
       if ! constraint1 & ! constraint2 then {arm_stxr2il_constr size Xn Xs Xt (Word 0 1) (Word 0 1)} else
       if constraint1 then
         if unknown 1 then
@@ -1707,8 +1707,8 @@ Section Decoder.
     }>.
 
   Definition arm_stxp2il_size (size Xn Xs Xt Xt2:N) :=
-    let constraint1 := <{Xs#5 = Xt#5 | Xs#5 = Xt2#5}> in
-    let constraint2 := <{Xs#5 = Xn#5 & Xn#5 <> 31#5}> in <{
+    let constraint1 := <{(Xs#5 = Xt#5) | (Xs#5 = Xt2#5)}> in
+    let constraint2 := <{(Xs#5 = Xn#5) & (Xn#5 <> 31#5)}> in <{
       if ! constraint1 & ! constraint2 then {arm_stxp2il_constr size Xn Xs Xt Xt2 (Word 0 1) (Word 0 1)} else
       if constraint1 then
         if unknown 1 then
@@ -2069,7 +2069,7 @@ Section Decoder.
   Definition arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex :=
     let size := N.shiftl 8 scale in
     let dbytes := N.shiftl 1 scale in
-    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
+    let offset := <{scast 64 (imm7#64) << (scale # 64)}> in <{
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
       temp[2000] := load[Xtemp[1000],LittleE,dbytes];
@@ -2136,7 +2136,7 @@ Section Decoder.
       else nop end}>.
 
   Definition arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex :=
-    let offset := <{scast 64 (imm7#7) << (2#64)}> in <{
+    let offset := <{scast 64 (imm7#64) << (2#64)}> in <{
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
       temp[2000] := load[Xtemp[1000],LittleE,4];
@@ -2399,8 +2399,8 @@ Section Decoder.
       temp[2000] := X[Xt];
       if rtunknown then temp[2000] := ucast 64 unknown 8 else nop end;
       store[Xtemp[1000],Xtemp[2000],1];
+      temp[1001] := Xtemp[1000];
       if wback then
-        temp[1001] := Xtemp[1000];
         if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
         var[Xn] := Xtemp[1001]
       else
@@ -2432,8 +2432,8 @@ Section Decoder.
       temp[2000] := X[Xt];
       if rtunknown then temp[2000] := ucast 64 unknown 16 else nop end;
       store[Xtemp[1000],Xtemp[2000],2];
-      if wback then
         temp[1001] := Xtemp[1000];
+      if wback then
         if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
         var[Xn] := Xtemp[1001]
       else
@@ -2467,8 +2467,8 @@ Section Decoder.
       temp[2000] := X[Xt];
       if rtunknown then temp[2000] := ucast 64 unknown size else nop end;
       store[Xtemp[1000],Xtemp[2000],bytes];
+      temp[1001] := Xtemp[1000];
       if wback then
-        temp[1001] := Xtemp[1000];
         if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
         var[Xn] := Xtemp[1001]
       else
@@ -2499,8 +2499,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
       var[Xt] := ucast 64 load[Xtemp[1000],1];
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else
         if postindex then temp[1001] := Xtemp[1001] + offset
         else nop end end;
@@ -2535,8 +2535,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
       var[Xt] := ucast 64 load[Xtemp[1000],2];
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else
         if postindex then temp[1001] := Xtemp[1001] + offset
         else nop end end;
@@ -2572,8 +2572,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
       var[Xt] := ucast 64 load[Xtemp[1000],bytes];
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else
         if postindex then temp[1001] := Xtemp[1001] + offset
         else nop end end;
@@ -2608,8 +2608,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
       var[Xt] := ucast 64 (scast size load[Xtemp[1000],1]);
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else
         if postindex then temp[1001] := Xtemp[1001] + offset
         else nop end end;
@@ -2644,8 +2644,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
       var[Xt] := ucast 64 (scast size load[Xtemp[1000],2]);
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else
         if postindex then temp[1001] := Xtemp[1001] + offset
         else nop end end;
@@ -2680,8 +2680,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
       var[Xt] := scast 64 load[Xtemp[1000],4];
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else
         if postindex then temp[1001] := Xtemp[1001] + offset
         else nop end end;
@@ -3309,8 +3309,8 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       temp[1000] := Xtemp[1000] + offset;
       var[Xt] := load[Xtemp[1000],8];
+      temp[1001] := Xtemp[1000];
       if wback & !wbsuppress then
-        temp[1001] := Xtemp[1000];
         if wbunknown then temp[1001] := unknown 64 else nop end;
         var[Xn] := Xtemp[1001]
       else
@@ -4414,7 +4414,22 @@ Proof.
   intros. unfold arm_varid. now destruct_match.
 Qed.
 
+Definition empty (v:var) : option N := None.
+
+Local Lemma pfsub_empty:
+  forall c, pfsub empty c.
+Proof.
+  intros; intros x y H; discriminate.
+Qed.
+
+Local Lemma hastyp_exp_empty:
+  forall c e n, hastyp_exp empty e n -> hastyp_exp c e n.
+Proof.
+  intros; eapply hastyp_exp_weaken;[eassumption | apply pfsub_empty].
+Qed.
+
 Require Import Lia ZifyN ZifyBool.
+Ltac Zify.zify_pre_hook ::= rewrite ?N.shiftl_mul_pow2, ?N.shiftr_div_pow2; (idtac + apply f_equal).
 
 Local Ltac etyp' :=
 <<<<<<< HEAD
@@ -4491,6 +4506,7 @@ Local Ltac etyp :=
   | |- hastyp_exp _ (Store _ _ _ _ _) _ => apply TStore with (w := 64)
   | |- hastyp_exp _ (Extract ?hi ?lo ?e) ?n => replace n with (N.succ hi - lo);[eapply TExtract|]
   | X: hastyp_exp _ ?x ?a, Y: hastyp_exp _ ?y ?b |- hastyp_exp _ (Concat ?x ?y) _ => apply TConcat with (w1 := a) (w2 := b)
+  | H: hastyp_exp empty ?e _ |- hastyp_exp _ ?e _ => apply (hastyp_exp_empty _ _ _ H)
   | |- pfsub arm8typctx arm8typctx  => reflexivity
   | |- _ < _ => reflexivity
   | |- _ _ = Some _ => reflexivity
@@ -4549,7 +4565,7 @@ Local Ltac stypc_w c w' c1 c2 :=
 Local Ltac e_stypc c :=
   (* Do not simplify the memory bitwidth and massage it into
      the TStore/TLoad format. *)
-  cbn -[N.mul N.pow]; rewrite ?(N.mul_comm 8 (2^64));
+  cbn -[N.mul N.pow N.shiftl N.shiftr]; rewrite ?(N.mul_comm 8 (2^64));
   repeat match goal with
   | |- hastyp_stmt _ _ (Seq _ _) _ => eapply TSeq
   | |- hastyp_stmt _ _ (If _ _ _) _ => eapply TIf
@@ -5199,6 +5215,11 @@ Proof.
   reflexivity.
 Qed.
 
+Local Lemma armvarid_neq_mem:
+  forall n, arm_varid n <> V_MEM64.
+Proof.
+  intros n EQ. pose proof (H:=typeof_arm_varid n). now rewrite EQ in H.
+Qed.
 
 
 Local Ltac c_var :=
@@ -5215,6 +5236,7 @@ Proof.
     subst; rewrite update_updated in *; discriminate.
     assumption.
 Qed.
+
 
 (* Simplifies goals reading vars from a context that is a superset of armc. Example simplified expression:
 
@@ -5253,13 +5275,21 @@ Local Ltac red_ccases :=
   | _ => idtac
   end.
 
+(* [cget] solves or simplifies [c x = Some _] goals where c has updates and
+   maybe we need to appeal to a pfsub hypothesis. *)
+Local Ltac cget :=
+  rewrite ?update_frame by (discriminate||(idtac+symmetry);(apply armvarid_neq_temp + apply armvarid_neq_mem) ||intros H;inversion H;lia);
+  ((rewrite update_updated; try reflexivity)
+  || lazymatch goal with 
+     | H: pfsub armc ?c |- ?c _ = Some _ => apply H; simpl; try (reflexivity || apply typeof_arm_varid)
+     | H: pfsub ?c' ?c |- ?c _ = Some _ => apply H; cget
+     end).
+
 (* c_varx solves more complicated context equations like the one below:
 
 PF : arm8typctx ⊆ c
 H : (c[temp[ 1000] := None][temp[ 9000] := None]) x = Some y
-
 ========================= (1 / 1)
-
 (c[temp[ 9000] := Some 64][temp[ 1000] := Some 64][temp[ 1000] := Some 64]
  [V_MEM64 := Some (8 * 2 ^ 64)]) x = Some y *)
 Ltac c_varx :=
@@ -5271,6 +5301,7 @@ Ltac c_varx :=
   | H: ?x = Some _, H2: ?x = None |- _ => now rewrite H in H2
   (* Used when proving that armc is a satisfactory output context. *)
   | PF: pfsub armc ?c |- ?c _ = _ => apply PF; assumption
+  | PF: pfsub armc ?c |- Some _ = ?c _ => symmetry; apply PF; (reflexivity || assumption || apply typeof_arm_varid)
   | PF: pfsub armc ?c |- context[?c ?v] => rewrite (PF v _ (eq_refl _)); rewrite ?(N.mul_comm 8); reflexivity
   (* Reducers *)
   | PF:arm8typctx ⊆ _, EQ:?c' ?x = _ |- update ?c ?v  (Some ?val) ?x = Some ?y =>
@@ -5280,14 +5311,15 @@ Ltac c_varx :=
                 second case solves when the output context is weakend to arm8typctx.
                 The latter case is useful for simplifying and indicating the theorems for
                 terminal lifter code as opposed to internal auxiliary functions. *)
-            first [ specialize (PF v val eq_refl) || specialize (PF v val (typeof_arm_varid _));
+            first [ assumption
+                  | specialize (PF v val eq_refl) || specialize (PF v val (typeof_arm_varid _));
                     rewrite PF, <- EQ in *; reflexivity
                   | discriminate ||
                     match goal with | EQ: armc _ = Some ?y |- _ = Some ?y =>
                       rewrite <-EQ, ?typeof_arm_varid; reflexivity
                     end
                   ]
-          | rewrite update_frame by assumption ]
+         | rewrite ?update_frame in * by assumption ]
   | PF: pfsub armc _, EQ: ?c' ?x = _|- update ?c ?v (Some ?val) ?x = Some ?y => destruct (iseq x v);
       [subst;rewrite update_updated; (specialize (PF v val (eq_refl _)) || specialize (PF v val (typeof_arm_varid _))); rewrite PF, <-EQ in *; reflexivity
       |rewrite update_frame by assumption]
@@ -5295,6 +5327,12 @@ Ltac c_varx :=
       [subst;rewrite update_updated,?update_frame in * by (discriminate||apply armvarid_neq_temp||intros H;inversion H;lia);
          rewrite <-EQ
          |rewrite update_frame by assumption]
+  (* Adding this case breaks proofs. *)
+  (*| |- context[update ?c ?v (Some _) ?x] => *)
+  (*    rewrite (update_updated c x) ||*)
+  (*    let EQ:=fresh "EQ" in*)
+  (*    let NEQ:=fresh "NEQ" in*)
+  (*    destruct (x==v) as [EQ|NEQ];[rewrite EQ in *; clear EQ|rewrite ?(update_frame _ _ _ _ NEQ)]*)
   end.
 
 (* Prove pfsub goals. *)
@@ -5306,10 +5344,15 @@ Ltac subsolve :=
 
 (* Try to solve a hastyp_exp goal, dealing with fairly complex context subset subgoals. *)
 Local Ltac esolve :=
-  simpl_c; etyp; try apply hastyp_XtoVar; try etypeasy; try solve_armc_sub; try c_var; try c_varx.
+  simpl_c; etyp; 
+  (apply hastyp_XtoVar
+    || apply hastyp_b2exp
+    || apply hastyp_AlignCheck
+    || idtac
+  ); try etypeasy; try solve_armc_sub; try c_var; try c_varx.
 
 (* Try to solve a hastyp_stmt goal using aux-function lemmas. *)
-Local Ltac ssolve :=
+Local Ltac ssolve H :=
   estyp
     || apply hastyp_havoc
     || apply hastyp_CheckSPAlignment
@@ -5317,15 +5360,19 @@ Local Ltac ssolve :=
     || apply hastyp_ExtendReg
     || apply hastyp_Replicate
     || apply hastyp_HighestSetBit
-    || apply hastyp_DecodeBitMasks.
+    || apply hastyp_DecodeBitMasks
+    || apply H.
 
 Ltac destruct_oreq :=
   try match goal with
-  | H: ?x = _ \/ ?x = _ |- context[?x] => destruct H; subst
+  | H: ?x = _ \/ _ |- context[?x] => destruct H; subst
   end.
 
 Ltac casesolve := 
-  assumption || apply pfsub_refl || apply eq_refl
+  assumption 
+  (* Apply specific reflexivity lemmas.  Using [reflexivity] binds the evar in, e.g., [?w <= 64]
+     leading to unprovable goals. *)
+  || apply pfsub_refl || apply eq_refl
   (* Some functions take the minimum of two values. *)
   || (apply N.min_le_iff; first [left;lia | right;lia])
   (* For N.shiftl 1 size <= 64 goals *)
@@ -5335,18 +5382,60 @@ Ltac casesolve :=
   (* pfsub *)
   || subsolve
   (* hastyp_exp *)
-  || esolve.
+  || esolve
+  (* context x = Some _ *)
+  || cget.
 
 (* Step through a hastyp_stmt proof, solving trivially solvable cases. *)
-Ltac econs :=
+Ltac econs_ H :=
   (* econstructor by default, but prefer special cases for TLoad and TStore
      to unify the memory bitwidth early and allow the solvers to solve the other
      goals. *)
   ( (eapply TLoad;[|etyp;casesolve|])
     || (eapply TStore;[|etyp;casesolve| | ])
-    || econstructor);
+    || econstructor
+    || (rewrite N.mul_comm; econstructor));
   simpl_c; repeat destruct_match;
-  try solve [(try ssolve); (casesolve || (try destruct_oreq; repeat (try etyp; casesolve)))].
+  try solve [(try ssolve H); (casesolve || (try destruct_oreq; repeat (try etyp; casesolve)))].
+
+Tactic Notation "econs" "with" reference(h) := econs_ h.
+Tactic Notation "econs" := econs_ I.
+
+(* For solving fetching a register out of a big context.  E.g.,
+  (c[temp[ 1000] := Some 64][temp[ 2000] := Some (N.shiftl 1 scale * 8)]
+  [temp[ 3000] := Some (N.shiftl 1 scale * 8)][temp[ 2000] := Some (N.shiftl 8 scale)]
+  [temp[ 3000] := Some (N.shiftl 8 scale)][<{ var[ {Xt}] }> := Some 64]
+  [<{ var[ {Xt2}] }> := Some 64]) <{ var[ {Xn}] }> =
+    Some 64 *)
+Ltac c_var_reg :=
+repeat match goal with
+|- update ?c ?v ?val ?x = Some _ =>
+    (rewrite update_updated; reflexivity)
+    || (rewrite update_frame by (discriminate||((idtac+symmetry); apply armvarid_neq_temp)))
+    || (let EQ:=fresh "EQ" in destruct (x==v) as [EQ | ?];[rewrite <-EQ in *; rewrite update_updated; reflexivity | rewrite update_frame by assumption ])
+| PF: pfsub armc ?c |- ?c _ = Some _ => apply PF; try (reflexivity || apply typeof_arm_varid)
+end.
+
+Local Ltac simple_c_var :=
+  (idtac+symmetry);
+    (repeat match goal with
+    | |- update ?c (arm_varid ?v) _ (arm_varid ?x) = _ =>
+        let EQ := fresh "EQ" in 
+        destruct (arm_varid x == arm_varid v) as [EQ | ?];[
+            rewrite <-EQ,update_updated in *; clear EQ; try reflexivity
+            | rewrite update_frame by assumption
+            ]
+    | |- _ => rewrite !update_frame by
+          ((intros;discriminate) || (idtac+symmetry);(apply armvarid_neq_temp || apply armvarid_neq_mem))
+    end);
+    match goal with
+    | PF: pfsub armc ?c |- ?c _ = _ => apply PF, typeof_arm_varid
+    | |- armc _ = _ => reflexivity
+    end.
+    (*rewrite !update_frame by (apply armvarid_neq_temp || apply armvarid_neq_mem); *)
+    (*match goal with*)
+    (*| PF: pfsub armc ?c |- ?c _ = _ => apply PF, typeof_arm_varid*)
+    (*end.*)
 
 Local Lemma hastyp_arm_strb_reg2il:
   forall c (Xn Xm Xt extend:N) (B1:Xn < 2^5) (B2:Xm < 2^5) (B3:Xt < 2^5) (B4:extend<2^3)
@@ -5361,6 +5450,377 @@ Local Lemma hastyp_arm_ldrb_reg2il:
 Proof.
   intros; unfold_stmt. repeat econs.
 Qed.
+
+Local Lemma hastyp_arm_stxr2il_constr:
+  forall c (size Xn Xs Xt:N) (rtunknown rnunknown:exp)
+  (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64)
+  (B6:hastyp_exp c rnunknown 64) (B7:hastyp_exp (update c (V_TEMP 1000) (Some 64)) rtunknown 64)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stxr2il_constr size Xn Xs Xt rtunknown rnunknown) armc.
+Proof.
+  intros; unfold_stmt. repeat econs; try eassumption.
+Qed.
+
+Local Lemma hastyp_arm_stxr2il_size:
+  forall c (size Xn Xs Xt:N) (rtunknown rnunknown:exp)
+  (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64)
+  (PF:pfsub armc c),
+  hastyp_stmt armc armc (arm_stxr2il_size size Xn Xs Xt) armc.
+Proof.
+  intros; unfold_stmt. time repeat econs with hastyp_arm_stxr2il_constr.
+Qed.
+
+Local Lemma hastyp_arm_stxp2il_constr:
+  forall c (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:exp)
+  (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64) (B5:Xt2<2^5)
+  (B6:hastyp_exp empty rtunknown 1) 
+  (B7:hastyp_exp empty rnunknown 1)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_stxp2il_constr size Xn Xs Xt Xt2 rtunknown rnunknown) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+Qed.
+
+Local Lemma hastyp_arm_stxp2il_size:
+  forall c (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:exp)
+  (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64) (B5:Xt2<2^5)
+  (PF:pfsub armc c),
+  hastyp_stmt armc armc (arm_stxp2il_size size Xn Xs Xt Xt2) armc.
+Proof.
+  intros; unfold_stmt. time repeat (econs with hastyp_arm_stxp2il_constr).
+Qed.
+
+Local Lemma hastyp_arm_ldxp2il_constr:
+  forall c (size Xn Xt Xt2:N) (rtunknown:bool)
+  (B1:Xn<2^5) (B3:Xt<2^5) (B4:size=8\/size=16\/size=32\/size=64) (B5:Xt2<2^5)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldxp2il_constr size Xn Xt Xt2 rtunknown) armc.
+Proof.
+  intros; unfold_stmt. repeat econs. all: try lia.
+  simpl; lia.
+Qed.
+
+Local Lemma hastyp_arm_ldxp2il_size:
+  forall c (size Xn Xt Xt2:N) (rtunknown:bool)
+  (B1:Xn<2^5) (B3:Xt<2^5) (B4:size=8\/size=16\/size=32\/size=64) (B5:Xt2<2^5)
+  (PF:pfsub armc c),
+  hastyp_stmt armc armc (arm_ldxp2il size Xn Xt Xt2) armc.
+Proof.
+  intros; unfold_stmt. time repeat (econs with hastyp_arm_ldxp2il_constr). all: try solve [simpl;lia].
+  simple_c_var.
+  subsolve; symmetry; apply typeof_arm_varid.
+  simple_c_var.
+  subsolve; symmetry; apply typeof_arm_varid.
+Qed.
+
+Local Lemma hastyp_arm_ldp2il_constr:
+  forall c Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex
+  (B1:Xn<2^5) (B3:Xt<2^5) (B5:Xt2<2^5) (B6:imm7<2^7) (B7:scale=2\/scale=3)
+  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1) 
+  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1) 
+  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  rewrite ?update_cancel; apply B9.
+  rewrite ?update_cancel. subsolve.
+  lia.
+  cget. lia.
+  eapply hastyp_exp_weaken. apply B8.  subsolve; try reflexivity. rewrite !update_frame in EQ by easy. assumption.
+  eapply hastyp_exp_weaken. apply B10. subsolve; try reflexivity. rewrite !update_frame in EQ by easy. assumption.
+  rewrite !update_cancel. subsolve. rewrite !update_frame  by (discriminate || symmetry; apply armvarid_neq_temp). reflexivity.
+  rewrite !update_cancel. subsolve. now rewrite update_updated.
+  destruct (arm_varid Xt == arm_varid Xt2) as [EQ1|NE];[rewrite EQ1|rewrite update_frame by assumption];now rewrite update_updated.
+  rewrite !update_frame by (symmetry; apply armvarid_neq_temp); now rewrite update_updated.
+  rewrite !update_frame by (discriminate||symmetry; apply armvarid_neq_temp); now rewrite update_updated.
+  rewrite !update_cancel. subsolve.
+  symmetry; c_var_reg.
+  symmetry; c_var_reg.
+Qed.
+
+(*Local Lemma hastyp_arm_ldp2il:*)
+(*  forall c Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex*)
+(*  (B1:Xn<2^5) (B3:Xt<2^5) (B5:Xt2<2^5) (B6:imm7<2^7) (B7:scale=2\/scale=3)*)
+(*  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1) *)
+(*  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs; try lia.*)
+(*  rewrite ?update_cancel. apply B9.*)
+(*  rewrite ?update_cancel. subsolve.*)
+(*  lia.*)
+(*  cget. lia.*)
+(*  eapply hastyp_exp_weaken. apply B8.  subsolve; try reflexivity. rewrite !update_frame in EQ by easy. assumption.*)
+(*  eapply hastyp_exp_weaken. apply B10. subsolve; try reflexivity. rewrite !update_frame in EQ by easy. assumption.*)
+(*  rewrite !update_cancel. subsolve. rewrite !update_frame  by (discriminate || symmetry; apply armvarid_neq_temp). reflexivity.*)
+(*  rewrite !update_cancel. subsolve. now rewrite update_updated.*)
+(*  destruct (arm_varid Xt == arm_varid Xt2) as [EQ1|NE];[rewrite EQ1|rewrite update_frame by assumption];now rewrite update_updated.*)
+(*  rewrite !update_frame by (symmetry; apply armvarid_neq_temp); now rewrite update_updated.*)
+(*  rewrite !update_frame by (discriminate||symmetry; apply armvarid_neq_temp); now rewrite update_updated.*)
+(*  rewrite !update_cancel. subsolve.*)
+(*  symmetry; c_var_reg.*)
+(*  symmetry; c_var_reg.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldpsw2il_constr:
+  forall c Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex
+  (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm7<2^7) (B5:Xt2<2^5)
+  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1) 
+  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1) 
+  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  rewrite update_cancel. apply B9.
+  eapply hastyp_exp_weaken. eapply B8. subsolve; try reflexivity. rewrite !update_frame in EQ; assumption.
+  eapply hastyp_exp_weaken. eapply B10. subsolve; try reflexivity. rewrite !update_frame in EQ; assumption.
+  subsolve. symmetry; c_var_reg.
+  subsolve; symmetry; c_var_reg.
+  subsolve; symmetry; c_var_reg.
+Qed.
+
+(*Local Lemma hastyp_arm_ldpsw2il_size:*)
+(*  forall c Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex*)
+(*  (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm7<2^7) (B5:Xt2<2^5)*)
+(*  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1) *)
+(*  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1) *)
+(*  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldpsw2il_size Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  rewrite update_cancel. apply B9.*)
+(*  eapply hastyp_exp_weaken. eapply B8. subsolve; try reflexivity. rewrite !update_frame in EQ; assumption.*)
+(*  eapply hastyp_exp_weaken. eapply B10. subsolve; try reflexivity. rewrite !update_frame in EQ; assumption.*)
+(*  subsolve. symmetry; c_var_reg.*)
+(*  subsolve; symmetry; c_var_reg.*)
+(*  subsolve; symmetry; c_var_reg.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_strb_imm2il_constr:
+  forall c (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_strb_imm2il_constr Xn Xt imm912 signed wback postindex rtunknown) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve. simple_c_var.
+  subsolve. simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_strb_imm2il_size:*)
+(*  forall c (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_strb_imm2il_size Xn Xt imm912 signed wback postindex rtunknown) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve. simple_c_var.*)
+(*  subsolve. simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_strh_imm2il_constr:
+  forall c (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_strh_imm2il_constr Xn Xt imm912 signed wback postindex rtunknown) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve. simple_c_var.
+  subsolve. simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_strh_imm2il_size:*)
+(*  forall c (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_strh_imm2il_size Xn Xt imm912 signed wback postindex rtunknown) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve. simple_c_var.*)
+(*  subsolve. simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_str_imm2il_constr:
+  forall c (Xn Xt imm912 size:N) (signed wback postindex rtunknown:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:size=32\/size=64)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_str_imm2il_constr Xn Xt imm912 size signed wback postindex rtunknown) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve. simple_c_var.
+  subsolve. simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_str_imm2il_size:*)
+(*  forall c (Xn Xt imm912 size:N) (signed wback postindex rtunknown:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:size=32\/size=64)*)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_str_imm2il_size Xn Xt imm912 size signed wback postindex rtunknown) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve. simple_c_var.*)
+(*  subsolve. simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldrb_imm2il_constr:
+  forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrb_imm2il_constr Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve; simple_c_var.
+  subsolve; simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_ldrb_imm2il_size:*)
+(*  forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldrb_imm2il_size Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve; simple_c_var.*)
+(*  subsolve; simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldrh_imm2il_constr:
+  forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrh_imm2il_constr Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve; simple_c_var.
+  subsolve; simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_ldrh_imm2il_size:*)
+(*  forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)*)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldrh_imm2il_size Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve; simple_c_var.*)
+(*  subsolve; simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldr_imm2il_constr:
+  forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:size=32\/size=64)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldr_imm2il_constr Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs. 
+  subsolve; simple_c_var.
+  subsolve; simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_ldr_imm2il_size:*)
+(*  forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:size=32\/size=64)*)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldr_imm2il_size Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs. *)
+(*  subsolve; simple_c_var.*)
+(*  subsolve; simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldrsb_imm2il_constr:
+  forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:size=32\/size=64)
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  1,3: lia.
+  subsolve; simple_c_var.
+  subsolve; simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_ldrsb_imm2il_size:*)
+(*  forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:size=32\/size=64)*)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldrsb_imm2il_size Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  1,3: lia.*)
+(*  subsolve; simple_c_var.*)
+(*  subsolve; simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldrsh_imm2il_constr:
+  forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B4:size=32\/size=64) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  1,3: lia.
+  subsolve; simple_c_var.
+  subsolve; simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_ldrsh_imm2il_size:*)
+(*  forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B4:size=32\/size=64) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldrsh_imm2il_size Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  1,3: lia.*)
+(*  subsolve; simple_c_var.*)
+(*  subsolve; simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldrsw_imm2il_constr:
+  forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)  
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve; simple_c_var.
+  subsolve; simple_c_var.
+Qed.
+
+(*Local Lemma hastyp_arm_ldrsw_imm2il_size:*)
+(*  forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)  *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldrsw_imm2il_size Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve; simple_c_var.*)
+(*  subsolve; simple_c_var.*)
+(*Qed.*)
+
+Local Lemma hastyp_arm_ldraa2il_constr:
+  forall c (Xn Xt S imm9:N) (wback wbunknown wbsuppress:bool)
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:S<2^1) (B5:imm9<2^9) 
+  (PF:pfsub armc c),
+  hastyp_stmt armc c (arm_ldraa2il_constr Xn Xt S imm9 wback wbunknown wbsuppress) armc.
+Proof.
+  intros; unfold_stmt. repeat econs.
+  subsolve. simple_c_var. 
+Qed.
+
+(*Local Lemma hastyp_arm_ldraa2il_size:*)
+(*  forall c (Xn Xt S imm9:N) (wback wbunknown wbsuppress:bool)*)
+(*  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:S<2^1) (B5:imm9<2^9) *)
+(*  (PF:pfsub armc c),*)
+(*  hastyp_stmt armc armc (arm_ldraa2il_size Xn Xt S imm9 wback wbunknown wbsuppress) armc.*)
+(*Proof.*)
+(*  intros; unfold_stmt. repeat econs.*)
+(*  subsolve. simple_c_var. *)
+(*Qed.*)
 
 Local Lemma hastyp_arm_ldrsb_reg2il:
   forall c Xn Xm Xt size extend (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:size=32\/size=64) (PF:pfsub armc c),
@@ -5550,7 +6010,6 @@ Proof.
   intros; unfold_stmt. repeat econs. casesolve.
   all: etyp; try (rewrite update_updated; reflexivity).
   1-14: try apply hastyp_exp_weaken with (c1:=c); try eassumption; try subsolve.
-  rewrite N.mul_comm; econs.
 Qed.
 
 Local Lemma hastyp_arm_ldatomic2il_size:
@@ -5564,8 +6023,6 @@ Proof.
   subsolve.
   1-2:c_varx.
   repeat econs.
-  subsolve.
-  symmetry. apply PF, typeof_arm_varid.
 Qed.
 
 Local Lemma hastyp_arm_swp2il_size:
@@ -5924,6 +6381,4 @@ Proof.
   remember (arm_decode n) as i.
   destruct i. apply hastyp_arm_data_imm. admit.
 Admitted.
-
-
 
