@@ -57,6 +57,7 @@ Notation "x >>a y" := (BinOp OP_ARSHIFT x y) (in custom PIL at level 55, y at le
 
 (* --- bitwise --- *)
 Notation "! x"    := (UnOp  OP_NOT x)   (in custom PIL at level 60).
+Notation "'width' '(' x ')'"    := (UnOp  OP_BITWIDTH x)   (in custom PIL at level 60).
 Notation "x & y"  := (BinOp OP_AND x y) (in custom PIL at level 65, y at level 64, left associativity).
 Notation "x ^ y"  := (BinOp OP_XOR x y) (in custom PIL at level 68, y at level 67, left associativity).
 Notation "x | y"  := (BinOp OP_OR  x y) (in custom PIL at level 70, y at level 69, left associativity).
