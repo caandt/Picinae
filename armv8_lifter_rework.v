@@ -103,7 +103,7 @@ Notation "'PC'" := (Var R_PC) (in custom PIL at level 65).
     return;
   *)
 
-Definition XtoVar n := 
+Definition XtoVar n :=
   match n with
   | 0 => Var R_X0
   | 1 => Var R_X1
@@ -243,24 +243,18 @@ Notation "'C'" := (Var R_CY) (in custom PIL at level 0).
 Notation "'V'" := (Var R_OV) (in custom PIL at level 0).
 
 Definition ConditionHolds (cond:N) : exp :=
-  let case := <{cond#4[3:1]}> in
-  let EQ_NE := <{case = 0#3}> in
-  let CS_CC := <{case = 1#3}> in
-  let MI_PL := <{case = 2#3}> in
-  let VS_VC := <{case = 3#3}> in
-  let HI_LS := <{case = 4#3}> in
-  let GE_LT := <{case = 5#3}> in
-  let GT_LE := <{case = 6#3}> in
-  let AL    := <{case = 7#3}> in
-  <{ite (cond#4 = 0xF#4) 1#1
-      (cond#4[0] ^ (* First bit negates condition *)
-        (ite EQ_NE (Z=1#1) (
-        ite CS_CC (C=1#1) (
-        ite MI_PL (N=1#1) (
-        ite VS_VC (V=1#1) (
-        ite HI_LS (C=1#1 & Z = 0#1) (
-        ite GE_LT (N=V) (N=V & Z=0#1))))))))
-  }>.
+  let flip := Word (xbits cond 0 1) 1 in
+  let cond := xbits cond 1 4 in
+  match cond with
+  | 0 (* EQ_NE *) => <{flip ^ (Z=1#1)}>
+  | 1 (* CS_CC *) => <{flip ^ (C=1#1)}>
+  | 2 (* MI_PL *) => <{flip ^ (N=1#1)}>
+  | 3 (* VS_VC *) => <{flip ^ (V=1#1)}>
+  | 4 (* HI_LS *) => <{flip ^ (C=1#1 & Z=0#1)}>
+  | 5 (* GE_LT *) => <{flip ^ (N=V)}>
+  | 6 (* GT_LE *) => <{flip ^ (N=V & Z=0#1)}>
+  | _ (* AL    *) => <{1#1}>
+  end.
 
 (* Assume LittleE only execution. The documentation for Big Endian
    is a little confusing and sparse (J1-7567). *)
@@ -273,36 +267,14 @@ Definition HaveAtomicExt : exp := <{1#1}>.
 Definition havoc := <{ exn 0 }>.
 
 Definition UsingAArch32 := <{ {Var R_nRW} = 1#1 }>.
-Definition BranchTo w target := <{
-  if (w#w = 32#w) then
-    if UsingAArch32 then jmp (ucast 64 target) else exn 0 end
-  else
-    if (w#w = 64#w) & !UsingAArch32 then jmp target else exn 0 end
-  end
-}>.
+Definition BranchTo w target :=
+  match w with
+  | 32 => <{if UsingAArch32 then jmp (ucast 64 target) else exn 0 end }>
+  | 64 => <{if !UsingAArch32 then jmp target else exn 0 end}>
+  | _ => <{exn 0}>
+ end.
 
 Notation "'branch' e" := (BranchTo 64 e) (in custom PIL at level 0, e at level 99).
-
-(* ARM does not provide a bit encoding for these atomic operations, but 9 are
-    listed in the MemAtomic auxiliary function. We just use 0-8, but it is arbitrary. *)
-Notation "'MemAtomicOp_ADD'" := (<{0#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_BIC'" := (<{1#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_EOR'" := (<{2#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_ORR'" := (<{3#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_SMAX'" := (<{4#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_SMIN'" := (<{5#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_UMAX'" := (<{6#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_UMIN'" := (<{7#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_SWP'" := (<{8#5}>) (in custom PIL at level 0).
-Notation "'MemAtomicOp_ADD'" := (<{0#5}>) (at level 0).
-Notation "'MemAtomicOp_BIC'" := (<{1#5}>) (at level 0).
-Notation "'MemAtomicOp_EOR'" := (<{2#5}>) (at level 0).
-Notation "'MemAtomicOp_ORR'" := (<{3#5}>) (at level 0).
-Notation "'MemAtomicOp_SMAX'" := (<{4#5}>) (at level 0).
-Notation "'MemAtomicOp_SMIN'" := (<{5#5}>) (at level 0).
-Notation "'MemAtomicOp_UMAX'" := (<{6#5}>) (at level 0).
-Notation "'MemAtomicOp_UMIN'" := (<{7#5}>) (at level 0).
-Notation "'MemAtomicOp_SWP'" := (<{8#5}>) (at level 0).
 
 (*DP Imm - C4.1.2, page C4-252*)
 (*Add/Sub*)
@@ -657,11 +629,11 @@ Definition Replicate N M x :=
   (N.iter (N.pred (N/M)) (fun acc => cbits acc M x) x) mod 2^N.
 
 Definition ROR N shift x :=
-  let shift' := N.modulo shift N in 
+  let shift' := N.modulo shift N in
   N.lor (N.shiftr x shift') (N.shiftl x (N-shift')).
 
 (* shift < 2^w *)
-Definition RORExp w x shift := 
+Definition RORExp w x shift :=
   let m := <{shift#w % w#w}> in <{
     ite (m = 0#w) x ((x >> m) | (x << (w#w-m)))
 }>.
@@ -681,7 +653,7 @@ Definition DecodeBitMasks (immN imms immr:N) (immediate:bool) (M:N) :=
       let S := N.land imms levels in
       let R := N.land immr levels in
       let diff := sbop2 Z.sub 6 S R in
-      let esize := N.shiftl 1 len in 
+      let esize := N.shiftl 1 len in
       let d := xbits 0 len diff in
       let welem := N.ones (S+1) in
       let telem := N.ones (d+1) in
@@ -863,7 +835,7 @@ Section Decoder.
     let tmask := tmask n imms immr false datasize in
     let dst := <{lcast datasize X[Xd]}> in
     let src := <{lcast datasize X[Xn]}> in
-    let bot := <{(dst & {N.lnot wmask datasize}#datasize) 
+    let bot := <{(dst & {N.lnot wmask datasize}#datasize)
                   | ({RORExp datasize src immr} & wmask#datasize)}> in
     Some <{
       var[Xd] := ucast 64 ((dst & !tmask#datasize) | (bot & tmask#datasize))
@@ -881,7 +853,7 @@ Section Decoder.
     let src := <{lcast datasize X[Xn]}> in
     let topbit := (if sf =? 0 then Word 0 1 else <{src[imms]}>) in
     let bot := <{ {RORExp datasize src immr} & wmask#datasize }> in
-    let top := <{ite topbit ({N.ones datasize}#datasize) (0#datasize)}> in 
+    let top := <{ite topbit ({N.ones datasize}#datasize) (0#datasize)}> in
     Some <{
       var[Xd] := ucast 64 ((top & !tmask#datasize) | (bot & tmask#datasize))
     }>.
@@ -936,9 +908,9 @@ Section Decoder.
    else UDF end.
 
   Definition arm_b_cond2il (cond imm19:N) :=
-    let offset := <{scast 64 (imm19#19++0#2)}> in
+    let offset := scast 21 64 (N.shiftl imm19 2) in
       <{if {ConditionHolds cond}
-      then jmp PC + offset else nop end}>.
+      then jmp PC + offset#64 else nop end}>.
 
   Definition cond_branch :=
     let o1 := n.[24] in
@@ -1063,10 +1035,10 @@ Section Decoder.
      If we do not want to model the FlagFormatExt then set this to undefined behavior. *)
   Definition arm_xaflag2il :=
     <{
-      (*N*) temp[1] := ucast 8 (!C & !Z);
-      (*Z*) temp[2] := ucast 8 ( C &  Z);
-      (*C*) temp[3] := ucast 8 ( C |  Z);
-      (*V*) temp[4] := ucast 8 (!C &  Z);
+      (*N*) temp[1] := (!C & !Z);
+      (*Z*) temp[2] := ( C &  Z);
+      (*C*) temp[3] := ( C |  Z);
+      (*V*) temp[4] := (!C &  Z);
       R_NG := Xtemp[1];
       R_ZR := Xtemp[2];
       R_CY := Xtemp[3];
@@ -1074,12 +1046,12 @@ Section Decoder.
     }>.
   Definition arm_axflag2il :=
     <{
-      (*Z*) temp[2] :=  ucast 8 (Z |  V);
-      (*C*) temp[3] :=  ucast 8 (C & !V);
-      R_NG := 0#8;
+      (*Z*) temp[2] := (Z |  V);
+      (*C*) temp[3] := (C & !V);
+      R_NG := 0#1;
       R_ZR := Xtemp[2];
       R_CY := Xtemp[3];
-      R_OV := 0#8
+      R_OV := 0#1
     }>.
 
   Definition pstate :=
@@ -1224,12 +1196,12 @@ Section Decoder.
   else UDF end.
 
   Definition arm_b2il imm26 :=
-    let offset := <{scast 64 (imm26#28 << 2#28)}> in
-    <{jmp PC+offset}>.
+    let offset := scast 28 64 (N.shiftl imm26 2) in
+    <{jmp PC+offset#64}>.
 
   Definition arm_bl2il imm26 :=
-    let offset := <{scast 64 (imm26#28 << 2#28)}> in
-    <{{arm_varid 30} := PC + 4#64; jmp PC+offset}>.
+    let offset := scast 28 64 (N.shiftl imm26 2) in
+    <{{arm_varid 30} := PC + 4#64; jmp PC+offset#64}>.
 
   Definition uncond_b_imm :=
     let op := n.[31] in
@@ -1240,14 +1212,14 @@ Section Decoder.
     else UDF end.
 
   Definition arm_cbz2il Xn imm19 size :=
-    let offset := <{scast 64 (imm19#21 << 2#21)}> in
-    let target := <{PC + offset}> in <{
+    let offset := scast 21 64 (N.shiftl imm19 2) in
+    let target := <{PC + offset#64}> in <{
     if (lcast size X[Xn]) = 0#size then {BranchTo size target} else nop end
   }>.
 
   Definition arm_cbnz2il Xn imm19 size :=
-    let offset := <{scast 64 (imm19#21 << 2#21)}> in
-    let target := <{PC + offset}> in <{
+    let offset := scast 21 64 (N.shiftl imm19 2) in
+    let target := <{PC + offset#64}> in <{
     if !((lcast size X[Xn]) = 0#size) then {BranchTo size target} else nop end
   }>.
 
@@ -1266,19 +1238,17 @@ Section Decoder.
 
 
   (* C6-1341 *)
-  (* Here the position is calculated in Gallina because the Extract expression
-     takes Gallina Ns for the indices, not exps. *)
   Definition arm_tbz2il (Xt imm14 b5 b40:N) :=
     let pos := cbits b5 5 b40 in
-    let offset := <{ scast 64 (imm14#16 << 2#16) }> in <{
-      if  X[Xt][pos] = 0#1 then branch (PC + offset) else nop end
+    let offset := scast 16 64 (N.shiftl imm14 2) in <{
+      if  X[Xt][pos] = 0#1 then branch (PC + offset#64) else nop end
   }>.
 
   (* C6-1340 *)
   Definition arm_tbnz2il (Xt imm14 b5 b40:N) :=
     let pos := cbits b5 5 b40 in
-    let offset := <{ scast 64 (imm14#16 << 2#16) }> in <{
-      if  X[Xt][pos] = 1#1 then branch (PC + offset) else nop end
+    let offset := scast 16 64 (N.shiftl imm14 2) in <{
+      if  X[Xt][pos] = 1#1 then branch (PC + offset#64) else nop end
   }>.
 
 
@@ -1313,17 +1283,15 @@ Section Decoder.
 
 
   (* We do not model tag memory, this is a no-op if the SP is aligned. *)
-  Definition arm_stg2il (Rn Rt imm9:N) (writeback postindex:bool) :=
-    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in
-    let Xn := <{Rn # 64}> in
-    let Xt := <{Rt # 64}> in <{
-      (* V_TEMP 1000 := address
-        V_TEMP 2000 := data *)
-      if (Rn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Rn];
-      if ! {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := X[Rt];
-      temp[3000] := AllocTag Xtemp[2000]
-    }>.
+  Definition arm_stg2il (Xn Xt imm9:N) (writeback postindex:bool) :=
+    let offset := (scast 13 64 (N.shiftl imm9 LOG2_TAG_GRANULE)) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data := <{X[Xn]}> in
+    let wbblock := if negb writeback then Nop else
+                   let address := if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    <{check; wbblock}>.
 
   (* Store Tag and Zero Multiple C6.2.306-1307
      This instruction's semantics are undefined for EL0. *)
@@ -1331,66 +1299,46 @@ Section Decoder.
 
   (* Load Allocation Tag C6.2.122-962 *)
   Definition arm_ldg2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in
+    let offset := (scast 13 64 (N.shiftl imm9 LOG2_TAG_GRANULE)) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{Align[X[Xn]+offset#64,64,16]}> in
     <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[1000] := Align[Xtemp[1000],64,16];
+      check;
       (* Skip tag access *)
-      {arm_varid Xt} := Xtemp[1000]
-  }>.
+      var[Xt]:=address
+    }>.
 
-  (* Load Allocation Tag C6.2.122-962 *)
   Definition arm_stzg2il (Xn Xt imm9:N) (writeback postindex:bool) :=
-    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in
-    <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      store[Xtemp[1000], 0 # 128, LittleE, 16];
-      temp[2000] := X[Xt];
-      temp[2001] := AllocTag (Xtemp[2000]);
-      if {b2exp writeback} then
-        if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-        {arm_varid Xn} := Xtemp[1000]
-      else
-        nop
-      end
-  }>.
+    let offset := (scast 13 64 (N.shiftl imm9 LOG2_TAG_GRANULE)) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let wbblock := if negb writeback then Nop else
+                   let address := if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    <{ check; store[address,0#{8*LOG2_TAG_GRANULE},LOG2_TAG_GRANULE]; wbblock }>.
 
   (* Store Allocation Tags C6-1187 *)
   Definition arm_st2g2il (Xn Xt imm9:N) (writeback postindex:bool) :=
-    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in <{
-      temp[2000] := X[Xt];
-      temp[2001] := AllocTag (Xtemp[2000]);
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      if {b2exp writeback} then
-        if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-        {arm_varid Xn} := Xtemp[1000]
-      else
-        nop
-      end
-    }>.
+    let offset := (scast 13 64 (N.shiftl imm9 LOG2_TAG_GRANULE)) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let wbblock := if negb writeback then Nop else
+                   let address := if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    <{ check; wbblock }>.
 
   Definition arm_stgm2il (Xn Xt:N) := havoc.
 
   Definition arm_stz2g2il (Xn Xt imm9:N) (writeback postindex:bool) :=
-    let offset := <{scast 64 (imm9 # 9) << (LOG2_TAG_GRANULE # 64) }> in <{
-      temp[2000] := X[Xt];
-      temp[2001] := AllocTag (Xtemp[2000]);
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      store[Xtemp[1000], (0#256), LittleE, 32];
-      if {b2exp writeback} then
-        if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-        {arm_varid Xn} := Xtemp[1000]
-      else
-        nop
-      end
-    }>.
+    let offset := (scast 13 64 (N.shiftl imm9 LOG2_TAG_GRANULE)) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let wbblock := if negb writeback then Nop else
+                   let address := if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    <{ check; store[address,0#{2*8*LOG2_TAG_GRANULE},{2*LOG2_TAG_GRANULE}]; wbblock }>.
 
   Definition arm_ldgm2il (Xn Xt:N) := havoc.
-
 
     (*Loads and Stores C4.1.4-266*)
   Definition load_store_mem_tags :=
@@ -1436,56 +1384,44 @@ Section Decoder.
     }>.
 
   Definition arm_casp2il (Xn Xs Xt size:N) :=
-    let undefined := <{!HaveAtomicExt | Xs#5[0] = 1#1 | Xt#5[0] = 1#1}> in <{
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let undefined := <{!HaveAtomicExt | Xs#5[0] = 1#1 | Xt#5[0] = 1#1}> in
+    let expectedvalue := <{
+      ite BigEndian (lcast size X[Xn] ++ lcast size X[{N.succ Xn}])
+                    (lcast size X[{N.succ Xn}] ++ lcast size X[Xn])}> in
+    let newvalue := <{
+      ite BigEndian (lcast size X[Xt] ++ lcast size X[{N.succ Xt}])
+                    (lcast size X[{N.succ Xt}] ++ lcast size X[Xt])
+      }> in
+    <{
       if undefined then havoc else
-      (* comparevalue *) temp[1000] := ite BigEndian (lcast size X[Xn] ++ lcast size X[{N.succ Xn}])
-                                                     (lcast size X[{N.succ Xn}] ++ lcast size X[Xn]);
-      (* newvalue *) temp[2000] := ite BigEndian (lcast size X[Xt] ++ lcast size X[{N.succ Xt}])
-                                                 (lcast size X[{N.succ Xt}] ++ lcast size X[Xt]);
-      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
-      {MemAtomicCampareAndSwap (N.shiftl size 2) 334 <{Xtemp[333]}> <{Xtemp[1000]}> <{Xtemp[2000]}>};
-      if BigEndian then
-        var[Xs] := ucast 64 (Xtemp[334][{2*size-1}:size]);
-        var[{N.succ Xs}] := ucast 64 (Xtemp[334][size:0])
-      else
-        var[Xs] := ucast 64 (Xtemp[334][size:0]);
-        var[{N.succ Xs}] := ucast 64 (Xtemp[334][{2*size-1}:size])
-      end
+        check;
+        {MemAtomicCampareAndSwap (N.shiftl size 2) 334 <{X[Xn]}> expectedvalue newvalue};
+        if BigEndian then
+          var[Xs] := ucast 64 (Xtemp[334][{2*size-1}:size]);
+          var[{N.succ Xs}] := ucast 64 (Xtemp[334][size:0])
+        else
+          var[Xs] := ucast 64 (Xtemp[334][size:0]);
+          var[{N.succ Xs}] := ucast 64 (Xtemp[334][{2*size-1}:size])
+        end
       end
     }>.
 
-  Definition arm_casb2il (Xn Xs Xt:N) :=
-    let undefined := <{!HaveAtomicExt}> in
-    let comparevalue := <{lcast 8 X[Xs]}> in
-    let newvalue := <{lcast 8 X[Xt]}> in <{
-      if undefined then havoc else
-      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
-      {MemAtomicCampareAndSwap 8 334 <{Xtemp[333]}> comparevalue newvalue};
-      var[Xs] := ucast 64 Xtemp[334]
-      end
-    }>.
-
-  Definition arm_cash2il (Xn Xs Xt:N) :=
-    let undefined := <{!HaveAtomicExt}> in
-    let comparevalue := <{lcast 16 X[Xs]}> in
-    let newvalue := <{lcast 16 X[Xt]}> in <{
-      if undefined then havoc else
-      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
-      {MemAtomicCampareAndSwap 16 334 <{Xtemp[333]}> comparevalue newvalue};
-      var[Xs] := ucast 64 Xtemp[334]
-      end
-    }>.
-
-  Definition arm_cas2il (Xn Xs Xt size:N) :=
+  Definition arm_cas2il_size (size Xn Xs Xt:N) :=
     let undefined := <{!HaveAtomicExt}> in
     let comparevalue := <{lcast size X[Xs]}> in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let newvalue := <{lcast size X[Xt]}> in <{
       if undefined then havoc else
-      (* address temp[333] *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[333] := X[Xn];
-      {MemAtomicCampareAndSwap 32 334 <{Xtemp[333]}> comparevalue newvalue};
+      check;
+      {MemAtomicCampareAndSwap size 334 <{X[Xn]}> comparevalue newvalue};
       var[Xs] := ucast 64 Xtemp[334]
       end
     }>.
+
+  Definition arm_casb2il := arm_cas2il_size 8.
+  Definition arm_cash2il := arm_cas2il_size 16.
+  Definition arm_cas2il := arm_cas2il_size.
 
   (* Exclusive operations are Nops when the PE does not have exclusive access
      to memory.  We model this by using an unknown value, thus necessitating
@@ -1515,25 +1451,25 @@ Section Decoder.
     let constraint1 := Xs =? Xt in
     let constraint2 := (Xs =? Xn) && (negb (Xn =? 31)) in
     if (negb constraint1) && (negb constraint2) then arm_stxr2il_constr size Xn Xs Xt false false else
-    if constraint1 then 
+    if constraint1 then
       match oracle 1, oracle 2 with
       | false, false => None (* Constraint_UNDEF *)
-      | false, true => Some Nop (* Constraint_NOP *) 
+      | false, true => Some Nop (* Constraint_NOP *)
       | true, rtunknown =>
           if constraint2 then
             match oracle 3, oracle 4 with
             | false, false => None (* Constraint_UNDEF *)
-            | false, true => Some Nop (* Constraint_NOP *) 
+            | false, true => Some Nop (* Constraint_NOP *)
             | true, rnunknown =>
               arm_stxr2il_constr size Xn Xs Xt rtunknown rnunknown
             end
           else arm_stxr2il_constr size Xn Xs Xt rtunknown false
       end
-    else 
+    else
       if constraint2 then
         match oracle 3, oracle 4 with
         | false, false => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | true, rnunknown =>
           arm_stxr2il_constr size Xn Xs Xt false rnunknown
         end
@@ -1587,25 +1523,25 @@ Section Decoder.
     let constraint1 := (Xs =? Xt) || (Xs =? Xt2) in
     let constraint2 := (Xs =? Xn) && (negb (Xn =? 31)) in
     if (negb constraint1) && (negb constraint2) then arm_stxp2il_constr size Xn Xs Xt Xt2 false false else
-    if constraint1 then 
+    if constraint1 then
       match oracle 1, oracle 2 with
       | false, false => None (* Constraint_UNDEF *)
-      | false, true => Some Nop (* Constraint_NOP *) 
+      | false, true => Some Nop (* Constraint_NOP *)
       | true, rtunknown =>
           if constraint2 then
             match oracle 3, oracle 4 with
             | false, false => None (* Constraint_UNDEF *)
-            | false, true => Some Nop (* Constraint_NOP *) 
+            | false, true => Some Nop (* Constraint_NOP *)
             | true, rnunknown =>
               arm_stxp2il_constr size Xn Xs Xt Xt2 rtunknown rnunknown
             end
           else arm_stxp2il_constr size Xn Xs Xt Xt2 rtunknown false
       end
-    else 
+    else
       if constraint2 then
         match oracle 3, oracle 4 with
         | false, false => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | true, rnunknown =>
           arm_stxp2il_constr size Xn Xs Xt Xt2 false rnunknown
         end
@@ -1616,7 +1552,7 @@ Section Decoder.
   Definition arm_stlxp2il := arm_stxp2il_size.
 
   Definition arm_ldxr2il_size (size Xn Xt:N) :=
-    let bytes := N.shiftr size 3 in 
+    let bytes := N.shiftr size 3 in
     let check := if Xn =? 31 then CheckSPAlignment else Nop in
     <{
       check;
@@ -1646,10 +1582,10 @@ Section Decoder.
     let bytes := N.shiftr size 2 in
     let datasize := N.shiftl size 1 in
     let check := if Xn =? 31 then CheckSPAlignment else Nop in
-    let address := <{X[Xn]}> in 
+    let address := <{X[Xn]}> in
     if rtunknown then
       Some <{var[Xt] := (unknown 64)}>
-    else if elsize =? 32 then 
+    else if elsize =? 32 then
       let data := <{load[address,8]}> in
       Some <{if BigEndian then (var[Xt]:=data[64:32]; var[Xt2]:=data[32:0])
              else (var[Xt]:=data[32:0]; var[Xt2]:=data[64:32]) end}>
@@ -1662,8 +1598,8 @@ Section Decoder.
       | false, false => None
       | false, true => Some Nop
       | _, _ => arm_ldxp2il_constr size Xn Xt Xt2 true
-      end 
-    else 
+      end
+    else
       arm_ldxp2il_constr size Xn Xt Xt2 false.
 
   Definition load_store_exclusive :=
@@ -1745,66 +1681,39 @@ Section Decoder.
     | "11  1  1  1  1  11111  " => ARM_EXCLUSIVE ARM_CAS 64 Rn Rs Rt Rt2(* CAS, CASA, CASAL, CASL - 64-bit, acquire and release *)
     else UDF end.
 
-  Definition arm_stlurb2il (Xn Xt imm9:N) :=
-    let imm9 := Word imm9 64 in
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := X[Xt];
-      store[Xtemp[1000],Xtemp[2000],1]
-    }>.
+  (* size - bits to store in memory *)
+  Definition arm_stlur2il_size size (Xn Xt imm9:N) :=
+    let offset := scast 9 64 imm9 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let bytes := N.shiftr size 3 in
+    <{ check; store[address,X[Xn],bytes] }>.
 
-  (* C6-928 *)
-  Definition arm_ldapurb2il Xn Xt imm9 :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000],LittleE,1];
-      {arm_varid Xt} := ucast 64 Xtemp[2000]
-    }>.
+  Definition arm_stlurb2il := arm_stlur2il_size 8.
+  Definition arm_stlurh2il := arm_stlur2il_size 16.
+  Definition arm_stlur2il := arm_stlur2il_size.
 
-  Definition arm_ldapursb2il Xn Xt imm9 (size:N) :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      temp[2000] := load[X[Xn]+offset,LittleE,1];
-      {arm_varid Xt} := ucast 64 (scast {size} Xtemp[2000])
-    }>.
+  (* size - size to read from memory
+     signed - whether to sign extend to w'
+     w' - the length to sign extend to *)
+  Definition arm_ldapur2il_size_signed size (signed:bool) w' Xn Xt imm9 :=
+    let offset := scast 9 64 imm9 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let bytes := N.shiftr size 3 in
+    let data := if signed then <{scast w' load[address,LittleE,bytes]}>
+                else <{load[address,LittleE,bytes]}> in
+    let result := if size =? 64 then data else <{ucast 64 data}> in
+    <{ check; var[Xt] := result }>.
 
-  Definition arm_stlurh2il Xn Xt imm9 :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      store[X[Xn]+offset,X[Xt],2]
-    }>.
+  Definition arm_ldapurb2il := arm_ldapur2il_size_signed 8 false 0.
+  Definition arm_ldapurh2il := arm_ldapur2il_size_signed 16 false 0.
+  Definition arm_ldapurw2il := arm_ldapur2il_size_signed 32 false 0.
+  Definition arm_ldapur2il size := arm_ldapur2il_size_signed size false 0.
 
-  Definition arm_ldapurh2il Xn Xt imm9 :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      {arm_varid Xt} := ucast 64 (load[X[Xn]+offset,LittleE,2])
-    }>.
-
-  Definition arm_ldapursh2il Xn Xt imm9 (size:N) :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      {arm_varid Xt} := ucast 64 (scast {size} load[X[Xn]+offset,2])
-    }>.
-
-  Definition arm_stlur2il Xn Xt imm9 (size:N) :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      store[X[Xn]+offset,X[Xt],{N.shiftr size 3}]
-    }>.
-
-  Definition arm_ldapur2il Xn Xt imm9 (size:N) :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      {arm_varid Xt} := ucast 64 (load[X[Xn]+offset,{N.shiftr size 3}])
-    }>.
-
-  Definition arm_ldapursw2il Xn Xt imm9 (size:N) :=
-    let offset := <{scast 64 imm9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      {arm_varid Xt} := ucast 64 (scast {size} load[X[Xn]+offset,4])
-    }>.
+  Definition arm_ldapursb2il := arm_ldapur2il_size_signed 8 true.
+  Definition arm_ldapursh2il := arm_ldapur2il_size_signed 16 true.
+  Definition arm_ldapursw2il := arm_ldapur2il_size_signed 32 true.
 
   (*LDAPR/STLR unscaled immediate C4-279*)
   Definition ldapr_stlr_imm_u :=
@@ -1833,20 +1742,31 @@ Section Decoder.
     | "11  11" => UDF (* Unallocated. - *)
     else UDF end.
 
-  Definition arm_ldrsw_lit2il Xt imm19 :=
-    let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
-    <{temp[1000]:= PC + offset;
-    {arm_varid Xt} := scast 64 {MemRead (Xtemp[1000]) 4}}>.
+  (* size - bits to read from memory
+     signed - whether to sign extend to w'
+     w' - the length to sign extend to *)
+  Definition arm_ldr_lit2il_size_signed size (signed:bool) w' Xt imm19 :=
+    let offset := scast 21 64 (N.shiftl imm19 2) in
+    let address := <{PC+offset#64}> in
+    let bytes := N.shiftr size 3 in
+    let data := if signed then <{scast w' (load[address,bytes])}> else <{load[address,bytes]}> in
+    let result := if (size =? 64) || (w' =? 64) then data else <{ucast 64 data}>
+    in <{var[Xt]:=result}>.
 
-  (* C6-979 *)
-  Definition arm_ldr_lit2il Xt imm19 size :=
-    let offset := <{scast 64 ((imm19 # 21) << (2#21))}> in
-    <{temp[1000]:= PC + offset;
-    {arm_varid Xt} := ucast 64 {MemRead (Xtemp[1000]) size}}>.
+  Definition arm_ldrb_lit2il := arm_ldr_lit2il_size_signed 8 false 0.
+  Definition arm_ldrh_lit2il := arm_ldr_lit2il_size_signed 16 false 0.
+  Definition arm_ldr_lit2il size := arm_ldr_lit2il_size_signed size false 0.
+
+  Definition arm_ldrsb_lit2il := arm_ldr_lit2il_size_signed 8 true.
+  Definition arm_ldrsh_lit2il := arm_ldr_lit2il_size_signed 16 true.
+  Definition arm_ldrsw_lit2il := arm_ldr_lit2il_size_signed 32 true 64.
+
 
   (* C6-1138; The effects of PRFM is implementation defined. *)
   Definition arm_prfm_lit2il (Xt imm19:N) := <{havoc}>.
+
   Definition N_na : N:=0. (* not applicable to this instruction *)
+
   (* C4-280 *)
   Definition load_reg_literal :=
     let opc := n.[30,32] in
@@ -1867,76 +1787,52 @@ Section Decoder.
   Definition arm_stnp2il Xn Xt Xt2 imm7 scale :=
     let size := N.shiftl 8 scale in
     let dbytes := N.shiftl 1 scale in
-    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := X[Xt];
-      temp[3000] := X[Xt2];
-      {MemWrite (Var (V_TEMP 2000)) dbytes (Var (V_TEMP 2000))};
-      temp[1000] := Xtemp[1000] + (dbytes # 64);
-      {MemWrite (Var (V_TEMP 2000)) dbytes (Var (V_TEMP 2000))}
-    }>.
+    let offset := (N.shiftl (scast 7 64 imm7) scale) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let data1 := <{X[Xt]}> in
+    let data2 := <{X[Xt2]}> in
+    <{ check; store[address,data1,dbytes]; store[address+dbytes#64,data2,dbytes] }>.
 
-  Definition arm_ldnp2il_happy Xn Xt Xt2 imm7 scale :=
+  Definition arm_ldnp2il_constr Xn Xt Xt2 imm7 scale (rtunknown:bool) :=
     let size := N.shiftl 8 scale in
     let dbytes := N.shiftl 1 scale in
-    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      temp[2000] := load[Xtemp[1000], LittleE, dbytes];
-      temp[3000] := load[Xtemp[1000]+(dbytes#64), LittleE, dbytes];
-      {arm_varid Xt} := Xtemp[2000];
-      {arm_varid Xt2} := Xtemp[3000]
-    }>.
+    let offset := (N.shiftl (scast 7 64 imm7) scale) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let data1 := if rtunknown then <{unknown 64}> else <{ucast 64 load[address,dbytes]}> in
+    let data2 := if rtunknown then <{unknown 64}> else <{ucast 64 load[address+dbytes#64,dbytes]}> in
+    Some <{check; var[Xt] := data1; var[Xt2] := data2}>.
 
   Definition arm_ldnp2il Xn Xt Xt2 imm7 scale :=
-    <{
-      if (Xt # 5) <> (Xt2 # 5) then {arm_ldnp2il_happy Xn Xt Xt2 imm7 scale} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      {arm_ldnp2il_happy Xn Xt Xt2 imm7 scale};
-      {arm_varid Xt} := unknown 64;
-      {arm_varid Xt2} := unknown 64
-      end end end
-    }>.
+    let constraint := Xt =? Xt2 in
+    if negb constraint then arm_ldnp2il_constr Xn Xt Xt2 imm7 scale false else
+    match oracle 1, oracle 2 with
+    | true, true => None (* Constraint_UNDEF *)
+    | false, true => Some Nop (* Constraint_NOP *)
+    | _, _ => arm_ldnp2il_constr Xn Xt Xt2 imm7 scale true
+    end.
 
-  Definition arm_stp2il_happy Xn Xt Xt2 imm7 scale wback postindex :=
+  Definition arm_stp2il_constr Xn Xt Xt2 imm7 scale wback (postindex:bool) rtunknown:=
     let size := N.shiftl 8 scale in
     let dbytes := N.shiftl 1 scale in
-    let offset := <{scast 64 (imm7#7) << (scale # 64)}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := X[Xt];
-      temp[3000] := X[Xt2];
-      store[Xtemp[1000], Xtemp[2000], LittleE, dbytes];
-      store[Xtemp[1000]+dbytes#64, Xtemp[2000], LittleE, dbytes];
-      if {b2exp wback} then
-        temp[1001] := Xtemp[1000];
-        if {b2exp postindex} then temp[1001] := Xtemp[1001] + offset else nop end;
-        {arm_varid Xn} := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+    let offset := (N.shiftl (scast 7 64 imm7) scale) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data1 := if rtunknown && (Xt =? Xn) then <{unknown 64}> else <{X[Xt]}> in
+    let data2 := if rtunknown && (Xt2 =? Xn) then <{unknown 64}> else <{X[Xt2]}> in
+    let wbblock := if negb wback then Nop else <{var[Xn]:=X[Xn]+offset#64}> in
+    Some <{check; store[address,data1,dbytes]; store[address+dbytes#64,data2,dbytes]; wbblock}>.
 
   Definition arm_stp2il Xn Xt Xt2 imm7 scale wback postindex :=
-    let size := N.shiftl 8 scale in
-    let dbytes := N.shiftl 1 scale in
-    let constraint_check := <{ {b2exp wback} & ((Xt#5 = Xn#5) | (Xt#5 = Xn#5)) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_stp2il_happy Xn Xt Xt2 imm7 scale wback postindex} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      {arm_stp2il_happy Xn Xt Xt2 imm7 scale wback postindex}; (* address in temp[1000] *)
-      if Xt#5 = Xn#5 then store[Xtemp[1000],unknown size, LittleE, dbytes] else nop;
-      if Xt2#5 = Xn#5 then store[Xtemp[1000]+dbytes#64,unknown size, LittleE, dbytes] else nop
-      end end end end end
-    }>.
+    let constraint := wback && ((Xt=?Xn) || (Xt2=?Xn)) && (negb (Xn=?31)) in
+    if negb constraint then arm_stp2il_constr Xn Xt Xt2 imm7 scale wback postindex false else
+    match oracle 1, oracle 2 with
+    | true, true => None (* Constraint_UNDEF *)
+    | false, true => Some Nop (* Constraint_NOP *)
+    | true, false => arm_stp2il_constr Xn Xt Xt2 imm7 scale wback postindex false
+    | false, false => arm_stp2il_constr Xn Xt Xt2 imm7 scale wback postindex true
+    end.
 
   (* scale is 2 or 3 *)
   Definition arm_ldp2il_constr Xn Xt Xt2 imm7 scale (wback postindex wbunknown rtunknown:bool) :=
@@ -1965,29 +1861,29 @@ Section Decoder.
     if constraint1 then
     match oracle 1, oracle 2 with
     | true, true => None (* Constraint_UNDEF *)
-    | false, true => Some Nop (* Constraint_NOP *) 
+    | false, true => Some Nop (* Constraint_NOP *)
     | true, false => let wback := false in let wbunknown := false in
         if constraint2 then
-        match oracle 3, oracle 4 with 
+        match oracle 3, oracle 4 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | _, _ => arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown true
         end
         else arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown false
     | false, false => let wbunknown := true in
         if constraint2 then
-        match oracle 3, oracle 4 with 
+        match oracle 3, oracle 4 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | _, _ => arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown true
         end
         else arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown false
     end
     else
       if constraint2 then
-        match oracle 3, oracle 4 with 
+        match oracle 3, oracle 4 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | _, _ => arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex false true
         end
       else arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex false false.
@@ -1995,8 +1891,8 @@ Section Decoder.
   Definition arm_stgp2il Xn Xt Xt2 imm7 (wback postindex:bool) :=
     let offset := (N.shiftl (scast 7 64 imm7) LOG2_TAG_GRANULE) mod 2^64 in
     let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
-    let data1 := <{X[Xt]}> in 
-    let data2 := <{X[Xt2]}> in 
+    let data1 := <{X[Xt]}> in
+    let data2 := <{X[Xt2]}> in
     let wback_block := if negb wback then Nop else
                         if postindex then <{var[Xn]:=address+offset#64}>
                         else <{var[Xn]:=address}> in
@@ -2004,8 +1900,8 @@ Section Decoder.
 
   Definition arm_ldpsw2il_constr Xn Xt Xt2 imm7 (wback postindex wbunknown rtunknown:bool) :=
     let offset := (N.shiftl (scast 7 64 imm7) 2) mod 2^64 in
-    let tag_checked := wback || (negb (Xn =? 31)) in 
-    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let tag_checked := wback || (negb (Xn =? 31)) in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
     let data1 := if rtunknown then <{(unknown 32)}> else <{load[address,4]}> in
     let data2 := if rtunknown then <{(unknown 32)}> else <{load[address+4#64,4]}> in
@@ -2015,34 +1911,34 @@ Section Decoder.
     Some <{check; var[Xt]:=scast 64 data1; var[Xt2]:=scast 64 data2; wbblock}>.
 
   Definition arm_ldpsw2il (Xn Xt Xt2 imm7:N) (wback postindex:bool) :=
-    let constraint1 := wback && ((Xt=?Xn) || (Xt2=?Xn)) && (negb (Xn=?31)) in 
+    let constraint1 := wback && ((Xt=?Xn) || (Xt2=?Xn)) && (negb (Xn=?31)) in
     let constraint2 := Xt=?Xt2 in
     if constraint1 then
     match oracle 1, oracle 2 with
     | true, true => None (* Constraint_UNDEF *)
-    | false, true => Some Nop (* Constraint_NOP *) 
+    | false, true => Some Nop (* Constraint_NOP *)
     | true, false => let wback := false in let wbunknown := false in
         if constraint2 then
-        match oracle 3, oracle 4 with 
+        match oracle 3, oracle 4 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | _, _ => arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown true
         end
         else arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown false
     | false, false => let wbunknown := true in
         if constraint2 then
-        match oracle 3, oracle 4 with 
+        match oracle 3, oracle 4 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | _, _ => arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown true
         end
         else arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown false
     end
     else
       if constraint2 then
-        match oracle 3, oracle 4 with 
+        match oracle 3, oracle 4 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | _, _ => arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex false true
         end
       else arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex false false.
@@ -2143,70 +2039,33 @@ Section Decoder.
     | "11  -  -" => UDF (* Unallocated *)
     else UDF end.
 
-  Definition arm_sturb2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      store[Xtemp[1000],X[Xt],1]
-    }>.
+  Definition arm_stur2il_size size Xn Xt imm9 :=
+    let offset := scast 9 64 imm9 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let bytes := N.shiftr size 3 in
+    <{check; store[address, lcast size X[Xt], bytes]}>.
 
-  Definition arm_sturh2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      store[Xtemp[1000],X[Xt],2]
-    }>.
+  Definition arm_sturb2il := arm_stur2il_size 8.
+  Definition arm_sturh2il := arm_stur2il_size 16.
+  Definition arm_stur2il := arm_stur2il_size.
 
-  Definition arm_stur2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in
-    let bytes := N.shiftr size 3 in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      store[Xtemp[1000],X[Xt],bytes]
-    }>.
+  Definition arm_ldur2il_size size (signed:bool) w' Xn Xt imm9 :=
+    let offset := scast 9 64 imm9 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let bytes := N.shiftr size 3 in
+    let data := if signed then <{scast w' load[address,bytes]}> else <{load[address,bytes]}> in
+    let result := if (size=?64) || (w'=?64) then data else <{ucast 64 data}> in
+    <{check; var[Xt] := result}>.
 
-  Definition arm_ldurb2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 load[Xtemp[1000],1]
-    }>.
+  Definition arm_ldurb2il := arm_ldur2il_size 8 false 0.
+  Definition arm_ldurh2il := arm_ldur2il_size 16 false 0.
+  Definition arm_ldur2il size := arm_ldur2il_size size false 0.
 
-  Definition arm_ldursb2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1])
-    }>.
-
-  Definition arm_ldurh2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 load[Xtemp[1000],2]
-    }>.
-
-  Definition arm_ldursh2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2])
-    }>.
-
-  Definition arm_ldur2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in
-    let bytes := N.shiftr size 3 in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 load[Xtemp[1000],bytes]
-    }>.
-
-  Definition arm_ldursw2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := scast 64 load[Xtemp[1000],4]
-    }>.
+  Definition arm_ldursb2il := arm_ldur2il_size 8 true.
+  Definition arm_ldursh2il := arm_ldur2il_size 16 true.
+  Definition arm_ldursw2il := arm_ldur2il_size 32 true 64.
 
   Definition arm_prfum2il (Rn Rt imm9:N) := havoc.
 
@@ -2252,11 +2111,11 @@ Section Decoder.
   (* Size is 8, 16, 32, or 64 *)
   Definition arm_str_imm2il_size_constr (size Xn Xt imm912:N) (signed wback postindex rtunknown:bool) :=
     let offset := if signed then scast 9 64 imm912 else imm912 in
-    let scale := N.log2 size - 3 in 
+    let scale := N.log2 size - 3 in
     let datasize := size in
     let bytes := N.shiftr size 3 in
-    let tag_checked := wback || (negb (Xn=?31)) in 
-    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let tag_checked := wback || (negb (Xn=?31)) in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
     let data := if rtunknown then <{unknown datasize}> else <{ucast datasize X[Xt]}> in
     let wbblock := if negb wback then Nop else
@@ -2271,7 +2130,7 @@ Section Decoder.
     if negb constraint then arm_str_imm2il_size_constr size Xn Xt imm912 signed wback postindex false else
     match oracle 1, oracle 2 with
     | true, true => None (* Constraint_UNDEF *)
-    | false, true => Some Nop (* Constraint_NOP *) 
+    | false, true => Some Nop (* Constraint_NOP *)
     | rtunknown, false =>  arm_str_imm2il_size_constr size Xn Xt imm912 signed wback postindex rtunknown
     end.
 
@@ -2281,11 +2140,11 @@ Section Decoder.
 
   Definition arm_ldr_imm2il_size_constr (size Xn Xt imm912:N) (signed wback postindex wbunknown:bool) :=
     let offset := if signed then scast 9 64 imm912 else imm912 in
-    let regsize := size in 
-    let datasize := size in 
+    let regsize := size in
+    let datasize := size in
     let bytes := N.shiftr datasize 3 in
-    let tag_checked := wback || (negb (Xn =? 31)) in 
-    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let tag_checked := wback || (negb (Xn =? 31)) in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
     let data := <{load[address,bytes]}> in
     let wbblock := if negb wback then Nop else
@@ -2296,11 +2155,11 @@ Section Decoder.
   (* imm912 is 9bits if signed is true, 12 bits otherwise *)
   (* size is 8, 16, 32, or 64 *)
   Definition arm_ldr_imm2il_size (size Xn Xt imm912:N) (signed wback postindex:bool) :=
-    let constraint := wback && (Xn =? Xt) && (negb (Xn=?31)) in 
+    let constraint := wback && (Xn =? Xt) && (negb (Xn=?31)) in
     if negb constraint then arm_ldr_imm2il_size_constr size Xn Xt imm912 signed wback postindex false else
     match oracle 1, oracle 2 with
     | true, true => None (* Constraint_UNDEF *)
-    | false, true => Some Nop (* Constraint_NOP *) 
+    | false, true => Some Nop (* Constraint_NOP *)
     | true, false => arm_ldr_imm2il_size_constr size Xn Xt imm912 signed false postindex false (* Contraint_WBSUPPRESS *)
     | false, false => arm_ldr_imm2il_size_constr size Xn Xt imm912 signed wback postindex true (* Contraint_UNKNOWN *)
     end.
@@ -2313,10 +2172,10 @@ Section Decoder.
      is the width to extend it to (32 or 64). *)
   Definition arm_ldrs_imm2il_size_constr (w w' Xn Xt imm912:N) (signed wback postindex wbunknown:bool) :=
     let offset := if signed then scast 9 64 imm912 else N.shiftl imm912 1 in
-    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
     let bytes := N.shiftr w 3 in
-    let data := <{load[address,bytes]}> in 
+    let data := <{load[address,bytes]}> in
     let wbblock := if negb wback then Nop else
                    let address := if wbunknown then <{unknown 64}> else if postindex then <{address+offset#64}> else address in
                    <{var[Xn]:=address}> in
@@ -2327,7 +2186,7 @@ Section Decoder.
     if negb constraint then arm_ldrs_imm2il_size_constr w w' Xn Xt imm912 signed wback postindex false
     else match oracle 1, oracle 2 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | true, wback => arm_ldrs_imm2il_size_constr w w' Xn Xt imm912 signed wback postindex false
         | false, false => arm_ldrs_imm2il_size_constr w w' Xn Xt imm912 signed wback postindex true
          end.
@@ -2377,71 +2236,33 @@ Section Decoder.
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-135 *)
     else UDF end.
 
-  Definition arm_sttrb2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      store[Xtemp[1000],X[Xt],1]
-    }>.
+  Definition arm_sttr2il_size size (Xn Xt imm9:N) :=
+    let offset := scast 9 64 imm9 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]+offset#64}> in
+    let bytes := N.shiftr size 3 in
+    <{check; store[address,lcast size X[Xt],bytes]}>.
 
-  Definition arm_sttrh2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      store[Xtemp[1000],X[Xt],2]
-    }>.
+  Definition arm_sttrb2il := arm_sttr2il_size 8.
+  Definition arm_sttrh2il := arm_sttr2il_size 16.
+  Definition arm_sttr2il := arm_sttr2il_size.
 
-  Definition arm_sttr2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in
-    let bytes := N.shiftr size 3 in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      store[Xtemp[1000],X[Xt],bytes]
-    }>.
+  Definition arm_ldtr2il_size_signed size (signed:bool) w' Xn Xt imm9 :=
+    let offset := scast 9 64 imm9 in
+    let address := <{X[Xn]+offset#64}> in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let bytes := N.shiftr size 3 in
+    let data := if signed then <{scast w' load[address,bytes]}> else <{load[address,bytes]}> in
+    let result := if (size=?64) || (w'=?64) then data else <{ucast 64 data}> in
+    <{check; var[Xt]:=result}>.
 
-  Definition arm_ldtrb2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 load[Xtemp[1000],1]
-    }>.
+  Definition arm_ldtrb2il := arm_ldtr2il_size_signed 8 false 0.
+  Definition arm_ldtrh2il := arm_ldtr2il_size_signed 16 false 0.
+  Definition arm_ldtr2il size := arm_ldtr2il_size_signed size false 0.
 
-  Definition arm_ldtrh2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 load[Xtemp[1000],2]
-    }>.
-
-  Definition arm_ldtrsb2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1])
-    }>.
-
-  Definition arm_ldtrsh2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2])
-    }>.
-
-  Definition arm_ldtrsw2il (Xn Xt imm9:N) :=
-    let offset := <{scast 64 imm9#9}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := scast 64 load[Xtemp[1000],4]
-    }>.
-
-  Definition arm_ldtr2il (Xn Xt imm9 size:N) :=
-    let offset := <{scast 64 imm9#9}> in
-    let bytes := N.shiftr size 3 in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + offset);
-      var[Xt] := ucast 64 load[Xtemp[1000],bytes]
-    }>.
-
+  Definition arm_ldtrsb2il := arm_ldtr2il_size_signed 8 true.
+  Definition arm_ldtrsh2il := arm_ldtr2il_size_signed 16 true.
+  Definition arm_ldtrsw2il := arm_ldtr2il_size_signed 32 true 64.
 
   (*unprivileged; not encoding privilege checks. E.g., for STTRB:
 
@@ -2518,35 +2339,47 @@ Section Decoder.
     | "11  1  01" => UDF (* LDR (immediate, SIMD&FP) - 64-bit variant on page C7-1359 *)
     else UDF end.
 
-  (* We assume address translation succeeds and is apparent. That is, we do not
-     model it. *)
-  Definition MemAtomic (op:exp) (w:N) (value address:exp) (rettemp:N):=
-    let bytes := N.shiftr w 3 in
-    let oldvalue := <{Xtemp[rettemp]}> in
-    let nvtemp := N.succ rettemp in
-    <{
-      temp[rettemp] := ucast 64 {MemRead address bytes};
-      if op = MemAtomicOp_ADD  then temp[nvtemp] := oldvalue + value  else
-      if op = MemAtomicOp_BIC  then temp[nvtemp] := oldvalue & !value else
-      if op = MemAtomicOp_EOR  then temp[nvtemp] := oldvalue ^ value  else
-      if op = MemAtomicOp_ORR  then temp[nvtemp] := oldvalue | value  else
-      if op = MemAtomicOp_SMAX then temp[nvtemp] := ite (<{oldvalue s> value}>) oldvalue value else
-      if op = MemAtomicOp_SMIN then temp[nvtemp] := ite (<{oldvalue s> value}>) value oldvalue else
-      if op = MemAtomicOp_UMAX then temp[nvtemp] := ite (oldvalue  > value) oldvalue value else
-      if op = MemAtomicOp_UMIN then temp[nvtemp] := ite (oldvalue  > value) value oldvalue else
-      (* op = MemAtomicOP_SWP  *)   temp[nvtemp] := value
-      end end end end end end end end;
-      store[address,Xtemp[nvtemp],bytes]
-    }>.
+  Variant MemAtomicOp : Set:=
+  | MemAtomicOp_ADD
+  | MemAtomicOp_BIC
+  | MemAtomicOp_EOR
+  | MemAtomicOp_ORR
+  | MemAtomicOp_SMAX
+  | MemAtomicOp_SMIN
+  | MemAtomicOp_UMAX
+  | MemAtomicOp_UMIN
+  | MemAtomicOp_SWP.
 
-  Definition arm_ldatomic2il_size (op:exp) (size Xn Xs Xt:N) :=
-    let address := <{Xtemp[1000]}> in
-    let value := <{Xtemp[2000]}> in
+  (* We do not model address translation. We assume it succeeds and is apparent.
+     We also assume LittleE stores and loads, but with a little bit more complexity
+     we can model run-time checking. *)
+  Definition MemAtomic (op:MemAtomicOp) (w:N) (value address:exp) (rettemp:N):=
+    let bytes := N.shiftr w 3 in
+    let nvtemp := N.succ rettemp in
+    let oldvalue := <{load[address,bytes]}> in
+    let newvalue := match op with
+                    | MemAtomicOp_ADD  => <{oldvalue+value}>
+                    | MemAtomicOp_BIC  => <{oldvalue & !value}>
+                    | MemAtomicOp_EOR  => <{oldvalue ^ value}>
+                    | MemAtomicOp_ORR  => <{oldvalue | value}>
+                    | MemAtomicOp_SMAX => <{ite (oldvalue s> value) oldvalue value}>
+                    | MemAtomicOp_SMIN => <{ite (oldvalue s> value) value oldvalue}>
+                    | MemAtomicOp_UMAX => <{ite (oldvalue  > value) oldvalue value}>
+                    | MemAtomicOp_UMIN => <{ite (oldvalue  > value) value oldvalue}>
+                    | MemAtomicOp_SWP  => value
+                    end in
+    <{temp[rettemp] := oldvalue; store[address,newvalue,bytes]}>.
+
+  Definition arm_ldatomic2il_size (op:MemAtomicOp) (size Xn Xs Xt:N) :=
+    let address := <{X[Xn]}> in
+    let value := <{lcast size X[Xs]}> in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    (* Only write the old value to register if it is not SP. *)
+    let wbblock := if Xt =? 32 then Nop else <{var[Xt]:=Xtemp[100]}> in
     <{
-      (* value *) temp[2000]:= ucast 64 (lcast size X[Xs]);
-      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      {MemAtomic op size address value 4000};
-      if Xt#5 <> 31#5 then var[Xt] := Xtemp[4000] else nop end
+      check;
+      {MemAtomic op size address value 100};
+      wbblock
     }>.
 
   Definition arm_ldaddb2il := arm_ldatomic2il_size MemAtomicOp_ADD 8.
@@ -2582,23 +2415,26 @@ Section Decoder.
   Definition arm_ldeor2il := arm_ldatomic2il_size MemAtomicOp_EOR.
 
   (* Unlike the other ld atomic operations, swap can write to SP (C6-1331). *)
-  Definition arm_swp2il_size (op:exp) (size Xn Xs Xt:N) :=
-    let address := <{Xtemp[1000]}> in
-    let value := <{Xtemp[2000]}> in
+  Definition arm_swp2il_size (size Xn Xs Xt:N) :=
+    let address := <{X[Xn]}> in
+    let value := <{lcast size X[Xs]}> in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    (* Only write the old value to register if it is not SP. *)
+    let wbblock := <{var[Xt]:=Xtemp[100]}> in
     <{
-      (* value *) temp[2000]:= ucast 64 (lcast size X[Xs]);
-      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      {MemAtomic op size address value 4000};
-      var[Xt] := Xtemp[4000]
+      check;
+      {MemAtomic MemAtomicOp_SWP size address value 100};
+      wbblock
     }>.
 
-  Definition arm_swpb2il := arm_swp2il_size MemAtomicOp_SWP 8.
-  Definition arm_swph2il := arm_swp2il_size MemAtomicOp_SWP 16.
-  Definition arm_swp2il := arm_swp2il_size MemAtomicOp_SWP.
+  Definition arm_swpb2il := arm_swp2il_size 8.
+  Definition arm_swph2il := arm_swp2il_size 16.
+  Definition arm_swp2il := arm_swp2il_size.
 
   Definition arm_ldapr2il_size (size Xn Xt:N) :=
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let bytes := N.shiftr size 3 in  <{
-      (* address *) if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+      check;
       var[Xt] := ucast 64 {MemRead <{X[Xn]}> bytes}
     }>.
 
@@ -2791,89 +2627,50 @@ Section Decoder.
 
   Definition ExtendReg' N_ reg exttype shift :=
     let val := <{lcast N_ X[reg]}> in
-    let signed := N.land 4 exttype =? 4 in 
+    let signed := N.land 4 exttype =? 4 in
     let len := N.min (N.shiftl 8 (N.land 3 exttype)) (N_-shift) in
-    if signed then <{ucast N_ (val[{len-1}:0]++0#shift)}>
-    else <{scast N_ (val[{len-1}:0]++0#shift)}>.
+    if signed then <{scast N_ (val[{len-1}:0]++0#shift)}>
+    else <{ucast N_ (val[{len-1}:0]++0#shift)}>.
 
-
-  Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
-    let shift := match S with | 0 => 0 | _ => size end in
-    let datasize := N.shiftl 8 size in
-    let dbytes := N.shiftl 1 size in
-    let calc_offset := ExtendReg (temp[9000]) Xm extend shift in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset ;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      store[X[Xn]+Xtemp[9000],X[Xt],dbytes]
-    }>.
-
-  Definition arm_str_reg2il (Xn Xm Xt extend size S:N) :=
-    let shift := match S with | 0 => 0 | _ => size end in
-    let datasize := N.shiftl 8 size in
-    let dbytes := N.shiftl 1 size in
-    let calc_offset := ExtendReg (temp[9000]) Xm extend shift in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset ;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      var[Xt] := ucast 64 (load[X[Xn]+Xtemp[9000],LittleE,dbytes])
-    }>.
-
-  Definition arm_ldrb_reg2il (Xn Xm Xt extend:N) :=
-    let calc_offset := ExtendReg (temp[9000]) Xm extend 0 in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      var[Xt] := ucast 64 load[Xtemp[1000],1]
-    }>.
-
-  (* Where w is the width to load from memory (8, 16 or 32) and w'
-     is the width to extend it to (32 or 64). *)
-  Definition arm_ldrs_reg2il_size (w w' Xn Xm Xt extend:N) :=
-    let offset := ExtendReg' 64 Xm extend 0 in
-    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+  (* size - bits to load
+     signed - whether to sign extend loaded value
+     w' - width to sign extend to *)
+  Definition arm_ldr_reg2il_size_signed size (signed:bool) w' Xn Xm Xt extend S :=
+    let shift := match size, S with
+                 | 32, 1 => 2
+                 | 64, 1 => 3
+                 | _, _ => 0 end in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let offset := ExtendReg' 64 Xm extend shift in
     let address := <{X[Xn]+offset}> in
-    let bytes := N.shiftr w 3 in
-    let data := <{load[address,bytes]}> in 
-    Some <{check; var[Xt] := ucast 64 (scast w' data)}>.
+    let bytes := N.shiftr size 3 in
+    let data := if signed then <{scast w' load[address,bytes]}> else <{load[address,bytes]}> in
+    let result := if (size=?64) || (w'=?64) then data else <{ucast 64 data}> in
+    <{check; var[Xt] := data}>.
 
-  Definition arm_ldrsb_reg2il := arm_ldrs_reg2il_size 8.
-  Definition arm_ldrsh_reg2il := arm_ldrs_reg2il_size 16.
-  Definition arm_ldrsw_reg2il := arm_ldrs_reg2il_size 32 64.
+  Definition arm_ldrb_reg2il := arm_ldr_reg2il_size_signed 8 false 0.
+  Definition arm_ldrh_reg2il := arm_ldr_reg2il_size_signed 16 false 0.
+  Definition arm_ldr_reg2il size := arm_ldr_reg2il_size_signed size false 0.
 
-  Definition arm_ldrh_reg2il (Xn Xm Xt extend S:N) :=
-    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      var[Xt] := ucast 64 load[Xtemp[1000],2]
-    }>.
+  Definition arm_ldrsb_reg2il := arm_ldr_reg2il_size_signed 8 true.
+  Definition arm_ldrsh_reg2il := arm_ldr_reg2il_size_signed 16 true.
+  Definition arm_ldrsw_reg2il := arm_ldr_reg2il_size_signed 32 true 64.
 
-  Definition arm_strb_reg2il (Xn Xm Xt extend:N) :=
-    let calc_offset := ExtendReg (temp[9000]) Xm extend 0 in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      store[Xtemp[1000],X[Xt],1]
-    }>.
+  Definition arm_str_reg2il_size size Xn Xm Xt extend S :=
+    let shift := match size, S with
+                 | 32, 1 => 2
+                 | 64, 1 => 3
+                 | _, _ => 0 end in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let offset := ExtendReg' 64 Xm extend shift in
+    let address := <{X[Xn]+offset}> in
+    let bytes := N.shiftr size 3 in
+    let data := <{lcast size X[Xt]}> in
+    <{check; store[address,data,bytes]}>.
 
-  Definition arm_strh_reg2il (Xn Xm Xt extend S:N) :=
-    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      store[Xtemp[1000],X[Xt],2]
-    }>.
+  Definition arm_strb_reg2il := arm_str_reg2il_size 8.
+  Definition arm_strh_reg2il := arm_str_reg2il_size 16.
+  Definition arm_str_reg2il := arm_str_reg2il_size.
 
   (*register offset*)
   Definition load_store_reg_off  :=
@@ -2910,13 +2707,13 @@ Section Decoder.
     | "01  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
     | "1x  0  11  -    " => UDF (* Unallocated. *)
     | "1x  1  1x  -    " => UDF (* Unallocated. *)
-    | "10  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt   option_    2 S (* STR (register) - 32-bit variant on page C6-873 *)
-    | "10  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt   option_    2 S (* LDR (register) - 32-bit variant on page C6-675 *)
+    | "10  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt   option_    32 S (* STR (register) - 32-bit variant on page C6-873 *)
+    | "10  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt   option_    32 S (* LDR (register) - 32-bit variant on page C6-675 *)
     | "10  0  10  -    " => ARM_LD_STR_REG ARM_LDRSW_REG Rn Rm Rt option_ size S (* LDRSW (register) *)
     | "10  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "10  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
-    | "11  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt option_ 3 S (* STR (register) - 64-bit variant on page C6-873 *)
-    | "11  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt option_ 3 S (* LDR (register) - 64-bit variant on page C6-675 *)
+    | "11  0  00  -    " => ARM_LD_STR_REG ARM_STR_REG Rn Rm Rt option_ 64 S (* STR (register) - 64-bit variant on page C6-873 *)
+    | "11  0  01  -    " => ARM_LD_STR_REG ARM_LDR_REG Rn Rm Rt option_ 64 S (* LDR (register) - 64-bit variant on page C6-675 *)
     | "11  0  10  -    " => ARM_LD_STR_REG ARM_PRFM_REG Rn Rm Rt option_ size S (* PRFM (register) *)
     | "11  1  00  -    " => UDF (* STR (register, SIMD&FP) *)
     | "11  1  01  -    " => UDF (* LDR (register, SIMD&FP) *)
@@ -2926,20 +2723,20 @@ Section Decoder.
   (* Assume AuthDA and AuthDB are nops. *)
   Definition arm_ldraa2il_constr (Xn Xt S imm9:N) (wback wbunknown:bool) :=
     let offset := (N.shiftl (scast 10 64 (cbits S 9 imm9)) 3) mod 2^64 in
-    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
     let address := <{X[Xn]+offset#64}> in
-    let data := <{load[address, 8]}> in 
+    let data := <{load[address, 8]}> in
     let wbblock := if negb wback then Nop else
                    let address := if wbunknown then <{unknown 64}> else address in
                    <{var[Xn] := address}> in
     Some <{check; var[Xt] := data; wbblock}>.
 
   Definition arm_ldraa2il (Xn Xt S imm9:N) (wback:bool) :=
-    let constraint := wback && (Xn=?Xt) && (negb (Xn=?31)) in 
+    let constraint := wback && (Xn=?Xt) && (negb (Xn=?31)) in
     if negb constraint then arm_ldraa2il_constr Xn Xt S imm9 wback false else
     match oracle 1, oracle 2 with
         | true, true => None (* Constraint_UNDEF *)
-        | false, true => Some Nop (* Constraint_NOP *) 
+        | false, true => Some Nop (* Constraint_NOP *)
         | true, wback => arm_ldraa2il_constr Xn Xt S imm9 wback false
         | false, false => arm_ldraa2il_constr Xn Xt S imm9 wback true
     end.
@@ -3848,7 +3645,7 @@ Require Import Lia ZifyN ZifyBool.
 Ltac Zify.zify_pre_hook ::= rewrite ?N.shiftl_mul_pow2, ?N.shiftr_div_pow2; unfold widthof_binop; (idtac + apply f_equal).
 
 Local Ltac etyp' :=
-  repeat match goal with 
+  repeat match goal with
     | H : hastyp_exp ?c ?x ?w0 |- hastyp_exp ?c' (Cast _ _ ?x) _ =>
     eapply TCast with (w:= w0)
     | |- hastyp_exp _ (Cast _ ?c1 (Var (V_TEMP 980))) _ => eapply TCast with (w := 64) (c:=c1)
@@ -3900,9 +3697,9 @@ Local Ltac etyp :=
 
   | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
   | |- hastyp_exp _ (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof v)
-  | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end  
+  | |- hastyp_exp _ (Cast _ _ ?e) _ => match e with| context[Word _ ?w] => eapply TCast with (w := w) end
   | _ : hastyp_exp _ ?e ?w0 |- hastyp_exp _ (Cast _ _ ?e) _ =>
-    eapply TCast with (w := w0); eassumption 
+    eapply TCast with (w := w0); eassumption
   | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
 
   | |- match ?ct with | CAST_UNSIGNED => _ | _ => _ end => cbv; easy
@@ -3998,7 +3795,7 @@ Local Ltac e_stypc c :=
       (c' := update c1 (v) (Some _)); [> right | | try apply update_some_c]; try reflexivity
   | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
   | |- hastyp_exp _ _ _  => new_etyp
-  end. 
+  end.
 
 Local Ltac styp := stypc armc.
 Local Ltac estyp := e_stypc armc. (* choice of context has no effect. *)
@@ -4032,7 +3829,7 @@ Lemma hastyp_Unpack_NZCV:
     hastyp_exp c n 1 /\ hastyp_exp c z 1 /\ hastyp_exp c cf 1 /\ hastyp_exp c v 1.
 Proof.
   intros. unfold Unpack_NZCV.
-  repeat split. 
+  repeat split.
   all: etyps 4; apply H.
 Qed.
 
@@ -4304,7 +4101,7 @@ Local Lemma hastyp_arm_cbnz2il:
   forall c Xn imm19 (B1:imm19 < 2^21) (B2:Xn<2^5) (PF:pfsub armc c),
   hastyp_stmt armc c (arm_cbnz2il Xn imm19 64) c.
 Proof.
-  intros. unfold_stmt. estyp; try (reflexivity || lia). 
+  intros. unfold_stmt. estyp; try (reflexivity || lia).
   apply hastyp_XtoVar; assumption. apply hastyp_BranchTo; etyp; try assumption.
   apply PF. reflexivity.
   unfold sizeof; simpl. lia.
@@ -4314,7 +4111,7 @@ Local Lemma hastyp_arm_cbz2il:
   forall c Xn imm19 (B1:imm19 < 2^21) (B2:Xn<2^5) (PF:pfsub armc c),
   hastyp_stmt armc c (arm_cbz2il Xn imm19 64) c.
 Proof.
-  intros. unfold_stmt. estyp; try (reflexivity || lia). 
+  intros. unfold_stmt. estyp; try (reflexivity || lia).
   apply hastyp_XtoVar; assumption. apply hastyp_BranchTo; etyp; try assumption.
   apply PF. reflexivity.
   unfold sizeof; simpl. lia.
@@ -4340,7 +4137,7 @@ Proof.
   intros. unfold_stmt. econstructor. estyp_c (update c (V_TEMP 1) None); try apply hastyp_XtoVar; etypeasy. reflexivity.
   econstructor. econstructor. right; cbn; reflexivity. etyp; rewrite update_frame; etypeasy. reflexivity.
   econstructor. apply hastyp_BranchTo. etyp. apply update_some; etypeasy. apply update_fresh2; etypeasy.
-  econstructor. 2-4:reflexivity. 
+  econstructor. 2-4:reflexivity.
   apply update_some.
     repeat rewrite update_frame by etypeasy. try rewrite update_updated. etypeasy.
     apply pfsub_remove2. intros. assumption.
@@ -4364,7 +4161,7 @@ Definition hastyp_arm_eretaa2il := hastyp_havoc.
 Local Lemma hastyp_arm_b2il:
   forall c (imm26:N) (B:imm26 < 2^26) (PF:pfsub armc c), hastyp_stmt armc c (arm_b2il imm26) c.
 Proof.
-  intros; unfold_stmt. styp; etypeasy; easy. 
+  intros; unfold_stmt. styp; etypeasy; easy.
 Qed.
 
 Local Lemma hastyp_arm_bl2il:
@@ -4473,7 +4270,7 @@ Local Lemma hastyp_ExtendReg:
   forall c regt regn exttype shift (PF:pfsub armc c) (B1:regn<2^5) (B2:shift<2^3) (B3:exttype<2^3),
   hastyp_stmt armc c (ExtendReg (V_TEMP regt) regn exttype shift) (update c (V_TEMP regt) (Some 64)).
 Proof.
-  intros. unfold ExtendReg. 
+  intros. unfold ExtendReg.
   econstructor. estyp;lia || reflexivity.
   remember (N.min _ _) as min. econstructor. etyp;lia. estyp; try lia. apply hastyp_XtoVar; assumption.
   all: try reflexivity.
@@ -4548,7 +4345,7 @@ Local Ltac red_ccases :=
 Local Ltac cget :=
   rewrite ?update_frame by (discriminate||(idtac+symmetry);(apply armvarid_neq_temp + apply armvarid_neq_mem) ||intros H;inversion H;lia);
   ((rewrite update_updated; try reflexivity)
-  || lazymatch goal with 
+  || lazymatch goal with
      | H: pfsub armc ?c |- ?c _ = Some _ => apply H; simpl; try (reflexivity || apply typeof_arm_varid)
      | H: pfsub ?c' ?c |- ?c _ = Some _ => apply H; cget
      end).
@@ -4605,14 +4402,14 @@ Ltac c_varx :=
 
 (* Prove pfsub goals. *)
 Ltac subsolve :=
-  match goal with |- pfsub _ _ => 
+  match goal with |- pfsub _ _ =>
       let EQ := fresh "EQ" in let x := fresh "x" in let y := fresh "y" in
       simpl_c; intros x y EQ; c_varx
   end.
 
 (* Try to solve a hastyp_exp goal, dealing with fairly complex context subset subgoals. *)
 Local Ltac esolve :=
-  simpl_c; etyp; 
+  simpl_c; etyp;
   (apply hastyp_XtoVar
     || apply hastyp_b2exp
     || apply hastyp_AlignCheck
@@ -4635,8 +4432,8 @@ Ltac destruct_oreq :=
   | H: ?x = _ \/ _ |- context[?x] => destruct H; subst
   end.
 
-Ltac casesolve := 
-  assumption 
+Ltac casesolve :=
+  assumption
   (* Apply specific reflexivity lemmas.  Using [reflexivity] binds the evar in, e.g., [?w <= 64]
      leading to unprovable goals. *)
   || apply pfsub_refl || apply eq_refl
@@ -4691,7 +4488,7 @@ Local Ltac simple_c_var :=
   (idtac+symmetry);
     (repeat match goal with
     | |- update ?c (arm_varid ?v) _ (arm_varid ?x) = _ =>
-        let EQ := fresh "EQ" in 
+        let EQ := fresh "EQ" in
         destruct (arm_varid x == arm_varid v) as [EQ | ?];[
             rewrite <-EQ,update_updated in *; clear EQ; try reflexivity
             | rewrite update_frame by assumption
@@ -4764,7 +4561,7 @@ Qed.
 Local Lemma hastyp_arm_stxp2il_constr:
   forall c (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:exp)
   (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64) (B5:Xt2<2^5)
-  (B6:hastyp_exp empty rtunknown 1) 
+  (B6:hastyp_exp empty rtunknown 1)
   (B7:hastyp_exp empty rnunknown 1)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_stxp2il_constr size Xn Xs Xt Xt2 rtunknown rnunknown) armc.
@@ -4806,9 +4603,9 @@ Qed.
 Local Lemma hastyp_arm_ldp2il_constr:
   forall c Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex
   (B1:Xn<2^5) (B3:Xt<2^5) (B5:Xt2<2^5) (B6:imm7<2^7) (B7:scale=2\/scale=3)
-  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1) 
-  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1) 
-  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1) 
+  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1)
+  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1)
+  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex) armc.
 Proof.
@@ -4857,9 +4654,9 @@ Qed.
 Local Lemma hastyp_arm_ldpsw2il_constr:
   forall c Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex
   (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm7<2^7) (B5:Xt2<2^5)
-  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1) 
-  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1) 
-  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1) 
+  (B8:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wback 1)
+  (B9:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) rt_unknown 1)
+  (B10:forall i j k, hastyp_exp (update (update (update c (V_TEMP 1000) (Some i)) (V_TEMP 2000) (Some j)) (V_TEMP 3000) (Some k)) wb_unknown 1)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex) armc.
 Proof.
@@ -4892,7 +4689,7 @@ Qed.
 
 Local Lemma hastyp_arm_strb_imm2il_constr:
   forall c (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)
-  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) 
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_strb_imm2il_constr Xn Xt imm912 signed wback postindex rtunknown) armc.
 Proof.
@@ -4914,7 +4711,7 @@ Qed.
 
 Local Lemma hastyp_arm_strh_imm2il_constr:
   forall c (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)
-  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) 
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_strh_imm2il_constr Xn Xt imm912 signed wback postindex rtunknown) armc.
 Proof.
@@ -4958,7 +4755,7 @@ Qed.
 
 Local Lemma hastyp_arm_ldrb_imm2il_constr:
   forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)
-  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) 
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldrb_imm2il_constr Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.
 Proof.
@@ -5006,7 +4803,7 @@ Local Lemma hastyp_arm_ldr_imm2il_constr:
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldr_imm2il_constr Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.
 Proof.
-  intros; unfold_stmt. repeat econs. 
+  intros; unfold_stmt. repeat econs.
   subsolve; simple_c_var.
   subsolve; simple_c_var.
 Qed.
@@ -5048,7 +4845,7 @@ Qed.
 
 Local Lemma hastyp_arm_ldrsh_imm2il_constr:
   forall c (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool)
-  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B4:size=32\/size=64) 
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B4:size=32\/size=64)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback postindex wbunknown wbsuppress) armc.
 Proof.
@@ -5072,7 +4869,7 @@ Qed.
 
 Local Lemma hastyp_arm_ldrsw_imm2il_constr:
   forall c (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool)
-  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)  
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback postindex wbunknown wbsuppress) armc.
 Proof.
@@ -5094,12 +4891,12 @@ Qed.
 
 Local Lemma hastyp_arm_ldraa2il_constr:
   forall c (Xn Xt S imm9:N) (wback wbunknown wbsuppress:bool)
-  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:S<2^1) (B5:imm9<2^9) 
+  (B1:Xn<2^5)  (B3:Xt<2^5) (B4:S<2^1) (B5:imm9<2^9)
   (PF:pfsub armc c),
   hastyp_stmt armc c (arm_ldraa2il_constr Xn Xt S imm9 wback wbunknown wbsuppress) armc.
 Proof.
   intros; unfold_stmt. repeat econs.
-  subsolve. simple_c_var. 
+  subsolve. simple_c_var.
 Qed.
 
 (*Local Lemma hastyp_arm_ldraa2il_size:*)
@@ -5292,7 +5089,7 @@ Proof.
 Qed.
 
 Local Lemma hastyp_MemAtomic:
-  forall c op w value address rettemp 
+  forall c op w value address rettemp
     (B1:op<2^5) (B2:hastyp_exp c address 64) (B3:w<=64) (B4:hastyp_exp c value 64)
     (PF:pfsub armc c) (PF':c (V_TEMP rettemp) = None) (PF'':c (V_TEMP (N.succ rettemp)) = None),
   hastyp_stmt armc c (MemAtomic (Word op 5) w value address rettemp) (update c (V_TEMP rettemp) (Some 64)).
@@ -5303,8 +5100,8 @@ Proof.
 Qed.
 
 Local Lemma hastyp_arm_ldatomic2il_size:
-  forall c op size Xn Xs Xt 
-  (B1:op<2^5) (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size<=64) 
+  forall c op size Xn Xs Xt
+  (B1:op<2^5) (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size<=64)
   (PF:pfsub armc c) (PF':c (V_TEMP 4000) = None) (PF'':c (V_TEMP 4001) = None),
   hastyp_stmt armc c (arm_ldatomic2il_size (Word op 5) size Xn Xs Xt) armc.
 Proof.
@@ -5316,8 +5113,8 @@ Proof.
 Qed.
 
 Local Lemma hastyp_arm_swp2il_size:
-  forall c op size Xn Xs Xt 
-  (B1:op<2^5) (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size<=64) 
+  forall c op size Xn Xs Xt
+  (B1:op<2^5) (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size<=64)
   (PF:pfsub armc c) (PF':c (V_TEMP 4000) = None) (PF'':c (V_TEMP 4001) = None),
   hastyp_stmt armc c (arm_swp2il_size (Word op 5) size Xn Xs Xt) armc.
 Proof.
@@ -5661,17 +5458,17 @@ Admitted.
   | ARM_EXCLUSIVE ARM_CASP size Xn Xs Xt Xt2 => arm_casp2il Xn Xs Xt size
   | ARM_EXCLUSIVE ARM_CASB size Xn Xs Xt Xt2 => arm_casb2il Xn Xs Xt
   | ARM_EXCLUSIVE ARM_CASH size Xn Xs Xt Xt2 => arm_cash2il Xn Xs Xt
-  | ARM_EXCLUSIVE ARM_CAS size Xn Xs Xt Xt2 => arm_cas2il Xn Xs Xt size
+  | ARM_EXCLUSIVE ARM_CAS size Xn Xs Xt Xt2 => arm_cas2il size Xn Xs Xt
   (*LDAPR/STLR unscaled immediate*)
   | ARM_LOAD_GEN ARM_STLURB Xn Xt imm9 size => arm_stlurb2il Xn Xt imm9
-  | ARM_LOAD_GEN ARM_LDAPURB Xn Xt imm9 size => arm_ldapurb2il Xn Xt (Word imm9 64)
-  | ARM_LOAD_GEN ARM_LDAPURSB Xn Xt imm9 size => arm_ldapursb2il Xn Xt (Word imm9 64) size
-  | ARM_LOAD_GEN ARM_STLURH Xn Xt imm9 size => arm_stlurh2il Xn Xt (Word imm9 64)
-  | ARM_LOAD_GEN ARM_LDAPURH Xn Xt imm9 size => arm_ldapurh2il Xn Xt (Word imm9 64)
-  | ARM_LOAD_GEN ARM_LDAPURSH Xn Xt imm9 size => arm_ldapursh2il Xn Xt (Word imm9 64) size
-  | ARM_LOAD_GEN ARM_LDAPUR Xn Xt imm9 size => arm_ldapur2il Xn Xt (Word imm9 64) size
-  | ARM_LOAD_GEN ARM_LDAPURSW Xn Xt imm9 size => arm_ldapursw2il Xn Xt (Word imm9 64) size
-  | ARM_LOAD_GEN ARM_STLUR Xn Xt imm9 size => arm_stlur2il Xn Xt (Word imm9 64) size
+  | ARM_LOAD_GEN ARM_LDAPURB Xn Xt imm9 size => arm_ldapurb2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDAPURSB Xn Xt imm9 size => arm_ldapursb2il size Xn Xt imm9
+  | ARM_LOAD_GEN ARM_STLURH Xn Xt imm9 size => arm_stlurh2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDAPURH Xn Xt imm9 size => arm_ldapurh2il Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDAPURSH Xn Xt imm9 size => arm_ldapursh2il size Xn Xt imm9
+  | ARM_LOAD_GEN ARM_LDAPUR Xn Xt imm9 size => arm_ldapur2il Xn Xt imm9 size
+  | ARM_LOAD_GEN ARM_LDAPURSW Xn Xt imm9 size => arm_ldapursw2il size Xn Xt imm9
+  | ARM_LOAD_GEN ARM_STLUR Xn Xt imm9 size => arm_stlur2il size Xn Xt imm9
   | ARM_LOAD_GEN ARM_PRFM Xn Xt imm9 size => arm_prfm_lit2il Xt imm9
   | ARM_LOAD_GEN ARM_PRFM_IMM Xn Xt imm9 size => havoc
   | ARM_ATOMIC ARM_LDAPRB size Xn Xs Xt => arm_ldaprb2il Xn Xt
@@ -5687,12 +5484,12 @@ Admitted.
   | ARM_STZ2G Xn Xt imm9 writeback printindex => arm_stz2g2il Xn Xt imm9 writeback printindex
   | ARM_LDGM Xn Xt => arm_ldgm2il Xn Xt
   (*load register (literal)*)
-  | ARM_LD_REG_LIT ARM_LDR_LIT Xt imm19 size => arm_ldr_lit2il Xt imm19 size
+  | ARM_LD_REG_LIT ARM_LDR_LIT Xt imm19 size => arm_ldr_lit2il size Xt imm19
   | ARM_LD_REG_LIT ARM_LDRSW_LIT Xt imm19 size => arm_ldrsw_lit2il Xt imm19
   | ARM_LD_REG_LIT ARM_PRFM_LIT Xt imm19 size => arm_prfm_lit2il Xt imm19
   (*load/store no-allocate pair (offset)*)
   | ARM_STNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale
-  | ARM_LDNP Xn Xt Xt2 imm7 scale => arm_stnp2il Xn Xt Xt2 imm7 scale
+  | ARM_LDNP Xn Xt Xt2 imm7 scale => arm_ldnp2il Xn Xt Xt2 imm7 scale
   (*load/store register pair (post-indexed, pre-indexed, offset)*)
   | ARM_LD_STR_REG_PAIR ARM_STP Xn Xt Xt2 imm7 scale wback postindex => arm_stp2il Xn Xt Xt2 imm7 scale wback postindex
   | ARM_LD_STR_REG_PAIR ARM_LDP Xn Xt Xt2 imm7 scale wback postindex => arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex
