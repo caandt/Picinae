@@ -1493,52 +1493,51 @@ Section Decoder.
 
       We use exp to effect the unknown behavior to let the symbolic executor handle
      the case analysis instead of duplicating code paths. *)
-  Definition arm_stxr2il_constr (size Xn Xs Xt:N) (rtunknown rnunknown:exp) :=
+  Definition arm_stxr2il_constr (size Xn Xs Xt:N) (rtunknown rnunknown:bool) :=
     let bytes := N.shiftr size 3 in
-    <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      temp[1000] := ite rnunknown X[Xn] (unknown 64);
-      temp[2000] := ite rtunknown (lcast size X[Xt]) (unknown size);
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if Xn=?31 then (Var R_SP) else if rnunknown then <{unknown 64}> else <{X[Xn]}> in
+    let data := if rtunknown then <{unknown size}> else <{lcast size X[Xt]}> in
+    Some <{check;
       if unknown 1 then
         (* Store not attempted, returns error bit. *)
         var[Xs] := 1#64
       else
-        if unknown 1 then
-          (* Store succeeded, but returned status may still indicate failure *)
-          store[Xtemp[1000],Xtemp[2000],bytes];
-          var[Xs] := ucast 64 (unknown 1)
-        else
-          (* Store attempted but failed. *)
-          var[Xs] := 0#64
-        end
+        (* Store succeeded, but returned status may still indicate failure *)
+        store[address,data,bytes];
+        var[Xs] := ucast 64 (unknown 1)
       end
     }>.
 
+  Variable oracle : N -> bool.
+
   Definition arm_stxr2il_size (size Xn Xs Xt:N) :=
-    let constraint1 := <{Xs#5 = Xt#5}> in
-    let constraint2 := <{(Xs#5 = Xn#5) & (Xn#5 <> 31#5)}> in <{
-      if ! constraint1 & ! constraint2 then {arm_stxr2il_constr size Xn Xs Xt (Word 0 1) (Word 0 1)} else
-      if constraint1 then
-        if unknown 1 then
-          (* Constraint_UNDEFINED *) havoc
-        else if unknown 1 then
-          (* Constraint_NOP *) nop
-        else (* Constraint_UNKNOWN or Constraint_NONE *)
-        if constraint2 then
-          (* Reached Constraint_UNDEFINED and Constraint_NOP above, so don't need to repeat *)
-          {arm_stxr2il_constr size Xn Xs Xt (Unknown 1) (Unknown 1)}
-        else
-          {arm_stxr2il_constr size Xn Xs Xt (Unknown 1) (Word 0 1)}
-        end (* End of constraint1 + constraint2 *)
-      end end else
-      (* !constraint1 + constraint2 *)
-        if unknown 1 then
-          (* Constraint_UNDEFINED *) havoc
-        else if unknown 1 then
-          (* Constraint_NOP *) nop
-        else (* Constraint_UNKNOWN or Constraint_NONE *)
-          {arm_stxr2il_constr size Xn Xs Xt (Word 0 1) (Unknown 1)}
-        end end end end}>.
+    let constraint1 := Xs =? Xt in
+    let constraint2 := (Xs =? Xn) && (negb (Xn =? 31)) in
+    if (negb constraint1) && (negb constraint2) then arm_stxr2il_constr size Xn Xs Xt false false else
+    if constraint1 then 
+      match oracle 1, oracle 2 with
+      | false, false => None (* Constraint_UNDEF *)
+      | false, true => Some Nop (* Constraint_NOP *) 
+      | true, rtunknown =>
+          if constraint2 then
+            match oracle 3, oracle 4 with
+            | false, false => None (* Constraint_UNDEF *)
+            | false, true => Some Nop (* Constraint_NOP *) 
+            | true, rnunknown =>
+              arm_stxr2il_constr size Xn Xs Xt rtunknown rnunknown
+            end
+          else arm_stxr2il_constr size Xn Xs Xt rtunknown false
+      end
+    else 
+      if constraint2 then
+        match oracle 3, oracle 4 with
+        | false, false => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | true, rnunknown =>
+          arm_stxr2il_constr size Xn Xs Xt false rnunknown
+        end
+      else arm_stxr2il_constr size Xn Xs Xt false false.
 
     Definition arm_stxrb2il := arm_stxr2il_size 8.
     Definition arm_stxrh2il := arm_stxr2il_size 16.
@@ -1550,8 +1549,9 @@ Section Decoder.
 
     Definition arm_stllr2il_size (size Xn Xt:N) :=
       let bytes := N.shiftr size 3 in
-      <{ if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-         store[X[Xn],(ucast 64 (lcast size X[Xt])),bytes]
+      let check := if Xn =? 31 then CheckSPAlignment else Nop in
+      <{ check;
+         store[X[Xn],(lcast size X[Xt]),bytes]
       }>.
 
     Definition arm_stllrb2il := arm_stllr2il_size 8.
@@ -1565,64 +1565,61 @@ Section Decoder.
   (* TODO: Documentation say the address must be aligned on an element-size boundary,
      but the operation pseudocode does not seem to have it. I did not implement
      it on the first pass. Decide whether or not to add it. *)
-  Definition arm_stxp2il_constr (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:exp) :=
+  Definition arm_stxp2il_constr (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:bool) :=
     let bytes := N.shiftr size 2 in
-    let el1 := <{Xtemp[2000]}> in
-    let el2 := <{Xtemp[3000]}> in
-    <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
-      (* address *) temp[1000] := ite rnunknown X[Xn] (unknown 64);
-      (* element1 *) temp[2000] := lcast size X[Xt];
-      (* element2 *) temp[3000] := lcast size X[Xt2];
-      if rtunknown then temp[2000] := unknown size; temp[3000] := unknown size else nop end;
-      (* data *) temp[4000] := ite BigEndian (el1++el2) (el2++el1);
+    let el1 := <{lcast size X[Xt]}> in
+    let el2 := <{lcast size X[Xt2]}> in
+    let data := if rtunknown then <{unknown {size*2}}> else <{ite BigEndian (el1++el2) (el2++el1)}> in
+    let address := if Xn=?31 then (Var R_SP) else if rnunknown then <{unknown 64}> else <{X[Xn]}> in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    Some <{
       if unknown 1 then
         (* Store not attempted, returns error bit. *)
         var[Xs] := 1#64
       else
-        if unknown 1 then
           (* Store succeeded, but returned status may still indicate failure *)
-          store[Xtemp[1000],Xtemp[4000],bytes];
+          store[address,data,bytes];
           var[Xs] := ucast 64 (unknown 1)
-        else
-          (* Store attempted but failed. *)
-          var[Xs] := 0#64
-        end
       end
     }>.
 
   Definition arm_stxp2il_size (size Xn Xs Xt Xt2:N) :=
-    let constraint1 := <{(Xs#5 = Xt#5) | (Xs#5 = Xt2#5)}> in
-    let constraint2 := <{(Xs#5 = Xn#5) & (Xn#5 <> 31#5)}> in <{
-      if ! constraint1 & ! constraint2 then {arm_stxp2il_constr size Xn Xs Xt Xt2 (Word 0 1) (Word 0 1)} else
-      if constraint1 then
-        if unknown 1 then
-          (* Constraint_UNDEFINED *) havoc
-        else if unknown 1 then
-          (* Constraint_NOP *) nop
-        else (* Constraint_UNKNOWN or Constraint_NONE *)
-        if constraint2 then
-          (* Reached Constraint_UNDEFINED and Constraint_NOP above, so don't need to repeat *)
-          {arm_stxp2il_constr size Xn Xs Xt Xt2 (Unknown 1) (Unknown 1)}
-        else
-          {arm_stxp2il_constr size Xn Xs Xt Xt2 (Unknown 1) (Word 0 1)}
-        end (* End of constraint1 + constraint2 *)
-      end end else
-      (* !constraint1 + constraint2 *)
-        if unknown 1 then
-          (* Constraint_UNDEFINED *) havoc
-        else if unknown 1 then
-          (* Constraint_NOP *) nop
-        else (* Constraint_UNKNOWN or Constraint_NONE *)
-          {arm_stxp2il_constr size Xn Xs Xt Xt2 (Word 0 1) (Unknown 1)}
-        end end end end}>.
+    let constraint1 := (Xs =? Xt) || (Xs =? Xt2) in
+    let constraint2 := (Xs =? Xn) && (negb (Xn =? 31)) in
+    if (negb constraint1) && (negb constraint2) then arm_stxp2il_constr size Xn Xs Xt Xt2 false false else
+    if constraint1 then 
+      match oracle 1, oracle 2 with
+      | false, false => None (* Constraint_UNDEF *)
+      | false, true => Some Nop (* Constraint_NOP *) 
+      | true, rtunknown =>
+          if constraint2 then
+            match oracle 3, oracle 4 with
+            | false, false => None (* Constraint_UNDEF *)
+            | false, true => Some Nop (* Constraint_NOP *) 
+            | true, rnunknown =>
+              arm_stxp2il_constr size Xn Xs Xt Xt2 rtunknown rnunknown
+            end
+          else arm_stxp2il_constr size Xn Xs Xt Xt2 rtunknown false
+      end
+    else 
+      if constraint2 then
+        match oracle 3, oracle 4 with
+        | false, false => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | true, rnunknown =>
+          arm_stxp2il_constr size Xn Xs Xt Xt2 false rnunknown
+        end
+      else arm_stxp2il_constr size Xn Xs Xt Xt2 false false.
+
 
   Definition arm_stxp2il := arm_stxp2il_size.
   Definition arm_stlxp2il := arm_stxp2il_size.
 
   Definition arm_ldxr2il_size (size Xn Xt:N) :=
-    let bytes := N.shiftr size 3 in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end;
+    let bytes := N.shiftr size 3 in 
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    <{
+      check;
       var[Xt] := ucast 64 load[X[Xn],bytes]
     }>.
 
@@ -1642,42 +1639,32 @@ Section Decoder.
   Definition arm_ldlarh2il := arm_ldxr2il_size 16.
   Definition arm_ldlar2il := arm_ldxr2il_size.
 
+  (* Size is 32 or 64 *)
   Definition arm_ldxp2il_constr (size Xn Xt Xt2:N) (rtunknown:bool) :=
+    let elsize := size in
+    let datasize := elsize * 2 in
     let bytes := N.shiftr size 2 in
     let datasize := N.shiftl size 1 in
-    <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if {b2exp rtunknown} then var[Xt] := unknown 64 else
-      if size#7 = 32#7 then
-      (* data *) temp[2000] := load[Xtemp[1000],bytes];
-        if BigEndian then
-          var[Xt] := ucast 64 (Xtemp[2000][{N.pred datasize}:size]);
-          var[Xt2] := ucast 64 (Xtemp[2000][{N.pred size}:0])
-        else
-          var[Xt] := ucast 64 (Xtemp[2000][{N.pred size}:0]);
-          var[Xt2] := ucast 64 (Xtemp[2000][{N.pred datasize}:size])
-        end
-      else
-        if !Aligned[Xtemp[1000],bytes] then exn 0
-        else
-          var[Xt] := load[Xtemp[1000],8];
-          var[Xt2] := load[Xtemp[1000]+8#64,8]
-        end
-      end
-      end
-    }>.
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := <{X[Xn]}> in 
+    if rtunknown then
+      Some <{var[Xt] := (unknown 64)}>
+    else if elsize =? 32 then 
+      let data := <{load[address,8]}> in
+      Some <{if BigEndian then (var[Xt]:=data[64:32]; var[Xt2]:=data[32:0])
+             else (var[Xt]:=data[32:0]; var[Xt2]:=data[64:32]) end}>
+    else Some <{var[Xt]:=load[address,8]; var[Xt2]:=load[address+8#64,8]}>.
 
   Definition arm_ldxp2il (size Xn Xt Xt2:N) :=
-    let constraint_check := <{ Xt#5 = Xt2#5 }> in <{
-      if ! constraint_check then {arm_ldxp2il_constr size Xn Xt Xt2 false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      {arm_ldxp2il_constr size Xn Xt Xt2 true}
-      end end end
-    }>.
+    let constraint := Xt =? Xt2 in
+    if constraint then
+      match oracle 1, oracle 2 with
+      | false, false => None
+      | false, true => Some Nop
+      | _, _ => arm_ldxp2il_constr size Xn Xt Xt2 true
+      end 
+    else 
+      arm_ldxp2il_constr size Xn Xt Xt2 false.
 
   Definition load_store_exclusive :=
     let size := n.[30,32] in
@@ -1951,127 +1938,114 @@ Section Decoder.
       end end end end end
     }>.
 
-  Definition arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex :=
-    let size := N.shiftl 8 scale in
-    let dbytes := N.shiftl 1 scale in
-    let offset := <{scast 64 (imm7#64) << (scale # 64)}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := load[Xtemp[1000],LittleE,dbytes];
-      temp[3000] := load[Xtemp[1000]+dbytes#64,LittleE,dbytes];
-      if rt_unknown then temp[2000] := unknown size; temp[3000] := unknown size else nop end;
-      {arm_varid Xt} := ucast 64 Xtemp[2000];
-      {arm_varid Xt2} := ucast 64 Xtemp[3000];
-      if wback then
-        if wb_unknown then
-          temp[1000] := unknown 64
-        else if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset
-              else nop
-              end
-        end;
-        {arm_varid Xn} := Xtemp[1000]
-      else nop
-      end
+  (* scale is 2 or 3 *)
+  Definition arm_ldp2il_constr Xn Xt Xt2 imm7 scale (wback postindex wbunknown rtunknown:bool) :=
+    let size := N.shiftl 8 scale in   (* 32 or 64 *)
+    let dbytes := N.shiftl 1 scale in (* 4 or 8 *)
+    let datasize := N.shiftl 8 scale in
+    let offset := (N.shiftl (scast 7 64 imm7) scale) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data1 := if rtunknown then <{ucast 64 (unknown datasize)}> else <{ucast 64 load[address,dbytes]}> in
+    let data2 := if rtunknown then <{ucast 64 (unknown datasize)}> else <{ucast 64 load[address+dbytes#64,dbytes]}> in
+    let wbblock := if negb wback then Nop else
+                   let address := if wbunknown then <{unknown 64}> else if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    Some <{
+      var[Xt] := data1;
+      var[Xt2] := data2;
+      wbblock
     }>.
 
   (* C6-970; semantic deviation for some constraint conditions *)
   Definition arm_ldp2il (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool) :=
-    let constraint1 := <{ {b2exp wback} & (Xt#5 = Xn#5 | Xt2#5 = Xn#5) & Xn#5 <> 31#5}> in
-    let constraint2 := <{ Xt#5 = Xt2#5 }> in <{
-      temp[1] := {b2exp wback}; (* wback *)
-      temp[2] := 0#1; (* rt_unknown *)
-      temp[3] := 0#1; (* wb_unknown *)
-      temp[4] := 0#1; (* NOP *)
-      temp[5] := 0#1; (* UNDEF *)
-      if constraint1 then
-        (* Constraint_WBSUPPRESS *)
-        if unknown 1 then temp[1] := 0#1 else
-        (* Constraint_UNKNOWN *)
-        if unknown 1 then temp[3] := 1#1 else
-        (* Constraint_UNDEF *)
-        if unknown 1 then temp[5] := 1#1 else
-        (* Constraint_NOP *)
-        temp[4] := 1#1 end end end
-      else nop end;
+    let constraint1 := wback && ((Xt=?Xn) || (Xt2 =? Xn)) && (negb (Xn =? 31)) in
+    let constraint2 := Xt =? Xt2 in
+    if (negb constraint1) && (negb constraint2) then arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex false false else
+    if constraint1 then
+    match oracle 1, oracle 2 with
+    | true, true => None (* Constraint_UNDEF *)
+    | false, true => Some Nop (* Constraint_NOP *) 
+    | true, false => let wback := false in let wbunknown := false in
+        if constraint2 then
+        match oracle 3, oracle 4 with 
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | _, _ => arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown true
+        end
+        else arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown false
+    | false, false => let wbunknown := true in
+        if constraint2 then
+        match oracle 3, oracle 4 with 
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | _, _ => arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown true
+        end
+        else arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex wbunknown false
+    end
+    else
       if constraint2 then
-        (* Constraint_UNKNOWN *)
-        if unknown 1 then temp[2] := 1#1 else
-        (* Constraint_UNDEF *)
-        if unknown 1 then temp[5] := 1#1 else
-        (* Constraint_NOP *)
-        temp[4] := 1#1 end end
-      else nop end;
-      if Xtemp[4] then nop else
-      if Xtemp[5] then havoc else
-        {arm_ldp2il_constr Xn Xt Xt2 imm7 scale <{Xtemp[1]}> <{Xtemp[3]}> <{Xtemp[2]}> postindex}
-      end end
-    }>.
+        match oracle 3, oracle 4 with 
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | _, _ => arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex false true
+        end
+      else arm_ldp2il_constr Xn Xt Xt2 imm7 scale wback postindex false false.
 
-  Definition arm_stgp2il Xn Xt Xt2 imm7 wback postindex :=
-    let offset := <{scast 64 (imm7#7) << LOG2_TAG_GRANULE#64}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := X[Xt];
-      temp[3000] := X[Xt2];
-      store[Xtemp[1000],Xtemp[2000],LittleE,8];
-      store[Xtemp[1000]+8#64,Xtemp[3000],LittleE,8];
-      if {b2exp wback} then
-        if {b2exp postindex} then temp[1000]:=Xtemp[1000]+offset else nop end;
-        {arm_varid Xn} := Xtemp[1000]
-      else nop end}>.
+  Definition arm_stgp2il Xn Xt Xt2 imm7 (wback postindex:bool) :=
+    let offset := (N.shiftl (scast 7 64 imm7) LOG2_TAG_GRANULE) mod 2^64 in
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data1 := <{X[Xt]}> in 
+    let data2 := <{X[Xt2]}> in 
+    let wback_block := if negb wback then Nop else
+                        if postindex then <{var[Xn]:=address+offset#64}>
+                        else <{var[Xn]:=address}> in
+    Some <{store[address,data1,8]; store[address+8#64,data2,8]; wback_block}>.
 
-  Definition arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex :=
-    let offset := <{scast 64 (imm7#64) << (2#64)}> in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !{b2exp postindex} then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := load[Xtemp[1000],LittleE,4];
-      temp[3000] := load[Xtemp[1000]+4#64,LittleE,4];
-      if rt_unknown then temp[2000] := unknown 32; temp[3000] := unknown 32 else nop end;
-      {arm_varid Xt} := scast 64 Xtemp[2000];
-      {arm_varid Xt2} := scast 64 Xtemp[3000];
-      if wback then
-        if wb_unknown then
-          temp[1000] := unknown 64
-        else if {b2exp postindex} then temp[1000] := Xtemp[1000] + offset
-              else nop
-              end
-        end;
-        {arm_varid Xn} := Xtemp[1000]
-      else nop
-      end
-    }>.
+  Definition arm_ldpsw2il_constr Xn Xt Xt2 imm7 (wback postindex wbunknown rtunknown:bool) :=
+    let offset := (N.shiftl (scast 7 64 imm7) 2) mod 2^64 in
+    let tag_checked := wback || (negb (Xn =? 31)) in 
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data1 := if rtunknown then <{(unknown 32)}> else <{load[address,4]}> in
+    let data2 := if rtunknown then <{(unknown 32)}> else <{load[address+4#64,4]}> in
+    let wbblock := if negb wback then Nop else
+                   let address := if wbunknown then <{unknown 64}> else if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    Some <{check; var[Xt]:=scast 64 data1; var[Xt2]:=scast 64 data2; wbblock}>.
 
   Definition arm_ldpsw2il (Xn Xt Xt2 imm7:N) (wback postindex:bool) :=
-    let constraint1 := <{ {b2exp wback} & (Xt#5 = Xn#5 | Xt2#5 = Xn#5) & Xn#5 <> 31#5}> in
-    let constraint2 := <{ Xt#5 = Xt2#5 }> in <{
-      temp[1] := {b2exp wback}; (* wback *)
-      temp[2] := 0#1; (* rt_unknown *)
-      temp[3] := 0#1; (* wb_unknown *)
-      temp[4] := 0#1; (* NOP *)
-      temp[5] := 0#1; (* UNDEF *)
-      if constraint1 then
-        (* Constraint_WBSUPPRESS *)
-        if unknown 1 then temp[1] := 0#1 else
-        (* Constraint_UNKNOWN *)
-        if unknown 1 then temp[3] := 1#1 else
-        (* Constraint_UNDEF *)
-        if unknown 1 then temp[5] := 1#1 else
-        (* Constraint_NOP *)
-        temp[4] := 1#1 end end end
-      else nop end;
+    let constraint1 := wback && ((Xt=?Xn) || (Xt2=?Xn)) && (negb (Xn=?31)) in 
+    let constraint2 := Xt=?Xt2 in
+    if constraint1 then
+    match oracle 1, oracle 2 with
+    | true, true => None (* Constraint_UNDEF *)
+    | false, true => Some Nop (* Constraint_NOP *) 
+    | true, false => let wback := false in let wbunknown := false in
+        if constraint2 then
+        match oracle 3, oracle 4 with 
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | _, _ => arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown true
+        end
+        else arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown false
+    | false, false => let wbunknown := true in
+        if constraint2 then
+        match oracle 3, oracle 4 with 
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | _, _ => arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown true
+        end
+        else arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex wbunknown false
+    end
+    else
       if constraint2 then
-        (* Constraint_UNKNOWN *)
-        if unknown 1 then temp[2] := 1#1 else
-        (* Constraint_UNDEF *)
-        if unknown 1 then temp[5] := 1#1 else
-        (* Constraint_NOP *)
-        temp[4] := 1#1 end end
-      else nop end;
-      if Xtemp[4] then nop else
-      if Xtemp[5] then havoc else
-        {arm_ldpsw2il_constr Xn Xt Xt2 imm7 <{Xtemp[1]}> <{Xtemp[3]}> <{Xtemp[2]}> postindex}
-      end end
-    }>.
+        match oracle 3, oracle 4 with 
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | _, _ => arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex false true
+        end
+      else arm_ldpsw2il_constr Xn Xt Xt2 imm7 wback postindex false false.
 
   Definition load_store_no_alloc_pair :=
     let opc := n.[30,32] in
@@ -2274,325 +2248,98 @@ Section Decoder.
     | "11  1  01" => UDF (* LDUR (SIMD&FP) - 64-bit variant on page C7-1367 *)
     else UDF end.
 
-  Definition arm_strb_imm2il_constr (Xn Xt imm912:N) (signed wback postindex rtunknown:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let rtunknown := b2exp rtunknown in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := X[Xt];
-      if rtunknown then temp[2000] := ucast 64 unknown 8 else nop end;
-      store[Xtemp[1000],Xtemp[2000],1];
-      temp[1001] := Xtemp[1000];
-      if wback then
-        if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
 
-  Definition arm_strb_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_strb_imm2il_constr Xn Xt imm912 signed wback' postindex false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      {arm_strb_imm2il_constr Xn Xt imm912 signed wback' postindex true}
-      end end end
-    }>.
-
-  Definition arm_strh_imm2il_constr (Xn Xt imm912:N) (signed wback postindex rtunknown:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let rtunknown := b2exp rtunknown in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := X[Xt];
-      if rtunknown then temp[2000] := ucast 64 unknown 16 else nop end;
-      store[Xtemp[1000],Xtemp[2000],2];
-        temp[1001] := Xtemp[1000];
-      if wback then
-        if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
-
-  Definition arm_strh_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_strh_imm2il_constr Xn Xt imm912 signed wback' postindex false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      {arm_strh_imm2il_constr Xn Xt imm912 signed wback' postindex true}
-      end end end
-    }>.
-
-
-  Definition arm_str_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex rtunknown:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let rtunknown := b2exp rtunknown in
-    let wback := b2exp wback in
+  (* Size is 8, 16, 32, or 64 *)
+  Definition arm_str_imm2il_size_constr (size Xn Xt imm912:N) (signed wback postindex rtunknown:bool) :=
+    let offset := if signed then scast 9 64 imm912 else imm912 in
+    let scale := N.log2 size - 3 in 
+    let datasize := size in
     let bytes := N.shiftr size 3 in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      temp[2000] := X[Xt];
-      if rtunknown then temp[2000] := ucast 64 unknown size else nop end;
-      store[Xtemp[1000],Xtemp[2000],bytes];
-      temp[1001] := Xtemp[1000];
-      if wback then
-        if postindex then temp[1001] := Xtemp[1001] + offset else nop end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+    let tag_checked := wback || (negb (Xn=?31)) in 
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data := if rtunknown then <{unknown datasize}> else <{ucast datasize X[Xt]}> in
+    let wbblock := if negb wback then Nop else
+                   let address := if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    Some <{ check; store[address,data,bytes]; wbblock }>.
 
-  Definition arm_str_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_str_imm2il_constr Xn Xt imm912 size signed wback' postindex false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      {arm_str_imm2il_constr Xn Xt imm912 size signed wback' postindex true}
-      end end end
-    }>.
 
-  Definition arm_ldrb_imm2il_constr (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      var[Xt] := ucast 64 load[Xtemp[1000],1];
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else
-        if postindex then temp[1001] := Xtemp[1001] + offset
-        else nop end end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+  (* Size is 8, 16, 32, or 64 *)
+  Definition arm_str_imm2il_size (size Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let constraint := wback && (Xn=?Xt) && (negb (Xn=?31)) in
+    if negb constraint then arm_str_imm2il_size_constr size Xn Xt imm912 signed wback postindex false else
+    match oracle 1, oracle 2 with
+    | true, true => None (* Constraint_UNDEF *)
+    | false, true => Some Nop (* Constraint_NOP *) 
+    | rtunknown, false =>  arm_str_imm2il_size_constr size Xn Xt imm912 signed wback postindex rtunknown
+    end.
 
-  Definition arm_ldrb_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldrb_imm2il_constr Xn Xt imm912 signed wback' postindex false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldrb_imm2il_constr Xn Xt imm912 signed wback' postindex true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldrb_imm2il_constr Xn Xt imm912 signed wback' postindex false true}
-      end end end end
-    }>.
+  Definition arm_str_imm2il := arm_str_imm2il_size.
+  Definition arm_strb_imm2il := arm_str_imm2il_size 8.
+  Definition arm_strh_imm2il := arm_str_imm2il_size 16.
 
-  Definition arm_ldrh_imm2il_constr (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      var[Xt] := ucast 64 load[Xtemp[1000],2];
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else
-        if postindex then temp[1001] := Xtemp[1001] + offset
-        else nop end end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+  Definition arm_ldr_imm2il_size_constr (size Xn Xt imm912:N) (signed wback postindex wbunknown:bool) :=
+    let offset := if signed then scast 9 64 imm912 else imm912 in
+    let regsize := size in 
+    let datasize := size in 
+    let bytes := N.shiftr datasize 3 in
+    let tag_checked := wback || (negb (Xn =? 31)) in 
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let data := <{load[address,bytes]}> in
+    let wbblock := if negb wback then Nop else
+                   let address := if wbunknown then <{unknown 64}> else if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    Some <{ check; var[Xt]:=ucast 64 data; wbblock }>.
 
-  Definition arm_ldrh_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldrh_imm2il_constr Xn Xt imm912 signed wback' postindex false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldrh_imm2il_constr Xn Xt imm912 signed wback' postindex true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldrh_imm2il_constr Xn Xt imm912 signed wback' postindex false true}
-      end end end end
-    }>.
+  (* imm912 is 9bits if signed is true, 12 bits otherwise *)
+  (* size is 8, 16, 32, or 64 *)
+  Definition arm_ldr_imm2il_size (size Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let constraint := wback && (Xn =? Xt) && (negb (Xn=?31)) in 
+    if negb constraint then arm_ldr_imm2il_size_constr size Xn Xt imm912 signed wback postindex false else
+    match oracle 1, oracle 2 with
+    | true, true => None (* Constraint_UNDEF *)
+    | false, true => Some Nop (* Constraint_NOP *) 
+    | true, false => arm_ldr_imm2il_size_constr size Xn Xt imm912 signed false postindex false (* Contraint_WBSUPPRESS *)
+    | false, false => arm_ldr_imm2il_size_constr size Xn Xt imm912 signed wback postindex true (* Contraint_UNKNOWN *)
+    end.
 
-  Definition arm_ldr_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let bytes := N.shiftr size 3 in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      var[Xt] := ucast 64 load[Xtemp[1000],bytes];
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else
-        if postindex then temp[1001] := Xtemp[1001] + offset
-        else nop end end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+  Definition arm_ldr_imm2il := arm_ldr_imm2il_size.
+  Definition arm_ldrb_imm2il := arm_ldr_imm2il_size 8.
+  Definition arm_ldrh_imm2il := arm_ldr_imm2il_size 16.
 
-  Definition arm_ldr_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldr_imm2il_constr Xn Xt imm912 size signed wback' postindex false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldr_imm2il_constr Xn Xt imm912 size signed wback' postindex true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldr_imm2il_constr Xn Xt imm912 size signed wback' postindex false true}
-      end end end end
-    }>.
+  (* Where w is the width to load from memory (8, 16 or 32) and w'
+     is the width to extend it to (32 or 64). *)
+  Definition arm_ldrs_imm2il_size_constr (w w' Xn Xt imm912:N) (signed wback postindex wbunknown:bool) :=
+    let offset := if signed then scast 9 64 imm912 else N.shiftl imm912 1 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let bytes := N.shiftr w 3 in
+    let data := <{load[address,bytes]}> in 
+    let wbblock := if negb wback then Nop else
+                   let address := if wbunknown then <{unknown 64}> else if postindex then <{address+offset#64}> else address in
+                   <{var[Xn]:=address}> in
+    Some <{check; var[Xt] := ucast 64 (scast w' data); wbblock}>.
 
-  Definition arm_ldrsb_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1]);
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else
-        if postindex then temp[1001] := Xtemp[1001] + offset
-        else nop end end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+  Definition arm_ldrs_imm2il_size (w w' Xn Xt imm912:N) (signed wback postindex:bool) :=
+    let constraint := wback && (Xn =? Xt) && (negb (Xn =? 31)) in
+    if negb constraint then arm_ldrs_imm2il_size_constr w w' Xn Xt imm912 signed wback postindex false
+    else match oracle 1, oracle 2 with
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | true, wback => arm_ldrs_imm2il_size_constr w w' Xn Xt imm912 signed wback postindex false
+        | false, false => arm_ldrs_imm2il_size_constr w w' Xn Xt imm912 signed wback postindex true
+         end.
 
-  Definition arm_ldrsb_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback' postindex false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback' postindex true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldrsb_imm2il_constr Xn Xt imm912 size signed wback' postindex false true}
-      end end end end
-    }>.
-
-  Definition arm_ldrsh_imm2il_constr (Xn Xt imm912 size:N) (signed wback postindex wbunknown wbsuppress:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2]);
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else
-        if postindex then temp[1001] := Xtemp[1001] + offset
-        else nop end end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
-
-  Definition arm_ldrsh_imm2il (Xn Xt imm912 size:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback' postindex false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback' postindex true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldrsh_imm2il_constr Xn Xt imm912 size signed wback' postindex false true}
-      end end end end
-    }>.
-
-  Definition arm_ldrsw_imm2il_constr (Xn Xt imm912:N) (signed wback postindex wbunknown wbsuppress:bool) :=
-    let offset := if signed then <{scast 64 imm912#9}> else <{ucast 64 imm912#12}> in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    let postindex := b2exp postindex in <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      if !postindex then temp[1000] := Xtemp[1000] + offset else nop end;
-      var[Xt] := scast 64 load[Xtemp[1000],4];
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else
-        if postindex then temp[1001] := Xtemp[1001] + offset
-        else nop end end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
-
-  Definition arm_ldrsw_imm2il (Xn Xt imm912:N) (signed wback postindex:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{  wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback' postindex false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback' postindex true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldrsw_imm2il_constr Xn Xt imm912 signed wback' postindex false true}
-      end end end end
-    }>.
+  Definition arm_ldrsb_imm2il := arm_ldrs_imm2il_size 8.
+  Definition arm_ldrsh_imm2il := arm_ldrs_imm2il_size 16.
+  Definition arm_ldrsw_imm2il := arm_ldrs_imm2il_size 32 64.
 
   (*post-indexed imm*)
+  (* TODO: continue here with ldrs*, this signed operation should not have a 64-bit
+     setting, but the lines below instantiate such an instruction with size 64.
+     This is a bug. *)
   Definition load_store_reg_imm_poi :=
     let size := n.[30,32] in
     let v_ := n.[26] in
@@ -3042,6 +2789,14 @@ Section Decoder.
       end
     }>.
 
+  Definition ExtendReg' N_ reg exttype shift :=
+    let val := <{lcast N_ X[reg]}> in
+    let signed := N.land 4 exttype =? 4 in 
+    let len := N.min (N.shiftl 8 (N.land 3 exttype)) (N_-shift) in
+    if signed then <{ucast N_ (val[{len-1}:0]++0#shift)}>
+    else <{scast N_ (val[{len-1}:0]++0#shift)}>.
+
+
   Definition arm_ldr_reg2il (Xn Xm Xt extend size S:N) :=
     let shift := match S with | 0 => 0 | _ => size end in
     let datasize := N.shiftl 8 size in
@@ -3076,15 +2831,19 @@ Section Decoder.
       var[Xt] := ucast 64 load[Xtemp[1000],1]
     }>.
 
-  Definition arm_ldrsb_reg2il (Xn Xm Xt size extend:N) :=
-    let calc_offset := ExtendReg (temp[9000]) Xm extend 0 in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],1])
-    }>.
+  (* Where w is the width to load from memory (8, 16 or 32) and w'
+     is the width to extend it to (32 or 64). *)
+  Definition arm_ldrs_reg2il_size (w w' Xn Xm Xt extend:N) :=
+    let offset := ExtendReg' 64 Xm extend 0 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let address := <{X[Xn]+offset}> in
+    let bytes := N.shiftr w 3 in
+    let data := <{load[address,bytes]}> in 
+    Some <{check; var[Xt] := ucast 64 (scast w' data)}>.
+
+  Definition arm_ldrsb_reg2il := arm_ldrs_reg2il_size 8.
+  Definition arm_ldrsh_reg2il := arm_ldrs_reg2il_size 16.
+  Definition arm_ldrsw_reg2il := arm_ldrs_reg2il_size 32 64.
 
   Definition arm_ldrh_reg2il (Xn Xm Xt extend S:N) :=
     let calc_offset := ExtendReg (temp[9000]) Xm extend S in
@@ -3094,27 +2853,6 @@ Section Decoder.
       if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
       (temp[1000] := Xtemp[1000] + Xtemp[9000]);
       var[Xt] := ucast 64 load[Xtemp[1000],2]
-    }>.
-
-  Definition arm_ldrsh_reg2il (Xn Xm Xt extend size S:N) :=
-    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      var[Xt] := ucast 64 (scast size load[Xtemp[1000],2])
-    }>.
-
-  Definition arm_ldrsw_reg2il (Xn Xm Xt extend S:N) :=
-    let shift := match S with 0 => 0 | _ => 2 end in
-    let calc_offset := ExtendReg (temp[9000]) Xm extend S in
-    let undefined := <{extend#3 & 2#3 = 0#3}> in <{
-      if undefined then exn 0 else nop end;
-      calc_offset;
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      (temp[1000] := Xtemp[1000] + Xtemp[9000]);
-      var[Xt] := scast 64 load[Xtemp[1000],4]
     }>.
 
   Definition arm_strb_reg2il (Xn Xm Xt extend:N) :=
@@ -3185,39 +2923,26 @@ Section Decoder.
     else UDF end.
 
 
-  Definition arm_ldraa2il_constr (Xn Xt S imm9:N) (wback wbunknown wbsuppress:bool) :=
-    let offset := <{scast 64 (S#1++imm9#9)}> in
-    let wbunknown := b2exp wbunknown in
-    let wbsuppress := b2exp wbsuppress in
-    let wback := b2exp wback in
-    <{
-      if (Xn # 5) = (31 # 5) then CheckSPAlignment else nop end; temp[1000] := X[Xn];
-      temp[1000] := Xtemp[1000] + offset;
-      var[Xt] := load[Xtemp[1000],8];
-      temp[1001] := Xtemp[1000];
-      if wback & !wbsuppress then
-        if wbunknown then temp[1001] := unknown 64 else nop end;
-        var[Xn] := Xtemp[1001]
-      else
-        nop
-      end
-    }>.
+  (* Assume AuthDA and AuthDB are nops. *)
+  Definition arm_ldraa2il_constr (Xn Xt S imm9:N) (wback wbunknown:bool) :=
+    let offset := (N.shiftl (scast 10 64 (cbits S 9 imm9)) 3) mod 2^64 in
+    let check := if Xn =? 31 then CheckSPAlignment else Nop in 
+    let address := <{X[Xn]+offset#64}> in
+    let data := <{load[address, 8]}> in 
+    let wbblock := if negb wback then Nop else
+                   let address := if wbunknown then <{unknown 64}> else address in
+                   <{var[Xn] := address}> in
+    Some <{check; var[Xt] := data; wbblock}>.
 
   Definition arm_ldraa2il (Xn Xt S imm9:N) (wback:bool) :=
-    let wback' := wback in
-    let wback := b2exp wback in
-    let constraint_check := <{ wback & (Xt#5 = Xn#5) & (Xn#5 <> 31#5) }> in <{
-      if ! constraint_check then {arm_ldraa2il_constr Xn Xt S imm9 wback' false false} else
-      (* Constraint_NOP *)
-      if unknown 1 then nop else
-      (* Constraint_UNDEF *)
-      if unknown 1 then havoc else
-      (* Constraint_UNKNOWN *)
-      if unknown 1 then {arm_ldraa2il_constr Xn Xt S imm9 wback' true false} else
-      (* Constraint_WBSUPPRESS *)
-      {arm_ldraa2il_constr Xn Xt S imm9 wback' false true}
-      end end end end
-    }>.
+    let constraint := wback && (Xn=?Xt) && (negb (Xn=?31)) in 
+    if negb constraint then arm_ldraa2il_constr Xn Xt S imm9 wback false else
+    match oracle 1, oracle 2 with
+        | true, true => None (* Constraint_UNDEF *)
+        | false, true => Some Nop (* Constraint_NOP *) 
+        | true, wback => arm_ldraa2il_constr Xn Xt S imm9 wback false
+        | false, false => arm_ldraa2il_constr Xn Xt S imm9 wback true
+    end.
 
 (*pac*)
   Definition load_store_reg_pac :=
@@ -4997,25 +4722,45 @@ Proof.
   intros; unfold_stmt. repeat econs.
 Qed.
 
+Tactic Notation "unfold" "left" "in" hyp(H) :=
+  match type of H with
+  | _ ?l _ => revert H; unfold_rec l; intros H
+  end.
+
+Tactic Notation "unfold" "right" "in" hyp(H) :=
+  match type of H with
+  | _ _ ?r => revert H; unfold_rec r; intros H
+  end.
+
+Local Lemma unsome_ {A:Type}:
+  forall (a b:A), Some a = Some b -> a = b.
+Proof. intros a b H; inversion H; subst; reflexivity. Qed.
+
+Tactic Notation "unsome" hyp(H) :=
+  apply unsome_ in H.
+
 Local Lemma hastyp_arm_stxr2il_constr:
-  forall c (size Xn Xs Xt:N) (rtunknown rnunknown:exp)
+  forall c (size Xn Xs Xt:N) (rtunknown rnunknown:bool) q
   (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64)
-  (B6:hastyp_exp c rnunknown 64) (B7:hastyp_exp (update c (V_TEMP 1000) (Some 64)) rtunknown 64)
-  (PF:pfsub armc c),
-  hastyp_stmt armc c (arm_stxr2il_constr size Xn Xs Xt rtunknown rnunknown) armc.
+  (PF:pfsub armc c) (E:arm_stxr2il_constr size Xn Xs Xt rtunknown rnunknown = Some q),
+  hastyp_stmt armc c q armc.
 Proof.
-  intros; unfold_stmt. repeat econs; try eassumption.
+  intros. unfold left in E. repeat destruct_match_in E; unsome E; subst q.
+  all: repeat econs.
 Qed.
 
 Local Lemma hastyp_arm_stxr2il_size:
-  forall c (size Xn Xs Xt:N) (rtunknown rnunknown:exp)
+  forall (size Xn Xs Xt:N) q
   (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64)
-  (PF:pfsub armc c),
-  hastyp_stmt armc armc (arm_stxr2il_size size Xn Xs Xt) armc.
+  (E:arm_stxr2il_size size Xn Xs Xt = Some q),
+  hastyp_stmt armc armc q armc.
 Proof.
-  intros; unfold_stmt. time repeat econs with hastyp_arm_stxr2il_constr.
+  intros; unfold left in E. repeat destruct_match_in E; try unfold left in E; discriminate E || unsome E; subst q.
+  all: time repeat econs.
+  all: solve_armc_sub.
 Qed.
 
+(* TODO retype the updated *_constr definitions and the instructions that use them. *)
 Local Lemma hastyp_arm_stxp2il_constr:
   forall c (size Xn Xs Xt Xt2:N) (rtunknown rnunknown:exp)
   (B1:Xn<2^5) (B2:Xs<2^5) (B3:Xt<2^5) (B4:size<=64) (B5:Xt2<2^5)
@@ -5966,12 +5711,12 @@ Admitted.
   (*imm pre/post-indexed*)
   | ARM_INDEXED ARM_STRB_IMM Xn Xt imm912 size signed wback postindex => arm_strb_imm2il Xn Xt imm912 signed wback postindex
   | ARM_INDEXED ARM_LDRB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrb_imm2il Xn Xt imm912 signed wback postindex
-  | ARM_INDEXED ARM_LDRSB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsb_imm2il Xn Xt imm912 size signed wback postindex
+  | ARM_INDEXED ARM_LDRSB_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsb_imm2il size Xn Xt imm912 signed wback postindex
   | ARM_INDEXED ARM_LDR_IMM Xn Xt imm912 size signed wback postindex => arm_ldr_imm2il Xn Xt imm912 size signed wback postindex
   | ARM_INDEXED ARM_STRH_IMM Xn Xt imm912 size signed wback postindex => arm_strh_imm2il Xn Xt imm912 size signed wback postindex (*TODO: whats size?*)
   | ARM_INDEXED ARM_LDRH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrh_imm2il Xn Xt imm912 signed wback postindex
-  | ARM_INDEXED ARM_LDRSH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsh_imm2il Xn Xt imm912 size signed wback postindex
-  | ARM_INDEXED ARM_STR_IMM Xn Xt imm912 size signed wback postindex => arm_str_imm2il Xn Xt imm912 size signed wback postindex
+  | ARM_INDEXED ARM_LDRSH_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsh_imm2il size Xn Xt imm912 signed wback postindex
+  | ARM_INDEXED ARM_STR_IMM Xn Xt imm912 size signed wback postindex => arm_str_imm2il size Xn Xt imm912 signed wback postindex
   | ARM_INDEXED ARM_LDRSW_IMM Xn Xt imm912 size signed wback postindex => arm_ldrsw_imm2il Xn Xt imm912 signed wback postindex
   (*register unprivileged*)
   | ARM_REG_UNPRIVILEGED ARM_STTRB Rn Rt imm9 size => arm_sttrb2il Rn Rt imm9
@@ -6016,10 +5761,10 @@ Admitted.
   (*load/store register*)
   | ARM_LD_STR_REG ARM_STRB_REG Xn Xm Xt extend _ _ => arm_strb_reg2il Xn Xm Xt extend
   | ARM_LD_STR_REG ARM_LDRB_REG Xn Xm Xt extend _ _ => arm_ldrb_reg2il Xn Xm Xt extend
-  | ARM_LD_STR_REG ARM_LDRSB_REG Xn Xm Xt extend size _=> arm_ldrsb_reg2il Xn Xm Xt size extend
+  | ARM_LD_STR_REG ARM_LDRSB_REG Xn Xm Xt extend size _=> arm_ldrsb_reg2il size Xn Xm Xt extend
   | ARM_LD_STR_REG ARM_STRH_REG Xn Xm Xt extend _ s => arm_strh_reg2il Xn Xm Xt extend s
   | ARM_LD_STR_REG ARM_LDRH_REG Xn Xm Xt extend _ s => arm_ldrh_reg2il Xn Xm Xt extend s
-  | ARM_LD_STR_REG ARM_LDRSH_REG Xn Xm Xt extend size s => arm_ldrsh_reg2il Xn Xm Xt extend size s
+  | ARM_LD_STR_REG ARM_LDRSH_REG Xn Xm Xt extend size s => arm_ldrsh_reg2il size Xn Xm Xt extend s
   | ARM_LD_STR_REG ARM_STR_REG Xn Xm Xt extend size s => arm_str_reg2il Xn Xm Xt extend size s
   | ARM_LD_STR_REG ARM_LDR_REG Xn Xm Xt extend size s => arm_ldr_reg2il Xn Xm Xt extend size s
   | ARM_LD_STR_REG ARM_LDRSW_REG Xn Xm Xt extend _ s => arm_ldrsw_reg2il Xn Xm Xt extend s
