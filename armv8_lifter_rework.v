@@ -182,6 +182,7 @@ Definition arm64_R n N :=
      if (N =? 32) then Cast CAST_LOW 32 (Var (arm_varid n))
      else Var (arm_varid n).
 (*x is data size := 32/64*)
+
 Notation "R[ n , x ]" := (arm64_R n x) (at level 0).
 
 Definition SP_read w := <{lcast w {Var R_SP} }>.
@@ -3251,7 +3252,8 @@ Section Decoder.
   .
 
   (*returns signed/unsigned extended value*)
-  Definition ExtendReg2 reg exttype shift datasize:=
+  Definition ExtendReg2 reg exttype datasize (shift:N):=
+  if (N.ltb 4 shift) then Unknown shift else
   let (unsigned, len) := match exttype with
   | ExtendType_SXTB => (false, 8)
   | ExtendType_SXTH => (false, 16)
@@ -3265,7 +3267,9 @@ Section Decoder.
   let min := N.min len (datasize-shift) in
   let cast := if unsigned then CAST_UNSIGNED else CAST_SIGNED in
   let slice := Extract (min - 1) 0 (R[ reg , datasize ]) in  (* X reg N: read reg as an N-bit register value *)
-  BinOp OP_LSHIFT (Cast cast datasize slice) (Word shift datasize).
+  (* so my like min*)
+  let extended_slice := Cast cast datasize slice in
+  BinOp OP_LSHIFT extended_slice (Word shift datasize).
 
   Definition ShiftC value shiftype amount datasize:=
   let result :=
@@ -3306,7 +3310,7 @@ Section Decoder.
          let operand1 := R[ Rn , datasize] in
   let result := op operand1 operand2 in
   let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
-  arm_data_il assign assign_flags Rn result64 (Unknown datasize)
+  arm_data_il assign assign_flags Rn result64 (Unknown 4)
   end.
 
   (*op : the actual AddWithCarry
@@ -3314,9 +3318,9 @@ Section Decoder.
   Definition arm_data_r_addwithcarry (cond sf s shift Rm:N) imm6 (Rn:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
   let datasize := if sf =? 1 then 64 else 32 in
   let shift_type := DecodeShift shift in
+  if shift=? 3 then Nop else 
   match (sf, (N.testbit imm6 5)) with
   |(0, true) => Nop
-  |(3,_) => Nop
   | _ =>  let operand2 := ShiftReg Rm shift_type (Word imm6 datasize) datasize in
           let operand1 := R[ Rn , datasize] in
   let (result, nzcv) := op operand1 operand2 (Unknown datasize) in
@@ -3351,9 +3355,11 @@ Section Decoder.
   let datasize := if sf =? 1 then 64 else 32 in
   let shift_type := DecodeShift op2 in
   let operand2 := R[ Rm , datasize] in
-  let result := ShiftReg Rn shift_type (BinOp OP_MOD operand2 (Word datasize datasize)) datasize in
+  (**let mod2 := Cast CAST_UNSIGNED 64 (BinOp OP_MOD operand2 (Word datasize datasize)) in*)
+  let mod2 :=  BinOp OP_MOD operand2 (Word datasize datasize) in
+  let result := ShiftReg Rn shift_type (mod2) datasize in
   let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
-  arm_data_il assign assign_flags Rd result64 (Unknown datasize)
+  arm_data_il assign assign_flags Rd result64 (Unknown 4)
   .
 
   Definition arm_data_r_with_carry (sf Rm Rn Rd:N) (assign assign_flags: bool) (op: exp -> exp -> exp->exp*exp):=
@@ -3362,7 +3368,7 @@ Section Decoder.
   let operand1 := R[ Rn, datasize ] in
   let (result,_) := op operand1 operand2 (Word 0 1) in
   let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
-  arm_data_il assign assign_flags Rd result64 (Unknown datasize)
+  arm_data_il assign assign_flags Rd result64 (Unknown 4)
   .
 
   Definition arm_data_r_with_cond (op:arm_data_r_inst) (cond sf Rm Rn nzcv:N):=
@@ -3803,7 +3809,8 @@ Local Ltac e_stypc c :=
       (c' := update c1 (v) (Some _)); [> right | | try apply update_some_c]; try reflexivity
   | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
   | |- hastyp_exp _ _ _  => new_etyp
-  end.
+  | |- _ ⊆ _ => try reflexivity
+  end. 
 
 Local Ltac styp := stypc armc.
 Local Ltac estyp := e_stypc armc. (* choice of context has no effect. *)
@@ -3939,6 +3946,45 @@ Ltac awc sf Rn sh:=
   match goal with
   | e: _ = (_,_) |- _ => awc_branch32 e sh Rn
   end.
+
+Local Lemma hastyp_ShiftC :
+forall reg shiftype amount datasize,
+(0 < 2 ^ datasize) -> (amount < 2 ^ datasize) ->
+(datasize = 32 \/ datasize = 64)->
+hastyp_exp arm8typctx
+(ShiftC R[ reg, datasize] (DecodeShift shiftype)
+<{ {amount} # {datasize} }> datasize) datasize.
+Proof.
+  intros. unfold ShiftC. destruct_match.
+  - 
+  etyp'. all: try assumption. 
+  all: destruct H1; subst; psimpl; etyp'.
+  all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
+  - 
+  etyp'. all: try assumption. 
+  all: destruct H1; subst; psimpl; etyp'.
+  all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
+  - 
+  etyp'. all: try assumption. 
+  all: destruct H1; subst; psimpl; etyp'.
+  all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
+  - 
+  etyp'. all: try assumption. 
+  all: destruct H1; subst; psimpl; etyp'.
+  all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
+Qed.
+
+
+Local Lemma hastyp_ShiftReg :
+  forall reg shiftype amount datasize,
+  (datasize = 32 \/ datasize = 64)->
+  (amount < 2 ^ datasize)->
+  hastyp_exp armc (ShiftReg reg (DecodeShift shiftype) <{ {amount} # {datasize} }>
+datasize) datasize.
+Proof.
+  intros. unfold ShiftReg. eapply hastyp_ShiftC; try assumption. lia.
+Qed.
+
 
 Local Lemma hastyp_arm_data_imm:
   forall op sf s sh imm12 Rn Rd,
@@ -5110,6 +5156,243 @@ Local Lemma hastyp_arm_mov_imm:
 Proof.
 Admitted.
 
+Ltac match_awcs:=
+repeat match goal with 
+  | |- armc ⊆ armc => reflexivity
+  | |- hastyp_exp armc (ShiftReg _ _ _ _) _ =>
+  eapply hastyp_ShiftReg
+  | |- hastyp_exp armc _ _ => (assumption || estyp)
+  | |- _ = _ \/ _ = _ => lia
+  | |- _ < 2 ^_ => lia
+  | |- armc _ = Some (sizeof_c armc _) =>
+  unfold sizeof_c; rewrite typeof_arm_varid; lia
+  | |- _ <= sizeof_c armc _ =>
+   unfold sizeof_c; rewrite typeof_arm_varid; lia 
+  end. 
+
+Local Lemma hastyp_arm_datashft_reg2il:
+  forall op sf s shift Rm Rd imm6 Rn,
+  (sf = 1\/ sf =0)-> (imm6 < 2 ^ 32) ->
+    hastyp_stmt armc armc (arm_datashft_reg2il op 0 sf s shift Rm Rd imm6 Rn) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct (shift =? 3) eqn:?. 
+  all: destruct (N.testbit imm6 5) eqn:Hbit. 
+  all: try eapply TNop; try reflexivity.
+  all: destruct_match_rmr; awc_sub_branch e. 
+  all: match_awcs.
+Qed.
+
+Local Lemma hastyp_arm_logshft_reg2il:
+forall op sf shift Rm Rd imm6 Rn,
+(sf = 1\/ sf =0)-> (imm6 < 2 ^ 32) ->
+hastyp_stmt armc armc (arm_logshft_reg2il op 0 sf 0 shift Rm Rd imm6 Rn) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct (N.testbit imm6 5) eqn:Hbit.
+  all: try eapply TNop; try reflexivity.
+  all: try eapply hastyp_arm_data_il; try reflexivity.
+  all: try estyp.
+  all: match_awcs.
+Qed.
+
+Local Lemma hastyp_ExtendReg2:
+forall imm3 Rm option_ datasize,
+(datasize=32) \/ (datasize=64) ->
+hastyp_exp armc
+(ExtendReg2 Rm (DecodeRegExtend option_) imm3 datasize) datasize.
+Proof.
+  intros. unfold ExtendReg2. destruct_match_rmr.
+  eapply TUnknown.
+  destruct H. subst. discriminate e. 
+   subst. discriminate e.
+Qed. 
+
+Local Lemma hastyp_arm_extend_reg2il:
+forall op sf s Rm option_ imm3 Rn Rd,
+(sf = 1\/ sf =0)-> (imm3 < 2 ^ 32) ->
+hastyp_stmt armc armc (arm_extend_reg2il op 0 sf s Rm option_ imm3 Rn Rd) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct (4 <? imm3) eqn:Hbit.
+  all: try eapply TExn; try reflexivity.
+  all: destruct (Rn =?31) eqn: Hbit2.
+  all: destruct_match_rmr; awc_sub_branch e.
+  all: match_awcs.
+  all: unfold sizeof_c; reflexivity. 
+Qed.
+
+Local Lemma hastyp_arm_withcarry_2il:
+forall op sf Rm Rn Rd,
+(sf = 1\/ sf =0)->
+hastyp_stmt armc armc (arm_withcarry_2il op sf Rm Rn Rd) armc.
+Proof. 
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct_match_rmr; awc_sub_branch e.
+  all: match_awcs.
+  all: reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_data_r_shift_il:
+forall sf Rm op2 Rn Rd,
+(sf = 1\/ sf =0)->
+hastyp_stmt armc armc (arm_data_r_shift_il sf Rm op2 Rn Rd true false) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct H; subst; psimpl.
+  all: destruct_match_rmr; 
+  eapply hastyp_arm_data_il.
+  all: try reflexivity.
+  all: try eapply TUnknown.
+  - unfold ShiftReg; unfold ShiftC; destruct_match; estyp.
+  - discriminate. 
+  - discriminate.
+  - eapply TCast.
+  unfold ShiftReg. unfold ShiftC. destruct_match. etyp. 
+Admitted.
+
+Local Lemma hastyp_arm_data_i_with_cond:
+forall sf Rn imm nzcv cond,
+(sf = 1\/ sf =0)-> 
+(cond = 1\/ cond =0)->
+(nzcv < 2 ^ 4) ->
+(imm < 2 ^ 32) ->
+hastyp_stmt armc armc (arm_data_i_with_cond (ARM_CCMN_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct H; subst. 
+  all: destruct H0; subst; psimpl.
+  all: destruct_match_rmr; awc_sub_branch e.
+  all: match_awcs.
+  all: eapply hastyp_ConditionHolds.
+  all: match_awcs.
+Qed.
+
+Local Lemma hastyp_arm_mov_imm:
+  forall op Rd imm16 size shift,
+    hastyp_stmt armc armc (arm_mov_imm2il op Rd imm16 size shift) armc.
+Proof.
+Admitted.
+
+Ltac match_awcs:=
+repeat match goal with 
+  | |- armc ⊆ armc => reflexivity
+  | |- hastyp_exp armc (ShiftReg _ _ _ _) _ =>
+  eapply hastyp_ShiftReg
+  | |- hastyp_exp armc _ _ => (assumption || estyp)
+  | |- _ = _ \/ _ = _ => lia
+  | |- _ < 2 ^_ => lia
+  | |- armc _ = Some (sizeof_c armc _) =>
+  unfold sizeof_c; rewrite typeof_arm_varid; lia
+  | |- _ <= sizeof_c armc _ =>
+   unfold sizeof_c; rewrite typeof_arm_varid; lia 
+  end. 
+
+Local Lemma hastyp_arm_datashft_reg2il:
+  forall op sf s shift Rm Rd imm6 Rn,
+  (sf = 1\/ sf =0)-> (imm6 < 2 ^ 32) ->
+    hastyp_stmt armc armc (arm_datashft_reg2il op 0 sf s shift Rm Rd imm6 Rn) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct (shift =? 3) eqn:?. 
+  all: destruct (N.testbit imm6 5) eqn:Hbit. 
+  all: try eapply TNop; try reflexivity.
+  all: destruct_match_rmr; awc_sub_branch e. 
+  all: match_awcs.
+Qed.
+
+Local Lemma hastyp_arm_logshft_reg2il:
+forall op sf shift Rm Rd imm6 Rn,
+(sf = 1\/ sf =0)-> (imm6 < 2 ^ 32) ->
+hastyp_stmt armc armc (arm_logshft_reg2il op 0 sf 0 shift Rm Rd imm6 Rn) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct (N.testbit imm6 5) eqn:Hbit.
+  all: try eapply TNop; try reflexivity.
+  all: try eapply hastyp_arm_data_il; try reflexivity.
+  all: try estyp.
+  all: match_awcs.
+Qed.
+
+Local Lemma hastyp_ExtendReg2:
+forall imm3 Rm option_ datasize,
+(datasize=32) \/ (datasize=64) ->
+hastyp_exp armc
+(ExtendReg2 Rm (DecodeRegExtend option_) imm3 datasize) datasize.
+Proof.
+  intros. unfold ExtendReg2. destruct_match_rmr.
+  eapply TUnknown.
+  destruct H. subst. discriminate e. 
+   subst. discriminate e.
+Qed. 
+
+Local Lemma hastyp_arm_extend_reg2il:
+forall op sf s Rm option_ imm3 Rn Rd,
+(sf = 1\/ sf =0)-> (imm3 < 2 ^ 32) ->
+hastyp_stmt armc armc (arm_extend_reg2il op 0 sf s Rm option_ imm3 Rn Rd) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct (4 <? imm3) eqn:Hbit.
+  all: try eapply TExn; try reflexivity.
+  all: destruct (Rn =?31) eqn: Hbit2.
+  all: destruct_match_rmr; awc_sub_branch e.
+  all: match_awcs.
+  all: unfold sizeof_c; reflexivity. 
+Qed.
+
+Local Lemma hastyp_arm_withcarry_2il:
+forall op sf Rm Rn Rd,
+(sf = 1\/ sf =0)->
+hastyp_stmt armc armc (arm_withcarry_2il op sf Rm Rn Rd) armc.
+Proof. 
+  intros. unfold_stmt.
+  destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
+  all: destruct_match_rmr; awc_sub_branch e.
+  all: match_awcs.
+  all: reflexivity.
+Qed.
+
+Local Lemma hastyp_arm_data_r_shift_il:
+forall sf Rm op2 Rn Rd,
+(sf = 1\/ sf =0)->
+hastyp_stmt armc armc (arm_data_r_shift_il sf Rm op2 Rn Rd true false) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct H; subst; psimpl.
+  all: destruct_match_rmr; 
+  eapply hastyp_arm_data_il.
+  all: try reflexivity.
+  all: try eapply TUnknown.
+  - unfold ShiftReg; unfold ShiftC; destruct_match; estyp.
+  - discriminate. 
+  - discriminate.
+  - eapply TCast.
+  unfold ShiftReg. unfold ShiftC. destruct_match. etyp. 
+Admitted.
+
+Local Lemma hastyp_arm_data_i_with_cond:
+forall sf Rn imm nzcv cond,
+(sf = 1\/ sf =0)-> 
+(cond = 1\/ cond =0)->
+(nzcv < 2 ^ 4) ->
+(imm < 2 ^ 32) ->
+hastyp_stmt armc armc (arm_data_i_with_cond (ARM_CCMN_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond) armc.
+Proof.
+  intros. unfold_stmt.
+  destruct H; subst. 
+  all: destruct H0; subst; psimpl.
+  all: destruct_match_rmr; awc_sub_branch e.
+  all: match_awcs.
+  all: eapply hastyp_ConditionHolds.
+  all: match_awcs.
+Qed.
 
   (*final arm2il-C6.2.5*)
   Definition arm2il (a:addr) inst:=
@@ -5117,7 +5400,7 @@ Admitted.
   (*DP imm*)
   | ARM_DATA_IMM op sf s sh imm12 Rn Rd => arm_data_imm2il op sf s sh imm12 Rn Rd
   (*logical imm*)
-  | ARM_LOGICAL_IMM op Rn Rd immr imms sf n_ => arm_log_imm2il op Rn Rd immr imms sf n_
+  | ARM_LOGICAL_IMM op Rn Rd immr imms sf n_ => Nop
   (*move wide*)
   | ARM_MOVE_IMM op Rd imm16 size shift => arm_mov_imm2il op Rd imm16 size shift
   (*PC relative addressing*)
@@ -5309,6 +5592,199 @@ Theorem welltyped_arm82il:
 Proof.
   intros. unfold_stmt. styp. now apply N.mod_lt.
   remember (arm_decode n) as i.
-  destruct i. apply hastyp_arm_data_imm. admit.
+  destruct i. 
+  
+    let il := match inst with
+  (*DP imm*)
+  | hastyp_stmt armc armc (arm_data_imm2il op sf s sh imm12 Rn Rd) armc => hastyp_arm_data_imm2il op sf s sh imm12 Rn Rd
+  (*logical imm*)
+  | hastyp_stmt armc armc (arm_log_imm2il op Rn Rd immr imms sf n_) armc => hastyp_arm_log_imm2il op Rn Rd immr imms sf n_
+  (*move wide*)
+  | hastyp_stmt armc armc (arm_mov_imm2il op Rd imm16 size shift) armc => hastyp_arm_mov_imm2il op Rd imm16 size shift
+  (*PC relative addressing*)
+(*| ARM_ADRP_IMM
+  | ARM_ADR_IMM *)
+  (*compare immediate*)
+  | hastyp_stmt armc armc (arm_data_i_with_cond (ARM_CCMN_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond) armc => 
+  | hastyp_stmt armc armc (arm_data_i_with_cond (ARM_CCMP_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond) armc => 
+  (*DP reg*)
+  (*arith extended*)
+  |  hastyp_stmt armc armc (arm_extend_reg2il op 0 sf s Rm option_ imm3 Rn Rd) armc =>
+  (*arith shifted*)
+  | hastyp_stmt armc armc (arm_datashft_reg2il op 0 sf s shift Rm Rd imm6 Rn) armc =>
+  (*logical shifted*)
+  |  hastyp_stmt armc armc (arm_logshft_reg2il op 0 sf 0 shift Rm Rd imm6 Rn) armc =>
+  (*carry operations*)
+  |  hastyp_stmt armc armc (arm_withcarry_2il op sf Rm Rn Rd) armc =>
+  (*shift register*)
+  | hastyp_stmt armc armc (arm_data_r_shift_il sf Rm op2 Rn Rd true false) armc =>
+  (*conditional comparison*)
+  | hastyp_stmt armc armc (arm_data_r_with_cond ARM_CCMN_REG_V cond sf Rm Rn nzcv) armc =>
+  | hastyp_stmt armc armc (arm_data_r_with_cond ARM_CCMP_REG_V cond sf Rm Rn nzcv) armc =>
+  (*rev*)
+  | hastyp_stmt armc armc (arm_data_rev_il op sf Rd) armc=> hastyp_
+  (*branch*)
+  | hastyp_stmt armc armc (arm_b_cond2il cond imm19) armc=> hastyp_
+  (*unconditional branch(register)*)
+  | hastyp_stmt armc armc (arm_br2il Xn) armc => hastyp_
+  |  hastyp_stmt armc armc (arm_blr2il Xn) armc => hastyp_
+  |  hastyp_stmt armc armc (arm_ret2il Xn) armc => hastyp_
+  (* branch(imm)*)
+  |  hastyp_stmt armc armc (arm_b2il imm26) armc => hastyp_
+  | hastyp_stmt armc armc (arm_bl2il imm26) armc => hastyp_
+  (*ranch(imm)*)
+  |  hastyp_stmt armc armc (arm_cbz2il Rt imm19 size) armc => hastyp_
+  | hastyp_stmt armc armc (arm_cbnz2il Rt imm19 size) armc => hastyp_
+  (*ch(imm)*)
+  | hastyp_stmt armc armc ( arm_tbz2il Rt imm14 b5 b40) armc => hastyp_
+  | hastyp_stmt armc armc ( arm_tbnz2il Rt imm14 b5 b40) armc => hastyp_
+(*Loads and Stores*)
+  (*exclusive/others*)
+  | hastyp_stmt armc armc (arm_stxrb2il Xn Xs Xt) armc
+  | hastyp_stmt armc armc ( arm_stlxrb2il Xn Xs Xt) armc
+  | hastyp_stmt armc armc (arm_ldxrb2il Xn Xt) armc
+  | hastyp_stmt armc armc (arm_ldxrh2il Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_ldaxrh2il Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_ldaxrb2il Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_stllrb2il Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_stllrh2il Xn Xt) armc
+  | hastyp_stmt armc armc (arm_stlrh2il Xn Xt) armc
+  | hastyp_stmt armc armc (arm_stlrb2il Xn Xt) armc
+  | hastyp_stmt armc armc (arm_stxrh2il Xn Xs Xt) armc
+  | hastyp_stmt armc armc ( arm_stlxrh2il Xn Xs Xt) armc
+  | hastyp_stmt armc armc ( arm_ldlarb2il Xn Xt) armc
+  |  hastyp_stmt armc armc (arm_ldarb2il Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_ldarh2il Xn Xt) armc
+  |hastyp_stmt armc armc ( arm_ldlarh2il Xn Xt) armc
+  | hastyp_stmt armc armc (arm_stxr2il size Xn Xs Xt) armc
+  | hastyp_stmt armc armc ( arm_stxr2il_size size Xn Xs Xt) armc
+  | hastyp_stmt armc armc (arm_stxp2il size Xn Xs Xt Xt2) armc
+  | hastyp_stmt armc armc ( arm_stlxp2il size Xn Xs Xt Xt2) armc
+  | hastyp_stmt armc armc (arm_ldxr2il size Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_ldaxr2il size Xn Xt) armc
+  | hastyp_stmt armc armc (arm_ldxp2il size Xn Xt Xt2) armc
+  |  hastyp_stmt armc armc (arm_stllr2il size Xn Xt) armc
+  | hastyp_stmt armc armc (arm_stlr2il size Xn Xt) armc
+  | hastyp_stmt armc armc ( arm_ldlar2il size Xn Xt) armc
+  | hastyp_stmt armc armc (arm_ldar2il size Xn Xt) armc
+  (*bunch of variants for these, refer to page C4-230*)
+  |hastyp_stmt armc ( arm_casp2il Xn Xs Xt size) armc
+  |hastyp_stmt armc (  arm_casb2il Xn Xs Xt) armc
+  |hastyp_stmt armc ( arm_cash2il Xn Xs Xt) armc
+  |hastyp_stmt armc ( arm_cas2il Xn Xs Xt size) armc
+  (*LDAPR/STLR unscaled immediate*)
+  |hastyp_armc armc armc (arm_stlurb2il Xn Xt imm9) armc => hastyp_arm_stlurb2il Xn Xt imm9
+  |hastyp_armc armc armc ( arm_ldapurb2il Xn Xt (Word imm9 64)) armc => hastyp_arm_ldapurb2il Xn Xt (Word imm9 64)
+  |hastyp_armc armc armc ( arm_ldapursb2il Xn Xt (Word imm9 64) size) armc => hastyp_arm_ldapursb2il Xn Xt (Word imm9 64) size
+  |hastyp_armc armc armc (arm_stlurh2il Xn Xt (Word imm9 64)) armc => hastyp_arm_stlurh2il Xn Xt (Word imm9 64)
+  |hastyp_armc armc armc ( arm_ldapurh2il Xn Xt (Word imm9 64)) armc => hastyp_arm_ldapurh2il Xn Xt (Word imm9 64)
+  |hastyp_armc armc armc ( arm_ldapursh2il Xn Xt (Word imm9 64) size) armc => hastyp_arm_ldapursh2il Xn Xt (Word imm9 64) size
+  |hastyp_armc armc armc (arm_ldapur2il Xn Xt (Word imm9 64) size) armc => hastyp_arm_ldapur2il Xn Xt (Word imm9 64) size
+  |hastyp_armc armc armc (arm_ldapursw2il Xn Xt (Word imm9 64) size) armc => hastyp_arm_ldapursw2il Xn Xt (Word imm9 64) size
+  |hastyp_armc armc armc ( arm_stlur2il Xn Xt (Word imm9 64) size) armc => hastyp_arm_stlur2il Xn Xt (Word imm9 64) size
+  |hastyp_armc armc armc (arm_prfm_lit2il Xt imm9) armc => hastyp_arm_prfm_lit2il Xt imm9
+  |hastyp_armc armc armc (arm_ldaprb2il Xn Xt) armc => hastyp_arm_ldaprb2il Xn Xt
+  |hastyp_armc armc armc (arm_ldaprh2il Xn Xt) armc => hastyp_arm_ldaprh2il Xn Xt
+  |hastyp_armc armc armc ( arm_ldapr2il size Xn Xt) armc => hastyp_arm_ldapr2il size Xn Xt
+  (*load/store memory tags*)
+  |hastyp_stmt armc armc(  arm_stg2il Xn Xt imm9 writeback printindex)
+  |hastyp_stmt armc armc( arm_stzg2il Xn Xt imm9 writeback printindex)
+  |hastyp_stmt armc armc( arm_stzgm2il Xt Xn)
+  |hastyp_stmt armc armc( arm_ldg2il Xn Xt imm9)
+  |hastyp_stmt armc armc(  arm_st2g2il Xn Xt imm9 writeback printindex)
+  |hastyp_stmt armc armc( arm_stgm2il Xn Xt)
+  |hastyp_stmt armc armc(  arm_stz2g2il Xn Xt imm9 writeback printindex)
+  |hastyp_stmt armc armc(  arm_ldgm2il Xn Xt)
+  (*load register (literal)*)
+  |hastyp_stmt armc armc( arm_ldr_lit2il Xt imm19 size)
+  |hastyp_stmt armc armc( arm_ldrsw_lit2il Xt imm19)
+  |hastyp_stmt armc armc( arm_prfm_lit2il Xt imm19)
+  (*load/store no-allocate pair (offset)*)
+  |hastyp_stmt armc armc( arm_stnp2il Xn Xt Xt2 imm7 scale)
+  |hastyp_stmt armc armc( arm_stnp2il Xn Xt Xt2 imm7 scale)
+  (*load/store register pair (post-indexed, pre-indexed, offset)*)
+  |hastyp_stmt armc armc (arm_stp2il Xn Xt Xt2 imm7 scale wback postindex)
+  |hastyp_stmt armc armc (arm_ldp2il Xn Xt Xt2 imm7 scale wback postindex)
+  |hastyp_stmt armc armc (arm_ldpsw2il Xn Xt Xt2 imm7 wback postindex)
+  |hastyp_stmt armc armc (arm_stgp2il Xn Xt Xt2 imm7 wback postindex)
+  (*load/store register (unscaled immediate)*)
+  |hastyp_stmt armc armc ( arm_sturb2il Xn Xt imm9) armc => hastyp_arm_sturb2il Xn Xt imm9
+  |hastyp_stmt armc armc ( arm_ldurb2il Xn Xt imm9) armc => hastyp_arm_ldurb2il Xn Xt imm9
+  |hastyp_stmt armc armc (arm_ldursb2il Xn Xt imm9 size) armc => hastyp_arm_ldursb2il Xn Xt imm9 size
+  |hastyp_stmt armc armc ( arm_sturh2il Xn Xt imm9) armc => hastyp_arm_sturh2il Xn Xt imm9
+  |hastyp_stmt armc armc ( arm_ldurh2il Xn Xt imm9) armc => hastyp_arm_ldurh2il Xn Xt imm9
+  |hastyp_stmt armc armc (arm_ldursh2il Xn Xt imm9 size) armc => hastyp_arm_ldursh2il Xn Xt imm9 size
+  |hastyp_stmt armc armc ( arm_stur2il Xn Xt imm9 size) armc => hastyp_arm_stur2il Xn Xt imm9 size 
+  |hastyp_stmt armc armc ( arm_ldur2il Xn Xt imm9 size) armc => hastyp_arm_ldur2il Xn Xt imm9 size
+  |hastyp_stmt armc armc (arm_ldursw2il Xn Xt imm9) armc => hastyp_arm_ldursw2il Xn Xt imm9
+  (*imm pre/post-indexed*)
+  | hastyp_stmt armc armc (arm_strb_imm2il Xn Xt imm912 signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_ldrb_imm2il Xn Xt imm912 signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_ldrsb_imm2il Xn Xt imm912 size signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_ldr_imm2il Xn Xt imm912 size signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_strh_imm2il Xn Xt imm912 size signed wback postindex) armc (*TODO: whats size?*)
+  | hastyp_stmt armc armc (arm_ldrh_imm2il Xn Xt imm912 signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_ldrsh_imm2il Xn Xt imm912 size signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_str_imm2il Xn Xt imm912 size signed wback postindex) armc
+  | hastyp_stmt armc armc (arm_ldrsw_imm2il Xn Xt imm912 signed wback postindex) armc
+  (*register unprivileged*)
+  | hastyp_stmt armc armc ( arm_sttrb2il Rn Rt imm9) => hastyp_arm_sttrb2il Rn Rt imm9
+  | hastyp_stmt armc armc ( arm_ldtrb2il Rn Rt imm9) => hastyp_arm_ldtrb2il Rn Rt imm9
+  | hastyp_stmt armc armc ( arm_ldtrsb2il Rn Rt imm9 size) => hastyp_arm_ldtrsb2il Rn Rt imm9 size
+  | hastyp_stmt armc armc ( arm_sttrh2il Rn Rt imm9) => hastyp_arm_sttrh2il Rn Rt imm9
+  | hastyp_stmt armc armc ( arm_ldtrh2il Rn Rt imm9) => hastyp_arm_ldtrh2il Rn Rt imm9
+  | hastyp_stmt armc armc ( arm_ldtrsh2il Rn Rt imm9 size) => hastyp_arm_ldtrsh2il Rn Rt imm9 size
+  | hastyp_stmt armc armc (arm_sttr2il Rn Rt imm9 size) => hastyp_arm_sttr2il Rn Rt imm9 size
+  | hastyp_stmt armc armc (arm_ldtr2il Rn Rt imm9 size) => hastyp_arm_ldtr2il Rn Rt imm9 size
+  | hastyp_stmt armc armc ( arm_ldtrsw2il Rn Rt imm9) => hastyp_arm_ldtrsw2il Rn Rt imm9
+  (*atomic memory ops*)
+  | hastyp_stmt armc armc (arm_ldaddb2il Xn Xs Xt) => hastyp_arm_ldaddb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldclrb2il Xn Xs Xt) => hastyp_arm_ldclrb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldeorb2il Xn Xs Xt) => hastyp_arm_ldeorb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsetb2il Xn Xs Xt) => hastyp_arm_ldsetb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsmaxb2il Xn Xs Xt) => hastyp_arm_ldsmaxb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsminb2il Xn Xs Xt) => hastyp_arm_ldsminb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_lduminb2il Xn Xs Xt) => hastyp_arm_lduminb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_swpb2il Xn Xs Xt) armc => hastyp_arm_swpb2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldaddh2il Xn Xs Xt) armc => hastyp_arm_ldaddh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldclrh2il Xn Xs Xt) armc => hastyp_arm_ldclrh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldeorh2il Xn Xs Xt) armc => hastyp_arm_ldeorh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldseth2il Xn Xs Xt) armc => hastyp_arm_ldseth2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsmaxh2il Xn Xs Xt) armc => hastyp_arm_ldsmaxh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsminh2il Xn Xs Xt) armc => hastyp_arm_ldsminh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldumaxh2il Xn Xs Xt) armc => hastyp_arm_ldumaxh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_lduminh2il Xn Xs Xt) armc => hastyp_arm_lduminh2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_swph2il Xn Xs Xt) armc => hastyp_arm_swph2il Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldadd2il size Xn Xs Xt) armc => hastyp_arm_ldadd2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldclr2il size Xn Xs Xt) armc => hastyp_arm_ldclr2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldeor2il size Xn Xs Xt) armc => hastyp_arm_ldeor2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldset2il size Xn Xs Xt) armc => hastyp_arm_ldset2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsmax2il size Xn Xs Xt) armc => hastyp_arm_ldsmax2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldsmin2il size Xn Xs Xt) armc => hastyp_arm_ldsmin2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldumax2il size Xn Xs Xt) armc => hastyp_arm_ldumax2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_ldumin2il size Xn Xs Xt) armc => hastyp_arm_ldumin2il size Xn Xs Xt
+  | hastyp_stmt armc armc (arm_swp2il size Xn Xs Xt) armc => hastyp_arm_swp2il size Xn Xs Xt
+  (*there's a lot more here, not sure how much to add. Pages C4-240-250*)
+  (*pac*)
+  | hastyp_stmt armc armc (arm_ldraa2il Xn Xt s imm9 wback) armc => hastyp_arm_ldraa2il Xn Xt s imm9 wback
+  (*load/store register*)
+  | hastyp_stmt armc armc (arm_strb_reg2il Xn Xm Xt extend) armc => hastyp_arm_strb_reg2il Xn Xm Xt extend
+  | hastyp_stmt armc armc (arm_ldrb_reg2il Xn Xm Xt extend) armc => hastyp_arm_ldrb_reg2il Xn Xm Xt extend
+  | hastyp_stmt armc armc (arm_ldrsb_reg2il Xn Xm Xt size extend) armc => hastyp_arm_ldrsb_reg2il Xn Xm Xt size extend
+  | hastyp_stmt armc armc (arm_strh_reg2il Xn Xm Xt extend s) armc => hastyp_arm_strh_reg2il Xn Xm Xt extend s
+  | hastyp_stmt armc armc (arm_ldrh_reg2il Xn Xm Xt extend s) armc => hastyp_arm_ldrh_reg2il Xn Xm Xt extend s
+  | hastyp_stmt armc armc (arm_ldrsh_reg2il Xn Xm Xt extend size s) armc => hastyp_arm_ldrsh_reg2il Xn Xm Xt extend size s
+  | hastyp_stmt armc armc (arm_str_reg2il Xn Xm Xt extend size s) armc => hastyp_arm_str_reg2il Xn Xm Xt extend size s
+  | hastyp_stmt armc armc (arm_ldr_reg2il Xn Xm Xt extend size s) armc => hastyp_arm_ldr_reg2il Xn Xm Xt extend size s
+  | hastyp_stmt armc armc (arm_ldrsw_reg2il Xn Xm Xt extend s) armc => hastyp_arm_ldrsw_reg2il Xn Xm Xt extend s
+ (* | ARM_LD_STR_REG ARM_PRFM_REG Xn Xm Xt extend _ s => havoc*)
+  |_ => Admitted
+End Decoder.
+  
+  
+  
+  
+  
+
 Admitted.
 
