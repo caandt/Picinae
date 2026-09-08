@@ -3387,8 +3387,9 @@ Section Decoder.
     | _(*ARM_CCMP_REG_V*) =>  (AddWithCarry datasize operand1 (UnOp OP_NOT operand2) (Word 1 1))
     end in
   let nzcv_final := Ite (ConditionHolds cond) flags (Word nzcv 4) in
+  let flags := nzcv_final in
   (*if condition holds, nzcv final is the new flags from AddWithCarry else its just the value we read in*)
-  arm_data_il false true Rn result nzcv_final
+  arm_data_il false true Rn result flags
   .
 
   Definition arm_datashft_reg2il op (cond sf s shift Rm Rd:N) imm6 (Rn:N):=
@@ -3832,13 +3833,15 @@ Local Ltac etyp' :=
     | |- hastyp_exp _ (Cast _ ?c1 (Var (V_TEMP 990))) _ => eapply TCast with (w := 64) (c:=c1)
     | |- hastyp_exp _ (R[_,?s]) ?s => unfold arm64_R; cbn
     | |- hastyp_exp _ (SP_read ?s) ?s => unfold SP_read; cbn
+    |_: hastyp_exp _ ?x ?s|- hastyp_exp _ (BinOp OP_LT ?x _) _ =>eapply TBinOp with (bop:=OP_LT)
     | |- hastyp_exp _ (BinOp _ (Word _ ?s) _) _ => apply TBinOp with (w := s)
     | |- hastyp_exp _ (BinOp _ _ (Word _ ?s)) _ => apply TBinOp with (w := s)
     | |- hastyp_exp ?c1 (BinOp _ (Var ?v) _) _ => apply TBinOp with (w := sizeof_c c1 v)
     | |- hastyp_exp ?c1 (BinOp _ _ (Var ?v)) _ => apply TBinOp with (w := sizeof_c c1 v)
     | |- hastyp_exp _ (Concat (Word _ ?cw1) (Word _ ?cw2)) _ => apply TConcat with (w1 := cw1) (w2 := cw2)
     | |- hastyp_exp _ (Concat _ _) _ => eapply TConcat
-    | |- hastyp_exp _ (BinOp _ _ _) ?sw => apply TBinOp with (w := sw)
+    | |- hastyp_exp _ (BinOp OP_OR _ _) ?sw => eapply TBinOp with (bop :=OP_OR)
+    | |- hastyp_exp _ (BinOp ?bop _ _) ?sw => idtac "Apply BinOp "bop" with width "sw ; eapply TBinOp with (w := sw)
     | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]
     | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
     | |- hastyp_exp ?c1 (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof_c c1 v)
@@ -5532,16 +5535,7 @@ Proof.
   - eapply TBinOp with (bop:= OP_PLUS). estyp. assumption. assumption.
   eapply TCast with (w:= 1). assumption. lia.
   -  eapply hastyp_Pack_NZCV.
-  3:{
-  eapply TBinOp with (bop:=OP_OR).
-  eapply TBinOp with (bop:=OP_LT) (w:= datasize).
-  estyp;  (assumption||lia). assumption.
-  eapply TBinOp with (bop:=OP_AND). 
-  eapply TBinOp with (bop:=OP_EQ) (w:=datasize).
-  eapply TWord. eapply ones_bound. 
-  estyp;  (assumption||lia). assumption. }
-  all: estyp; (assumption || lia || eapply ones_bound).
-   
+  all: etyp; try (eassumption || lia || eapply ones_bound).
   Qed.
 
   Lemma hastyp_awc_in_arm_data_il_cond:
@@ -5560,17 +5554,8 @@ Proof.
   - eapply TBinOp with (bop:= OP_PLUS). estyp. assumption. assumption.
   eapply TCast with (w:= 1). assumption. lia.
   - estyp. eapply hastyp_ConditionHolds. reflexivity. assumption. eapply hastyp_Pack_NZCV.
-  3:{
-  eapply TBinOp with (bop:=OP_OR).
-  eapply TBinOp with (bop:=OP_LT) (w:= datasize).
-  estyp;  (assumption||lia). assumption.
-  eapply TBinOp with (bop:=OP_AND). 
-  eapply TBinOp with (bop:=OP_EQ) (w:=datasize).
-  eapply TWord. eapply ones_bound. 
-  estyp;  (assumption||lia). assumption. }
-  all: try estyp;try (assumption || lia || eapply ones_bound).
-   
-  Qed.
+  all: try etyp;try (eassumption || lia || eapply ones_bound).
+  Admitted.
 
 Theorem welltyped_arm82il:
   forall a n imm imm16 size shift imm12 nzcv,
@@ -5599,7 +5584,6 @@ Proof.
     all: try eapply TNop; try reflexivity. (*921*)
     all: try eapply TExn; try reflexivity. 
     all: try unfold SP_read. (*428*)
-    412: { }
     all: try match goal with
     | |- context[ConditionHolds] =>
     do 2 try match goal with [ |- context [if ?c then _ else _] ] => destruct c end;
@@ -5608,7 +5592,7 @@ Proof.
     | unfold sizeof_c; rewrite typeof_arm_varid | lia | estyp]
     | |- context[AddWithCarry] => 
     repeat try match goal with [ |- context [if ?c then _ else _] ] => destruct c end;
-     eapply hastyp_awc_in_arm_data_il; 
+     try eapply hastyp_awc_in_arm_data_il; 
      try destruct_match;
      try repeat first [eapply N.lt_le_trans; [eapply xbits_bound |  psimpl; lia]
     | unfold sizeof_c; rewrite typeof_arm_varid | lia | estyp]
