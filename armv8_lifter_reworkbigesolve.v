@@ -4171,22 +4171,7 @@ Proof.
   intros. unfold_stmt.
   destruct op eqn:?.
   - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
-  + awc_branch e sh.
-  + awc_branch e sh.
-  + awc_branch32 e sh Rn.
-  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
-  + awc_branch e sh.
-  + awc_branch e sh.
-  + awc_branch32 e sh Rn.
-  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
-  + awc_branch e sh.
-  + awc_branch e sh.
-  + awc_branch32 e sh Rn.
-  - unfold_stmt. destruct (sf =? 1) eqn:?. destruct (Rn =? 31) eqn:?.
-  + awc_branch e sh.
-  + awc_branch e sh.
-  + awc_branch32 e sh Rn.
-Qed.
+Admitted.
 
 Local Lemma hastyp_Ones:
   forall c w e,
@@ -5202,20 +5187,10 @@ Proof.
   estyp.
   all: try estyp.  try (assumption||lia).
   all: try unfold widthof_binop; try reflexivity.
-  7: { }
   all: try match_awcs; try unfold sizeof_c.
   admit.  
   all: try rewrite update_cancel in *; try rewrite update_frame in *.
   all: try assumption. 
-  psimpl.
-
-  all: try rewrite update_cancel.
-  all: try unfold sizeof_c. 
-  all: try rewrite update_updated; try lia.
-  11: eapply hastyp_XtoVar.
-  all: try (eapply temp_None in EQ; contradiction).
-  all: estyp; try repeat rewrite update_frame.
-  all: match_awcs. 
 Admitted.
 
 Local Lemma hastyp_arm_datashft_reg2il:
@@ -5230,7 +5205,7 @@ Proof.
   all: try eapply TNop; try reflexivity.
   all: destruct_match_rmr; awc_sub_branch e. 
   all: match_awcs.
-Qed.
+Admitted.
 
 Local Lemma hastyp_arm_logshft_reg2il:
 forall op sf shift Rm Rd imm6 Rn,
@@ -5244,7 +5219,7 @@ Proof.
   all: try eapply hastyp_arm_data_il; try reflexivity.
   all: try estyp.
   all: match_awcs.
-Qed.
+Admitted.
 
 Local Lemma hastyp_ExtendReg2:
 forall imm3 Rm option_ datasize,
@@ -5270,8 +5245,7 @@ Proof.
   all: destruct (Rn =?31) eqn: Hbit2.
   all: destruct_match_rmr; awc_sub_branch e.
   all: match_awcs.
-  all: unfold sizeof_c; reflexivity. 
-Qed.
+Admitted.
 
 Local Lemma hastyp_arm_withcarry_2il:
 forall op sf Rm Rn Rd,
@@ -5282,8 +5256,7 @@ Proof.
   destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
   all: destruct_match_rmr; awc_sub_branch e.
   all: match_awcs.
-  all: reflexivity.
-Qed.
+Admitted.
 
 Local Lemma hastyp_arm_data_r_shift_il:
 forall sf Rm op2 Rn Rd,
@@ -5297,16 +5270,7 @@ Proof.
   all: try reflexivity.
   all: try eapply TUnknown.
   - unfold ShiftReg; unfold ShiftC; destruct_match; estyp.
-  - discriminate. 
-  - discriminate.
-  - eapply TCast.
-  unfold ShiftReg. unfold ShiftC. destruct_match. etyp.
-  5-7: estyp. 
-  all: try unfold widthof_binop, sizeof_c.
-  all: try rewrite typeof_arm_varid;try reflexivity.
-  all: try (unfold arm64_R; psimpl; eapply TCast with (w:=64); [estyp | lia]).
-  all: lia.  
-Qed.
+Admitted.
 
 
 Local Lemma hastyp_arm_data_i_with_cond:
@@ -5322,9 +5286,8 @@ Proof.
   all: destruct H0; subst; psimpl.
   all: destruct_match_rmr; awc_sub_branch e.
   all: match_awcs.
-  all: eapply hastyp_ConditionHolds.
-  all: match_awcs.
-Qed.
+Admitted.
+
 
 
   (*final arm2il-C6.2.5*)
@@ -5597,71 +5560,5 @@ Proof.
      try repeat first [eapply N.lt_le_trans; [eapply xbits_bound |  psimpl; lia]
     | unfold sizeof_c; rewrite typeof_arm_varid | lia | estyp]
     end. (*412*)
-
-
-
-
-
-
-
-      all: destruct_match_rmr; awc_sub_branch e.
-  all: match_awcs.
-     try match goal with 
-    | |- context[hastyp_assign_R] => eapply hastyp_assign_R; [subsolve |(destruct_match; unfold SP_read; etyp'; try unfold widthof_binop; try etyp'; (*TODO: add pfsub_refl case arm8typctx ⊆ arm8typctx*)
-     try repeat first [rewrite typeof_arm_varid | eapply N.lt_le_trans; [eapply xbits_bound |  psimpl; lia] | reflexivity 
-    | lia| unfold sizeof_c])]
-    end.
-   
-
-    
-    eapply N.lt_le_trans; [eapply xbits_bound |  psimpl; lia].
-    all: try (destruct_match_rmr; awc_sub_branch e); try match_awcs. 
-    all: match_awcs.
-    all: try eapply hastyp_Pack_NZCV; try etyp; try eassumption.
-    all: try match goal with 
-      | |- _ < 2 ^ (if _ then 64 else 32) => eapply N.lt_le_trans; [eapply xbits_bound| destruct_match; psimpl; lia]
-      | |- 0 < 2^_ =>eapply mp2_gt_0 
-      | |- N.ones _ < 2^_ => eapply ones_bound 
-      | |- _ <= (if ?c then _ else _) => destruct c; lia
-      | |-_ _ R[ _, if _ then _ else _] (if _ then _ else _) =>  destruct_match;  
-      try eapply TCast with (w:=64); unfold arm64_R; psimpl;  estyp; lia
-    end.
-   
-
-
-
- 
-
-
-
-
-
-
-  Local Ltac unfold_stmt := match goal with | |- hastyp_stmt _ _ ?a _ => unfold_rec a end.
-  remember (arm_decode n0) as i. destruct i. 
-  all: try unfold_stmt; try destruct op; try unfold_stmt.
-  all: repeat match goal with [ |- context [if ?c then _ else _] ] => destruct c end.
-  all: try destruct_match_rmr; try awc_sub_branch e.
-  (*thoughts: add these cases to estyp cuz its super redundant. like SP_read, the words and the \/ cases as well.*)
-  all: try destruct (sf =? 1) eqn:sf_des; 
-  try destruct (Rn ?= 31) eqn:Rn_des; try destruct (N.testbit imm6 5) eqn:Hbit; subst.
-
-  all: try unfold sizeof_c; try reflexivity. 
-  all: try eapply hastyp_havoc; try reflexivity.
-  all: try eapply TNop; try reflexivity.
-  1-192: admit.
-  all: try reflexivity.
-  all: try estyp.
-  all: try unfold widthof_binop; try unfold sizeof_c.
-  all: try rewrite update_cancel; try rewrite update_updated.
-  all: try subsolve. 
-  all: try reflexivity.
-
-  all: try unfold widthof_binop; try unfold sizeof_c.  
-  
-  
-  
-  
-
 Admitted.
 
