@@ -5423,23 +5423,27 @@ Qed.
 Hint Resolve  hastyp_arm_withcarry_2il : lifter.
 
 Local Lemma hastyp_arm_data_r_shift_il:
-forall sf Rm op2 Rn Rd,
+forall sf Rm op2 Rn Rd ,
 (sf = 1\/ sf =0)->
 hastyp_stmt armc armc (arm_data_r_shift_il sf Rm op2 Rn Rd true false) armc.
 Proof.
   intros. unfold_stmt.
   destruct H; subst; psimpl.
-  all: destruct_match_rmr; 
+  all: destruct_match_rmr;
   eapply hastyp_arm_data_il.
   all: try reflexivity.
   all: try eapply TUnknown.
   - unfold ShiftReg; unfold ShiftC; destruct_match; estyp.
-  - discriminate. 
+  - discriminate.
   - discriminate.
   - eapply TCast.
-  unfold ShiftReg. unfold ShiftC. destruct_match. etyp. 
-Admitted.
-Hint Resolve  hastyp_arm_data_r_shift_il : lifter.
+  unfold ShiftReg. unfold ShiftC. destruct_match. etyp.
+  5-7: estyp.
+  all: try unfold widthof_binop, sizeof_c.
+  all: try rewrite typeof_arm_varid;try reflexivity.
+  all: try (unfold arm64_R; psimpl; eapply TCast with (w:=64); [estyp | lia]).
+  all: lia. 
+Qed.
 
 Local Lemma hastyp_arm_data_r_with_cond:
 forall i sf Rn cond Rm nzcv,
