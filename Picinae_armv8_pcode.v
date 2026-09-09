@@ -70,6 +70,7 @@ Inductive arm8var :=
   | R_TMP_LDXN
   (* These meta-variables model page access permissions: *)
   | A_READ | A_WRITE
+  | UXN
   (* System control register *)
   | SCTLR_E1
   | V_TEMP (n:N) (* Temporaries introduced by the lifter: *).
@@ -87,7 +88,7 @@ Definition arm8typctx v :=
   | R_TMPNG | R_TMPZR | R_TMPCY | R_TMPOV => Some 8
   | SCTLR_E1 => Some 64
   | R_nRW => Some 1
-  | A_READ | A_WRITE => Some (2^64)
+  | UXN | A_READ | A_WRITE => Some (2^64)
   | V_TEMP _ => None
   | R_Z0 | R_Z1 | R_Z2 | R_Z3 | R_Z4 | R_Z5 | R_Z6 | R_Z7 | R_Z8 | R_Z9 | R_Z10 => Some 256
   | R_Z11 | R_Z12 | R_Z13 | R_Z14 | R_Z15 | R_Z16 | R_Z17 | R_Z18 | R_Z19 | R_Z20 => Some 256
