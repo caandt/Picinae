@@ -1445,7 +1445,7 @@ Section Decoder.
     if constraint1 then
       <{if unknown 1 then UNDEF else
         if unknown 1 then Nop else
-        if unknown 1 then {if constraint2 then 
+        if unknown 1 then {if constraint2 then
                           <{if unknown 1 then UNDEF else
                             if unknown 1 then Nop else
                             if unknown 1 then {arm_stxr2il_constr size Xn Xs Xt true true} else
@@ -1516,21 +1516,21 @@ Section Decoder.
       <{if unknown 1 then UNDEF else
         if unknown 1 then Nop else
         if unknown 1 then
-          {if constraint2 then 
+          {if constraint2 then
             <{if unknown 1 then UNDEF else
               if unknown 1 then Nop else
               if unknown 1 then {arm_stxp2il_constr size Xn Xs Xt Xt2 true true} else
                                 {arm_stxp2il_constr size Xn Xs Xt Xt2 true false} end end end}>
           else arm_stxp2il_constr size Xn Xs Xt Xt2 true false}
         else
-          {if constraint2 then 
+          {if constraint2 then
             <{if unknown 1 then UNDEF else
               if unknown 1 then Nop else
               if unknown 1 then {arm_stxp2il_constr size Xn Xs Xt Xt2 false true} else
                                 {arm_stxp2il_constr size Xn Xs Xt Xt2 false false} end end end}>
           else arm_stxp2il_constr size Xn Xs Xt Xt2 false false} end end end}>
     else
-      if constraint2 then 
+      if constraint2 then
         <{if unknown 1 then UNDEF else
           if unknown 1 then Nop else
           if unknown 1 then {arm_stxp2il_constr size Xn Xs Xt Xt2 false true} else
@@ -1886,9 +1886,9 @@ Section Decoder.
     let constraint2 := Xt=?Xt2 in
     if constraint1 then
       <{if unknown 1 then UNDEF else
-        if unknown 1 then Nop else 
+        if unknown 1 then Nop else
     (*| true, false => let wback := false in let wbunknown := false in*)
-        if unknown 1 then 
+        if unknown 1 then
           {if constraint2 then
           <{if unknown 1 then UNDEF else
             if unknown 1 then Nop else
@@ -3266,7 +3266,7 @@ Section Decoder.
   Definition arm_data_r_addwithcarry (cond sf s shift Rm:N) imm6 (Rn:N) (assign assign_flag:bool) (op:exp -> exp -> exp->exp*exp) :=
   let datasize := if sf =? 1 then 64 else 32 in
   let shift_type := DecodeShift shift in
-  if shift=? 3 then Nop else 
+  if shift=? 3 then Nop else
   match (sf, (N.testbit imm6 5)) with
   |(0, true) => Nop
   | _ =>  let operand2 := ShiftReg Rm shift_type (Word imm6 datasize) datasize in
@@ -3753,7 +3753,7 @@ Local Ltac e_stypc c :=
   | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
   | |- hastyp_exp _ _ _  => new_etyp
   | |- _ ⊆ _ => try reflexivity
-  end. 
+  end.
 
 Local Ltac styp := stypc armc.
 Local Ltac estyp := e_stypc armc. (* choice of context has no effect. *)
@@ -3762,7 +3762,7 @@ Local Ltac estyp_c c:= e_stypc c.
 Local Lemma scast_bound:
   forall w w' n, scast w w' n < 2^w'.
 Proof.
-  intros; unfold scast. apply ofZ_bound. 
+  intros; unfold scast. apply ofZ_bound.
 Qed.
 
 Lemma seq_pc:
@@ -3933,20 +3933,20 @@ hastyp_exp arm8typctx
 <{ {amount} # {datasize} }> datasize) datasize.
 Proof.
   intros. unfold ShiftC. destruct_match.
-  - 
-  etyp'. all: try assumption. 
+  -
+  etyp'. all: try assumption.
   all: destruct H1; subst; psimpl; etyp'.
   all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
-  - 
-  etyp'. all: try assumption. 
+  -
+  etyp'. all: try assumption.
   all: destruct H1; subst; psimpl; etyp'.
   all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
-  - 
-  etyp'. all: try assumption. 
+  -
+  etyp'. all: try assumption.
   all: destruct H1; subst; psimpl; etyp'.
   all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
-  - 
-  etyp'. all: try assumption. 
+  -
+  etyp'. all: try assumption.
   all: destruct H1; subst; psimpl; etyp'.
   all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
 Qed.
@@ -4178,7 +4178,7 @@ Proof.
   intros. unfold_stmt. estyp; try (reflexivity || lia).
   apply hastyp_XtoVar; reflexivity.
   auto with lifter.
-  styp; etypeasy. 
+  styp; etypeasy.
 Qed.
 Hint Resolve  hastyp_arm_cbz2il : lifter.
 
@@ -4532,7 +4532,7 @@ Hint Resolve  hastyp_RORExp : lifter.
 
 (* Try to solve a hastyp_exp goal, dealing with fairly complex context subset subgoals. *)
 (* casesolve tries esolve and other things.  To break the circular dependency we parameterize
-   casesolve on a guarding tactic---idtac or failure.  esolve calls it with failure so 
+   casesolve on a guarding tactic---idtac or failure.  esolve calls it with failure so
    to prevent casesolve calling it recursively. *)
 Local Ltac casesolve_ p := idtac.
 Local Ltac esolve :=
@@ -4612,7 +4612,7 @@ Ltac econs_ H :=
 
 (* `econs* with H` runs econs as a solver with a hint lemma prioritized as a solver. *)
 Tactic Notation "econs" := econs_ I.
-Tactic Notation "econs*" "with" reference(h) := 
+Tactic Notation "econs*" "with" reference(h) :=
   repeat match goal with
          |- hastyp_stmt _ _ ?H _ => repeat unfold_stmt; apply h; assumption
          | |- _ => econs end; esolve'.
@@ -4695,7 +4695,7 @@ Local Lemma hastyp_arm_stxr2il_size:
   hastyp_stmt armc armc (arm_stxr2il_size size Xn Xs Xt) armc.
 Proof.
   intros; unfold_stmt. destruct_match;
-  repeat match goal with 
+  repeat match goal with
          |- hastyp_stmt _ _ (arm_stxr2il_constr _ _ _ _ _ _) _ => apply hastyp_arm_stxr2il_constr
          | |- _ => econs end;
   lia || solve_armc_sub.
@@ -4894,7 +4894,7 @@ Definition hastyp_arm_ldrb_imm2il := hastyp_arm_ldr_imm2il_size 8.
 Definition hastyp_arm_ldrh_imm2il := hastyp_arm_ldr_imm2il_size 16.
 
 Local Lemma hastyp_arm_ldrs_imm2il_size_constr:
-  forall size w' (Xn Xt imm912:N) (signed wback postindex wbunknown:bool) 
+  forall size w' (Xn Xt imm912:N) (signed wback postindex wbunknown:bool)
   (B1:Xn<2^5) (B3:Xt<2^5) (B4:if signed then imm912<2^9 else imm912<2^12) (B5:w'=32\/w'=64) (B6:size=8\/size=16\/size=32),
   hastyp_stmt armc armc (arm_ldrs_imm2il_size_constr size w' Xn Xt imm912 signed wback postindex wbunknown) armc.
 Proof.
@@ -4940,7 +4940,7 @@ Qed.
 Hint Resolve  hastyp_arm_ldraa2il : lifter.
 
 Local Lemma hastyp_arm_ldr_reg2il_size_signed:
-  forall size signed w' S Xn Xm Xt extend 
+  forall size signed w' S Xn Xm Xt extend
   (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:w'=32\/w'=64)
   (B6:size=8\/size=16\/size=32\/size=64) (B7:S=0\/S=1) (B8:size<=w'\/signed=false)
   (B9:(size=?64)&&signed=false),
@@ -4962,7 +4962,7 @@ Definition hastyp_arm_ldrsh_reg2il := hastyp_arm_ldr_reg2il_size_signed 16 true.
 Definition hastyp_arm_ldrsw_reg2il := hastyp_arm_ldr_reg2il_size_signed 32 true 64.
 
 Local Lemma hastyp_arm_str_reg2il_size:
-  forall size S c Xn Xm Xt extend 
+  forall size S c Xn Xm Xt extend
   (B1:Xn<2^5) (B2:Xm<2^5) (B3:Xt<2^5) (B4:extend<2^3) (B5:S<2^3) (PF:pfsub armc c)
   (B6:size=8\/size=16\/size=32\/size=64),
   hastyp_stmt armc c (arm_str_reg2il_size size S Xn Xm Xt extend ) armc.
@@ -4994,7 +4994,7 @@ Definition hastyp_arm_stlurh2il := hastyp_arm_stlur2il_size 16.
 Definition hastyp_arm_stlur2il := hastyp_arm_stlur2il_size.
 
 Local Lemma hastyp_arm_ldapur2il_size_signed:
-  forall size signed w' Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) 
+  forall size signed w' Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9)
   (B9:(size=?64)&&signed=false)
   (B6:w'=32\/w'=64) (B7:size=8\/size=16\/size=32\/size=64),
   hastyp_stmt armc armc (arm_ldapur2il_size_signed size signed w' Xn Xt imm9) armc.
@@ -5016,7 +5016,7 @@ Definition hastyp_arm_ldapursw2il := hastyp_arm_ldapur2il_size_signed 32 true.
 
 
 Local Lemma hastyp_arm_stur2il_size:
-  forall size Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) 
+  forall size Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9)
   (B7:size=8\/size=16\/size=32\/size=64),
   hastyp_stmt armc armc (arm_stur2il_size size Xn Xt imm9) armc.
 Proof.
@@ -5031,8 +5031,8 @@ Definition hastyp_arm_stur2il := hastyp_arm_stur2il_size.
 
 
 Local Lemma hastyp_arm_ldur2il_size:
-  forall size signed w' Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9) 
-  (B10:w'=32\/w'=64) (B7:size=8\/size=16\/size=32\/size=64) 
+  forall size signed w' Xn Xt imm9 (B1:Xn<2^5) (B3:Xt<2^5) (B4:imm9<2^9)
+  (B10:w'=32\/w'=64) (B7:size=8\/size=16\/size=32\/size=64)
   (B6: N.shiftr size 3 * 8 = size)
   (B9:(size=?64)&&signed=false),
   hastyp_stmt armc armc (arm_ldur2il_size size signed w' Xn Xt imm9) armc.
@@ -5073,7 +5073,7 @@ Local Lemma hastyp_arm_ldatomic2il_size:
   (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size=8\/size=16\/size=32\/size=64),
   hastyp_stmt armc armc (arm_ldatomic2il_size op size Xn Xs Xt) armc.
 Proof.
-  intros; unfold_stmt. destruct_match. 
+  intros; unfold_stmt. destruct_match.
   econs. econs. eapply hastyp_stmt_weaken'. apply hastyp_MemAtomic; try casesolve. solve_armc_sub.
   econs. econs. eapply hastyp_stmt_weaken'. apply hastyp_MemAtomic; try casesolve. solve_armc_sub.
     econs. solve_armc_sub.
@@ -5121,7 +5121,7 @@ Local Lemma hastyp_arm_swp2il_size:
   (B2:Xn<2^5) (B3:Xs<2^5) (B4:Xt<2^5) (B5:size=8\/size=16\/size=32\/size=64),
   hastyp_stmt armc armc (arm_swp2il_size size Xn Xs Xt) armc.
 Proof.
-  intros; unfold_stmt. destruct_match. 
+  intros; unfold_stmt. destruct_match.
   all: time repeat econs.
   all: solve_armc_sub.
 Qed.
@@ -5165,7 +5165,7 @@ Local Lemma hastyp_arm_stzg2il:
   hastyp_stmt armc armc (arm_stzg2il Xn a imm9 writeback postindex) armc.
 Proof.
   intros; unfold_stmt; destruct writeback; destruct postindex; simpl.
-  all: repeat econs; esolve. 
+  all: repeat econs; esolve.
 Qed.
 Hint Resolve hastyp_arm_stzg2il : lifter.
 
@@ -5206,12 +5206,12 @@ Local Lemma hastyp_arm_casp2il:
 Proof.
   intros; unfold_stmt. econs. etyp. rewrite N.land_comm; apply land_bound; lia.
   {
-  econs. econs. apply hastyp_MemAtomicCompareAndSwap; casesolve. 
-    1-4: replace (size<<1) with (size+size) by lia; etyp'; esolve. 
+  econs. econs. apply hastyp_MemAtomicCompareAndSwap; casesolve.
+    1-4: replace (size<<1) with (size+size) by lia; etyp'; esolve.
     repeat econs; solve_armc_sub.
   }{
-  econs. econs. apply hastyp_MemAtomicCompareAndSwap; casesolve. 
-    1-4: replace (size<<1) with (size+size) by lia; etyp'; esolve. 
+  econs. econs. apply hastyp_MemAtomicCompareAndSwap; casesolve.
+    1-4: replace (size<<1) with (size+size) by lia; etyp'; esolve.
     repeat econs; solve_armc_sub.
   }
 Qed.
@@ -5239,7 +5239,7 @@ Qed.
 Hint Resolve hastyp_arm_stllr2il_size : lifter.
 
 Local Lemma hastyp_arm_ldr_lit2il_size_signed :
-  forall size signed w' Xt imm19 
+  forall size signed w' Xt imm19
   (B1:size=8\/size=16\/size=32\/size=64) (B2:imm19<2^19) (B3:w'=32\/w'=64)
   (B9:(size=?64)&&signed=false) (B10:size<w'\/signed=false),
   hastyp_stmt armc armc (arm_ldr_lit2il_size_signed size signed w' Xt imm19) armc.
@@ -5316,7 +5316,7 @@ Proof.
   destruct op; repeat econs.
   - rewrite ! N.shiftl_mul_pow2.
     replace (2^64) with (2^16 * 2^48) by reflexivity; eapply N.le_lt_trans.
-    eapply N.mul_le_mono. exact (N.lt_le_pred _ _ B1). eapply N.pow_le_mono_r; try lia. 
+    eapply N.mul_le_mono. exact (N.lt_le_pred _ _ B1). eapply N.pow_le_mono_r; try lia.
     rewrite <-N.mul_le_mono_pos_r with (p:=2^4). exact (N.lt_le_pred _ _ B3). lia.
     cbn. lia.
   - destruct B2; subst. assert (B2:shift=1\/shift=0) by lia.
@@ -5337,7 +5337,7 @@ Qed.
 Hint Resolve  hastyp_arm_mov_imm2il : lifter.
 
 Ltac match_awcs:=
-repeat match goal with 
+repeat match goal with
   | |- armc ⊆ armc => reflexivity
   | |- hastyp_exp armc (ShiftReg _ _ _ _) _ =>
   eapply hastyp_ShiftReg
@@ -5347,8 +5347,8 @@ repeat match goal with
   | |- armc _ = Some (sizeof_c armc _) =>
   unfold sizeof_c; rewrite typeof_arm_varid; lia
   | |- _ <= sizeof_c armc _ =>
-   unfold sizeof_c; rewrite typeof_arm_varid; lia 
-  end. 
+   unfold sizeof_c; rewrite typeof_arm_varid; lia
+  end.
 
 Local Lemma hastyp_arm_datashft_reg2il:
   forall op sf s shift Rm Rd imm6 Rn,
@@ -5357,10 +5357,10 @@ Local Lemma hastyp_arm_datashft_reg2il:
 Proof.
   intros. unfold_stmt.
   destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
-  all: destruct (shift =? 3) eqn:?. 
-  all: destruct (N.testbit imm6 5) eqn:Hbit. 
+  all: destruct (shift =? 3) eqn:?.
+  all: destruct (N.testbit imm6 5) eqn:Hbit.
   all: try eapply TNop; try reflexivity.
-  all: destruct_match_rmr; awc_sub_branch e. 
+  all: destruct_match_rmr; awc_sub_branch e.
   all: match_awcs.
 Qed.
 Hint Resolve  hastyp_arm_datashft_reg2il : lifter.
@@ -5388,9 +5388,9 @@ hastyp_exp armc
 Proof.
   intros. unfold ExtendReg2. destruct_match_rmr.
   eapply TUnknown.
-  destruct H. subst. discriminate e. 
+  destruct H. subst. discriminate e.
    subst. discriminate e.
-Qed. 
+Qed.
 Hint Resolve  hastyp_ExtendReg2 : lifter.
 
 Local Lemma hastyp_arm_extend_reg2il:
@@ -5405,7 +5405,7 @@ Proof.
   all: destruct (Rn =?31) eqn: Hbit2.
   all: destruct_match_rmr; awc_sub_branch e.
   all: match_awcs.
-  all: unfold sizeof_c; reflexivity. 
+  all: unfold sizeof_c; reflexivity.
 Qed.
 Hint Resolve  hastyp_arm_extend_reg2il : lifter.
 
@@ -5413,7 +5413,7 @@ Local Lemma hastyp_arm_withcarry_2il:
 forall op sf Rm Rn Rd,
 (sf = 1\/ sf =0)->
 hastyp_stmt armc armc (arm_withcarry_2il op sf Rm Rn Rd) armc.
-Proof. 
+Proof.
   intros. unfold_stmt.
   destruct op eqn:?;destruct H; subst; unfold_stmt; psimpl.
   all: destruct_match_rmr; awc_sub_branch e.
@@ -5442,12 +5442,12 @@ Proof.
   all: try unfold widthof_binop, sizeof_c.
   all: try rewrite typeof_arm_varid;try reflexivity.
   all: try (unfold arm64_R; psimpl; eapply TCast with (w:=64); [estyp | lia]).
-  all: lia. 
+  all: lia.
 Qed.
 
 Local Lemma hastyp_arm_data_r_with_cond:
 forall i sf Rn cond Rm nzcv,
-(sf = 1\/ sf =0)-> 
+(sf = 1\/ sf =0)->
 (cond < 2^4)->
 (nzcv < 2 ^ 4) ->
 hastyp_stmt armc armc (arm_data_r_with_cond i cond sf Rm Rn nzcv) armc.
@@ -5457,7 +5457,7 @@ Proof.
   assert (H2:
       (AddWithCarry (if sf =? 1 then 64 else 32) R[ Rn, if sf =? 1 then 64 else 32]
         R[ Rm, if sf =? 1 then 64 else 32] <{ {0} # {1} }> = (e0, e1))
-        \/ 
+        \/
       (AddWithCarry (if sf =? 1 then 64 else 32) R[ Rn, if sf =? 1 then 64 else 32]
         <{ ! {R[ Rm, if sf =? 1 then 64 else 32]} }> <{ {1} # {1} }> = (e0, e1))
   ).
@@ -5476,7 +5476,7 @@ Hint Resolve hastyp_arm_data_r_with_cond : lifter.
 
 Local Lemma hastyp_arm_data_i_with_cond:
 forall i sf Rn imm nzcv cond,
-(sf = 1\/ sf =0)-> 
+(sf = 1\/ sf =0)->
 (cond < 2^4)->
 (nzcv < 2 ^ 4) ->
 (imm < 2 ^ 32) ->
@@ -5488,7 +5488,7 @@ Proof.
       (AddWithCarry (if sf =? 1 then 64 else 32) R[ Rn, if sf =? 1 then 64 else 32]
         <{ ucast {if sf =? 1 then 64 else 32} {imm} # {if sf =? 1 then 64 else 32} }>
         <{ {0} # {1} }> = (e0, e1))
-        \/ 
+        \/
       (AddWithCarry (if sf =? 1 then 64 else 32) R[ Rn, if sf =? 1 then 64 else 32]
         <{ ! ucast {if sf =? 1 then 64 else 32} {imm} # {if sf =? 1 then 64 else 32} }>
         <{ {1} # {1} }> = (e0,e1))
@@ -5519,7 +5519,7 @@ Local Lemma hastyp_arm_data_rev_il:
   forall op sf Rd (B1:sf=0\/sf=1),
   hastyp_stmt armc armc (arm_data_rev_il op sf Rd) armc.
 Proof.
-  intros. unfold_stmt. destruct op. 
+  intros. unfold_stmt. destruct op.
   all: apply hastyp_assign_R; esolve'; destruct_match; lia.
 Qed.
 Hint Resolve hastyp_arm_data_rev_il : lifter.
