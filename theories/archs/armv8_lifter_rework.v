@@ -9,7 +9,7 @@ Unset Printing All.
 
 
 From Picinae Require Import armv8.
-From PicinaeExamples.arm Require Import armv8_PIL_notation.
+From Picinae.archs Require Import armv8_PIL_notation.
 Import armv8_PIL_notation.Notation.
 From Stdlib Require Import List String Ascii NArith Bool.
 From Stdlib Require Import ZArith.
