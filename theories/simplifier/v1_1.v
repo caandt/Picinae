@@ -1,6 +1,6 @@
 (* Picinae: Platform In Coq for INstruction Analysis of Executables       ZZM7DZ
                                                                           $MNDM7
-   Copyright (c) 2025 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
+   Copyright (c) 2026 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
    The University of Texas at Dallas         =:$ZZ$+ZZI                  7MMZMZ7
    Computer Science Department             Z$$ZM++O++                    7MMZZN+
                                           ZZ$7Z.ZM~?                     7MZDNO$
@@ -4121,7 +4121,7 @@ Proof.
   symmetry. unfold simpl_joinbytes. destruct en;
     rewrite simpl_lor_sound; cbn [eval_sastN];
     rewrite simpl_shiftl_sound; cbn [eval_sastN];
-    rewrite E1, E2, N.mul_comm;
+    rewrite E1, E2, N.mul_comm, N.lor_comm;
     apply getmem_split.
 Qed.
 

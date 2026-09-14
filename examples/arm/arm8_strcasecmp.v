@@ -92,10 +92,10 @@ Definition strcasecmp : program := fun _ a => match a with
 	Move (V_TEMP 118784) (BinOp OP_MINUS (Extract 31 0 (Var R_X0)) (Extract 31 0 (Var R_X1))) $;
 	Move R_TMPNG (Cast CAST_UNSIGNED 8 (BinOp OP_SLT (Var (V_TEMP 118784)) (Word 0 32))) $;
 	Move R_TMPZR (Cast CAST_UNSIGNED 8 (BinOp OP_EQ (Var (V_TEMP 118784)) (Word 0 32))) $;
-	Move R_NG (Var R_TMPNG) $;
-	Move R_ZR (Var R_TMPZR) $;
-	Move R_CY (Var R_TMPCY) $;
-	Move R_OV (Var R_TMPOV)
+	Move R_NG (Cast CAST_LOW 1 (Var R_TMPNG)) $;
+	Move R_ZR (Cast CAST_LOW 1 (Var R_TMPZR)) $;
+	Move R_CY (Cast CAST_LOW 1 (Var R_TMPCY)) $;
+	Move R_OV (Cast CAST_LOW 1 (Var R_TMPOV))
 )
 
 (* 0x0010002c: b.eq 0x00100070 *)
@@ -138,10 +138,10 @@ Definition strcasecmp : program := fun _ a => match a with
 	Move (V_TEMP 118784) (BinOp OP_MINUS (Extract 31 0 (Var R_X21)) (Extract 31 0 (Var R_X0))) $;
 	Move R_TMPNG (Cast CAST_UNSIGNED 8 (BinOp OP_SLT (Var (V_TEMP 118784)) (Word 0 32))) $;
 	Move R_TMPZR (Cast CAST_UNSIGNED 8 (BinOp OP_EQ (Var (V_TEMP 118784)) (Word 0 32))) $;
-	Move R_NG (Var R_TMPNG) $;
-	Move R_ZR (Var R_TMPZR) $;
-	Move R_CY (Var R_TMPCY) $;
-	Move R_OV (Var R_TMPOV)
+	Move R_NG (Cast CAST_LOW 1 (Var R_TMPNG)) $;
+	Move R_ZR (Cast CAST_LOW 1 (Var R_TMPZR)) $;
+	Move R_CY (Cast CAST_LOW 1 (Var R_TMPCY)) $;
+	Move R_OV (Cast CAST_LOW 1 (Var R_TMPOV))
 )
 
 (* 0x00100044: b.eq 0x00100070 *)
@@ -265,10 +265,10 @@ Definition strcasecmp : program := fun _ a => match a with
 	Move (V_TEMP 117376) (BinOp OP_MINUS (Extract 31 0 (Var R_X1)) (Var (V_TEMP 117120))) $;
 	Move R_TMPNG (Cast CAST_UNSIGNED 8 (BinOp OP_SLT (Var (V_TEMP 117376)) (Word 0 32))) $;
 	Move R_TMPZR (Cast CAST_UNSIGNED 8 (BinOp OP_EQ (Var (V_TEMP 117376)) (Word 0 32))) $;
-	Move R_NG (Var R_TMPNG) $;
-	Move R_ZR (Var R_TMPZR) $;
-	Move R_CY (Var R_TMPCY) $;
-	Move R_OV (Var R_TMPOV)
+	Move R_NG (Cast CAST_LOW 1 (Var R_TMPNG)) $;
+	Move R_ZR (Cast CAST_LOW 1 (Var R_TMPZR)) $;
+	Move R_CY (Cast CAST_LOW 1 (Var R_TMPCY)) $;
+	Move R_OV (Cast CAST_LOW 1 (Var R_TMPOV))
 )
 
 (* 0x00200008: b.hi 0x00200010 *)

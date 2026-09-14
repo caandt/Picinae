@@ -1,6 +1,6 @@
 (* Picinae: Platform In Coq for INstruction Analysis of Executables       ZZM7DZ
                                                                           $MNDM7
-   Copyright (c) 2025 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
+   Copyright (c) 2026 Kevin W. Hamlen            ,,A??=P                 OMMNMZ+
    The University of Texas at Dallas         =:$ZZ$+ZZI                  7MMZMZ7
    Computer Science Department             Z$$ZM++O++                    7MMZZN+
                                           ZZ$7Z.ZM~?                     7MZDNO$
@@ -198,6 +198,9 @@ Ltac ISA_invseek :=
                   psimpl_hyp rt; subst rt;
                   rewrite XS; clear XS; try clear s)
          | exec_stmt _ _ (if ?c then _ else _) _ _ _ =>
+             let BC := fresh "BC" in destruct c eqn:BC;
+             ISA_step_and_simplify XS
+         | exec_stmt _ _ (Seq (if ?c then _ else _) _) _ _ _ =>
              let BC := fresh "BC" in destruct c eqn:BC;
              ISA_step_and_simplify XS
          | exec_stmt _ _ (N.iter _ _ _) _ _ _ => fail
