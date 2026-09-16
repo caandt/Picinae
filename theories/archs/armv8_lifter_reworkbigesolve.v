@@ -6,15 +6,15 @@ Set Printing Depth 50.
 Set Printing Width 100.
 Unset Printing All.
 
-
-Require Import Picinae_armv8_pcode Picinae_armv8_PIL_notation.
-Import Picinae_armv8_PIL_notation.Notation.
+From Picinae.archs Require Import armv8.
+From Picinae.archs Require Import armv8_PIL_notation.
 Require Import List String Ascii NArith Bool.
 Require Import ZArith.
 Import ListNotations.
 Local Open Scope string_scope.
 Local Open Scope N_scope.
-
+Import armv8_PIL_notation.Notation.
+Import ARM8Notations.
 
 Module Notation.
   Definition shift_add n (b: bool) :=
@@ -5480,7 +5480,7 @@ Admitted.
 (* | ARM_LD_STR_REG ARM_PRFM_REG Xn Xm Xt extend _ s => havoc) *)
   | UDF => Exn 4
   |_ => havoc end in
-  (*Seq (Move R_PC (Word (a+8 mod 2^64) 64))*) il.
+  Seq (Move R_PC (Word (a+8 mod 2^64) 64)) il.
 
 
 Lemma hastyp_awc_in_arm_data_il:

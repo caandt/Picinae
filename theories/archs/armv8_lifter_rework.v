@@ -5714,14 +5714,15 @@ let il := match inst with
 (* | ARM_LD_STR_REG ARM_PRFM_REG Xn Xm Xt extend _ s => havoc) *)
 | UDF => Exn 4
 |_ => havoc end in
-(*Seq (Move R_PC (Word ((a+8) mod 2^64) 64))*) il.
+Seq (Move R_PC (Word ((a+8) mod 2^64) 64)) il.
 
 Local Lemma hastyp_UDF:
   forall (a : addr), hastyp_stmt arm8typctx arm8typctx (arm2il a UDF) arm8typctx.
 Proof.
   intros. repeat econs. 
+  subsolve. 
+  reflexivity.   
 Qed.
-Hint Resolve  hastyp_UDF : lifter.
 
 Lemma unpair_ {A B:Type}:
   forall (a:A) (b:B) (x:A) (y:B), (a,b)=(x,y) -> a = x /\ b = y.
@@ -5734,7 +5735,7 @@ Hint Extern 21 (xbits ?n ?i (N.succ ?i) = _ \/_) => pose proof (xbits_bound n i 
 Hint Extern 21 (_<_) => lia || (eapply N.lt_trans;[apply xbits_bound|]) : lifter.
 
 Theorem welltyped_arm82il:
-  forall a z, hastyp_stmt armc armc (arm2il a (arm_decode z)) arm8typctx.
+  forall a, hastyp_stmt armc armc (arm2il a (arm_decode n)) arm8typctx.
 Proof.
   unfold arm_decode, dp_imm, branch_exc, load_store, dp_reg, dp_fp_simd.
   unfold
@@ -5761,14 +5762,3 @@ Qed.
 
 End Decoder.
 
-Definition arm8_prog s a :=
-  match a mod 4, xbits (s UXN) (a mod 2^64) (N.succ (a mod 2^64)) with
-  | 0, 0 => Some (4, arm2il a (arm_decode (getmem 64 LittleE 4 (s V_MEM64) a)))
-  | _, _ => None end.
-
-Theorem welltyped_arm8_prog: welltyped_prog arm8typctx arm8_prog.
-Proof.
-  intros s a. unfold arm8_prog.
-  destruct (a mod 4). destruct (xbits (s UXN) _ _).
-  exists arm8typctx. apply welltyped_arm82il. exact I. exact I.
-Qed.
