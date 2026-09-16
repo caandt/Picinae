@@ -5,10 +5,8 @@
  *)
 Set Printing Depth 50.
 Set Printing Width 100.
-Unset Printing All.
 
-
-From Picinae Require Import armv8.
+From Picinae.archs Require Import armv8.
 From Picinae.archs Require Import armv8_PIL_notation.
 Import armv8_PIL_notation.Notation.
 From Stdlib Require Import List String Ascii NArith Bool.
@@ -3459,7 +3457,7 @@ Section Decoder.
   | ARM_MOVK_IMM  => <{var[Rd]:=((ucast 64 (lcast 32 X[Rd]))&mask#64) | imm#64}>
   end.
 
-  Definition arm_decode :=
+  Definition arm_decode n :=
     let op0 := n.[25,29] in
     match[bits] op0 with
     | "0000" => UDF (* Reserved *)
@@ -5516,6 +5514,7 @@ Proof.
 Qed.
 Hint Resolve  hastyp_arm_data_i_with_cond : lifter.
 
+
 Local Lemma hastyp_arm_data_rev_il:
   forall op sf Rd (B1:sf=0\/sf=1),
   hastyp_stmt armc armc (arm_data_rev_il op sf Rd) armc.
@@ -5715,7 +5714,7 @@ let il := match inst with
 (* | ARM_LD_STR_REG ARM_PRFM_REG Xn Xm Xt extend _ s => havoc) *)
 | UDF => Exn 4
 |_ => havoc end in
-Seq (Move R_PC (Word ((a+8) mod 2^64) 64)) il.
+(*Seq (Move R_PC (Word ((a+8) mod 2^64) 64))*) il.
 
 Local Lemma hastyp_UDF:
   forall (a : addr), hastyp_stmt arm8typctx arm8typctx (arm2il a UDF) arm8typctx.
@@ -5735,7 +5734,7 @@ Hint Extern 21 (xbits ?n ?i (N.succ ?i) = _ \/_) => pose proof (xbits_bound n i 
 Hint Extern 21 (_<_) => lia || (eapply N.lt_trans;[apply xbits_bound|]) : lifter.
 
 Theorem welltyped_arm82il:
-  forall a, hastyp_stmt armc armc (arm2il a (arm_decode)) arm8typctx.
+  forall a z, hastyp_stmt armc armc (arm2il a (arm_decode z)) arm8typctx.
 Proof.
   unfold arm_decode, dp_imm, branch_exc, load_store, dp_reg, dp_fp_simd.
   unfold
