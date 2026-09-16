@@ -5719,7 +5719,7 @@ let il := match inst with
 Local Lemma hastyp_UDF:
   forall (a : addr), hastyp_stmt arm8typctx arm8typctx (arm2il a UDF) arm8typctx.
 Proof.
-  intros. repeat econs. solve_armc_sub.
+  intros. repeat econs. 
 Qed.
 Hint Resolve  hastyp_UDF : lifter.
 
