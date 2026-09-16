@@ -3458,8 +3458,7 @@ Section Decoder.
   end.
 
   Definition arm_decode n :=
-    let op0 := n.[25,29] in
-    match[bits] op0 with
+    match[bits] (n.[25,29]) with
     | "0000" => UDF (* Reserved *)
     | "0001" => UDF (* Unallocated. *)
     | "0010" => UDF (* SVE Instructions. See SVE on page A2-92 *)
@@ -5723,6 +5722,8 @@ Proof.
   subsolve. 
   reflexivity.   
 Qed.
+
+Hint Resolve hastyp_UDF : lifter.
 
 Lemma unpair_ {A B:Type}:
   forall (a:A) (b:B) (x:A) (y:B), (a,b)=(x,y) -> a = x /\ b = y.
