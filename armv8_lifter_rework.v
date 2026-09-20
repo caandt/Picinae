@@ -3458,9 +3458,8 @@ Section Decoder.
   | ARM_MOVK_IMM  => <{var[Rd]:=((ucast 64 (lcast 32 X[Rd]))&mask#64) | imm#64}>
   end.
 
-  Definition arm_decode :=
-    let op0 := n.[25,29] in
-    match[bits] op0 with
+  Definition arm_decode n:=
+    match[bits] (n.[25,29]) with
     | "0000" => UDF (* Reserved *)
     | "0001" => UDF (* Unallocated. *)
     | "0010" => UDF (* SVE Instructions. See SVE on page A2-92 *)
