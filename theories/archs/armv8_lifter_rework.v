@@ -3457,7 +3457,7 @@ Section Decoder.
   | ARM_MOVK_IMM  => <{var[Rd]:=((ucast 64 (lcast 32 X[Rd]))&mask#64) | imm#64}>
   end.
 
-  Definition arm_decode n :=
+  Definition arm_decode :=
     match[bits] (n.[25,29]) with
     | "0000" => UDF (* Reserved *)
     | "0001" => UDF (* Unallocated. *)
@@ -5736,7 +5736,7 @@ Hint Extern 21 (xbits ?n ?i (N.succ ?i) = _ \/_) => pose proof (xbits_bound n i 
 Hint Extern 21 (_<_) => lia || (eapply N.lt_trans;[apply xbits_bound|]) : lifter.
 
 Theorem welltyped_arm82il:
-  forall a, hastyp_stmt armc armc (arm2il a (arm_decode n)) arm8typctx.
+  forall a, hastyp_stmt armc armc (arm2il a (arm_decode)) arm8typctx.
 Proof.
   unfold arm_decode, dp_imm, branch_exc, load_store, dp_reg, dp_fp_simd.
   unfold
