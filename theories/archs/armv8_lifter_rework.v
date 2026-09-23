@@ -1261,7 +1261,8 @@ Section Decoder.
     let op1 := n.[12,26] in
     let op2 := n.[0,5] in
     match[bits] op0, op1, op2 with
-    | "010  0xxxxxxxxxxxxx  -    " => cond_branch (* Conditional branch (immediate) *)
+    (** | 010  0xxxxxxxxxxxxx  -     => cond_branch (* Conditional branch (immediate) *)*)
+    | "010  -               -    " => cond_branch (* Conditional branch (immediate) *)
     | "110  00xxxxxxxxxxxx  -    " => exc_gen (* Exception generation on page C4-258 *)
     | "110  01000000110010  11111" => hints (* Hints on page C4-258 *)
     | "110  01000000110011  -    " => barriers (* Barriers on page C4-260 *)
