@@ -3767,10 +3767,11 @@ Qed.
 Lemma seq_pc:
   forall a q,
   hastyp_stmt armc armc q armc ->
-  hastyp_stmt armc armc (Seq (Move <{ PCvar }> <{ {(a + 8) mod 2 ^ 64} # {64} }>) q) armc.
+  hastyp_stmt armc armc (Seq (Move <{ PCvar }> <{ {(a) mod 2 ^ 64} # {64} }>) q) armc.
 Proof.
-  intros a q H; econstructor; try eassumption || reflexivity.
-  econstructor. right; reflexivity. repeat econstructor. lia. apply update_some; reflexivity.
+  intros a q H. 
+  eapply TSeq with (c1:=arm8typctx). econstructor. right. reflexivity.
+  econstructor. lia. apply update_some. reflexivity. reflexivity. eassumption. reflexivity. 
 Qed.
 
 Create HintDb lifter.
@@ -5714,7 +5715,7 @@ let il := match inst with
 (* | ARM_LD_STR_REG ARM_PRFM_REG Xn Xm Xt extend _ s => havoc) *)
 | UDF => Exn 4
 |_ => havoc end in
-Seq (Move R_PC (Word ((a+8) mod 2^64) 64)) il.
+Seq (Move R_PC (Word (a mod 2^64) 64)) il.
 
 Local Lemma hastyp_UDF:
   forall (a : addr), hastyp_stmt arm8typctx arm8typctx (arm2il a UDF) arm8typctx.
