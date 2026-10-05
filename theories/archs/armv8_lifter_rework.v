@@ -95,7 +95,7 @@ Import Notation.
 
 Notation "'PCvar'" := (R_PC) (in custom PIL at level 65).
 (* PC register is set to PC+8, to get the current value subtract 8. *)
-Notation "'PC'" := <{{Var R_PC}+8#64}> (in custom PIL at level 65).
+Notation "'PC'" := <{{Var R_PC}}> (in custom PIL at level 65).
 
 (* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
 (*  J1-7341
@@ -1195,6 +1195,7 @@ Section Decoder.
   Definition arm_bl2il imm26 :=
     let offset := scast 28 64 (N.shiftl imm26 2) in
     <{{arm_varid 30} := PC + 4#64; jmp PC+offset#64}>.
+
 
   Definition uncond_b_imm :=
     let op := n.[31] in
@@ -5762,6 +5763,7 @@ Proof.
   all: apply hastyp_UDF || intros; apply seq_pc.
   all: auto with lifter.
 Qed.
+
 
 End Decoder.
 
