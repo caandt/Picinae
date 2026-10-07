@@ -94,7 +94,8 @@ End Notation.
 Import Notation.
 
 Notation "'PCvar'" := (R_PC) (in custom PIL at level 65).
-(* PC register is set to PC+8, to get the current value subtract 8. *)
+(* PC register is set to PC+8, to get the current value subtract 8. 
+This is now just Var R_PC*)
 Notation "'PC'" := <{{Var R_PC}}> (in custom PIL at level 65).
 
 (* Assume we are in Execution Level 0 (User mode). NB. This simplifies some of the pseudocode. *)
@@ -138,7 +139,7 @@ Definition XtoVar n :=
   | 28 => Var R_X28
   | 29 => Var R_X29
   | 30 => Var R_X30
-  | _ => Var R_SP
+  | _ =>  Var R_XZR
   end.
 
 Definition arm_varid n :=
@@ -147,13 +148,13 @@ Definition arm_varid n :=
   | 8 => R_X8 | 9 => R_X9 | 10 => R_X10 | 11 => R_X11 | 12 => R_X12 | 13 => R_X13 | 14 => R_X14 | 15 => R_X15
   | 16 => R_X16 | 17 => R_X17 | 18 => R_X18 | 19 => R_X19 | 20 => R_X20 | 21 => R_X21 | 22 => R_X22 | 23 => R_X23
   | 24 => R_X24 | 25 => R_X25 | 26 => R_X26 | 27 => R_X27 | 28 => R_X28 | 29 => R_X29 | 30 => R_X30
-  | _ => R_SP
+  | _ => R_XZR
   end.
 
 Local Remark XtoVar_arm_varid:
   forall n, XtoVar n = Var (arm_varid n).
 Proof.
-  intros. destruct n as [|n]; repeat (reflexivity || destruct n as [n|n|]).
+  intros. destruct n as [|n]; repeat (reflexivity || destruct n as [n|n|]). 
 Qed.
 
   Definition Unpack_NZCV (flags : exp) : exp * exp * exp * exp :=
@@ -167,8 +168,8 @@ Qed.
   (n, z, c, v).
 
 
-Notation "'var[' n ']'" := (arm_varid n) (in custom PIL at level 65, no associativity).
-Notation "'X[' n ']'" := (XtoVar n) (in custom PIL at level 65, no associativity).
+Notation "'var[' n ']'" := (arm_varid n ) (in custom PIL at level 65, no associativity).
+Notation "'X[' n ']'" := (XtoVar n ) (in custom PIL at level 65, no associativity).
 Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (in custom PIL at level 65, no associativity).
 Notation "'Xtemp[' n ']'" := (Var (V_TEMP n)) (at level 65, no associativity).
 Notation "'temp[' n ']'" := (V_TEMP n) (in custom PIL at level 65, no associativity).
@@ -450,8 +451,8 @@ Variant inst :=
   | ARM_MOVE_IMM (op: arm_move_imm) (Rd imm16 size shift:N)
   (*| TODO: ARM_MOV_IMM bitmask imm/wide imm/inverted wide imm*)
   (*PC relative addr*)
-  | ARM_ADRP_IMM
-  | ARM_ADR_IMM
+  | ARM_ADRP_IMM (immlo immhi Rd:N)
+  | ARM_ADR_IMM (immlo immhi Rd:N)
   (*extract*)
   | ARM_EXTRACT
   | ARM_EXTEND (op: arm_extended) (sf s opt Rm option_ imm3 Rn Rd : N)
@@ -688,9 +689,12 @@ Section Decoder.
 (** DP Immediate*)
   Definition pc_rel :=
     let op := n.[31] in
+    let immhi := n.[5,24] in
+    let immlo := n.[29,31] in
+    let Rd := n.[0,5] in
     match[bits] op with
-    | "0" => ARM_ADR_IMM (* ADR *)
-    | "1" => ARM_ADRP_IMM (* ADRP *)
+    | "0" => ARM_ADR_IMM immlo immhi Rd(* ADR *)
+    | "1" => ARM_ADRP_IMM immlo immhi Rd(* ADRP *)
     else UDF end.
 
   Definition add_sub_imm :=
@@ -737,8 +741,9 @@ Section Decoder.
     let datasize := (if sf =? 1 then 64 else 32) in
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
+    let d := if Xd =? 31 then R_SP else arm_varid Xd in 
     Some <{
-       var[Xd] := ucast 64 (operand1 & imm#datasize)
+       d := ucast 64 (operand1 & imm#datasize)
     }>.
 
   Definition arm_eor_imm2il (Xn Xd immr imms sf n:N) :=
@@ -747,8 +752,9 @@ Section Decoder.
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
     let UNDEF := <{ (sf#1 = 0#1 & n#1 <> 0#1) }> in
+    let d := if Xd =? 31 then R_SP else arm_varid Xd in 
     Some <{
-      var[Xd] := ucast 64 (operand1 ^ imm#datasize)
+      d := ucast 64 (operand1 ^ imm#datasize)
     }>.
 
   Definition arm_orr_imm2il (Xn Xd immr imms sf n:N) :=
@@ -756,8 +762,9 @@ Section Decoder.
     let datasize := (if sf =? 1 then 64 else 32) in
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
+    let d := if Xd =? 31 then R_SP else arm_varid Xd in 
     Some <{
-      var[Xd] := ucast 64 (operand1 | imm#datasize)
+      d := ucast 64 (operand1 | imm#datasize)
     }>.
 
   (*logical imm*)
@@ -3259,7 +3266,7 @@ Section Decoder.
          let operand1 := R[ Rn , datasize] in
   let result := op operand1 operand2 in
   let result64 := if sf =? 1 then result else Cast CAST_UNSIGNED 64 result in
-  arm_data_il assign assign_flags Rn result64 (Unknown 4)
+  arm_data_il assign assign_flags Rd result64 (Unknown 4)
   end.
 
   (*op : the actual AddWithCarry
@@ -3456,7 +3463,7 @@ Section Decoder.
   match op with
   | ARM_MOVZ_IMM  => <{var[Rd]:=imm#64}>
   | ARM_MOVN_IMM  => <{var[Rd]:={N.lnot imm size}#64}>
-  | ARM_MOVK_IMM  => <{var[Rd]:=((ucast 64 (lcast 32 X[Rd]))&mask#64) | imm#64}>
+  | ARM_MOVK_IMM  => <{var[Rd]:=((ucast 64 (X[Rd]))&mask#64) | imm#64}>
   end.
 
   Definition arm_decode :=
@@ -3557,7 +3564,7 @@ Proof.
 Qed.
 
 Local Lemma hastyp_arm_varid:
-  forall c n,
+  forall c n ,
     armc ⊆ c ->
     hastyp_exp c (Var (arm_varid n)) 64.
 Proof.
@@ -3573,13 +3580,13 @@ Definition sizeof v :=
   end.
 
 Local Lemma sizeof_arm_varid:
-  forall n, sizeof (arm_varid n) = 64.
+  forall n , sizeof (arm_varid n ) = 64.
 Proof.
   intros. unfold arm_varid. now destruct_match.
 Qed.
 
 Local Lemma typeof_arm_varid:
-  forall n, arm8typctx (arm_varid n) = Some 64.
+  forall n , arm8typctx (arm_varid n ) = Some 64.
 Proof.
   intros. unfold arm_varid. now destruct_match.
 Qed.
@@ -3621,11 +3628,11 @@ Local Ltac etyp' :=
     | |- hastyp_exp _ (Cast _ _ (Var (V_TEMP _))) _ => eapply TCast; [apply TVar; reflexivity | try lia]
     | |- hastyp_exp _ (Cast _ _ (Word _ ?sw)) _ => eapply TCast with (w := sw)
     | |- hastyp_exp ?c1 (Cast _ _ (Var ?v)) _ => eapply TCast with (w := sizeof_c c1 v)
-    | |- hastyp_exp _ (Cast _ _ (XtoVar _)) _ => eapply TCast with (w := 64)
+    | |- hastyp_exp _ (Cast _ _ (XtoVar _ )) _ => eapply TCast with (w := 64)
     | |- hastyp_exp _ (Cast _ _ _) _ => eapply TCast
-    | |- hastyp_exp _ (Extract _ _ (XtoVar _)) ?sw => apply TExtract with (w := 64)
+    | |- hastyp_exp _ (Extract _ _ (XtoVar _ )) ?sw => apply TExtract with (w := 64)
     | |- hastyp_exp _ (Extract _ _ _) ?sw => apply TExtract with (w := sw)
-    | |- hastyp_exp _ (Var (arm_varid _)) 64 => apply hastyp_arm_varid
+    | |- hastyp_exp _ (Var (arm_varid _ )) 64 => apply hastyp_arm_varid
     | |- hastyp_exp _ (Var _) _ => apply TVar
     | |- hastyp_exp _ (Ite _ _ _) ?sw => apply TIte with (w := 1)
     | |- hastyp_exp _ (UnOp _ _) _ => apply TUnOp
@@ -3745,9 +3752,9 @@ Local Ltac e_stypc c :=
   | |- hastyp_stmt _ ?c1 (Move R_OV _) _ => eapply TMove with (w:= 1) (c':= c1); [right; reflexivity | |]
   | |- hastyp_stmt _ ?c1 (Move (V_TEMP ?v) _) _ =>
       eapply TMove with (c' := update c1 (V_TEMP v) (Some _))
-  | |- hastyp_stmt _ ?c1 (Move (arm_varid ?v) _) _ =>
+  | |- hastyp_stmt _ ?c1 (Move (arm_varid ?v ) _) _ =>
       apply TMove with (w := 64) (c' := c1 ); [right | | ]
-  | |- hastyp_stmt _ ?c1 (Move (XtoVar ?v) _) _ => apply TMove with (w := 64) (c' := c1 )
+  | |- hastyp_stmt _ ?c1 (Move (XtoVar ?v ) _) _ => apply TMove with (w := 64) (c' := c1 )
   | |- hastyp_stmt _ ?c1 (Move ?v _) _ => eapply TMove with (w := sizeof_c c1 v)
       (c' := update c1 (v) (Some _)); [> right | | try apply update_some_c]; try reflexivity
   | |- _ = None \/ _ = Some _ => (left; reflexivity) + (right; reflexivity)
@@ -5526,6 +5533,33 @@ Proof.
 Qed.
 Hint Resolve hastyp_arm_data_rev_il : lifter.
 
+Definition arm_adr2il (immlo immhi Rd:N):=
+let imm := scast 21 64 (N.lor(N.shiftl immhi 2)immlo) in
+<{{arm_varid Rd } := PC + imm#64}>.
+
+Definition arm_adrp2il (immlo immhi Rd:N):=
+let imm := scast 33 64 (N.lor(N.shiftl immhi 2)immlo) in
+<{{arm_varid Rd } := (((PC) >> 12#64) << 12#64) + imm#64}>.
+
+Local Lemma hastyp_adr2il :
+  forall immlo immhi Rd,
+  hastyp_stmt armc armc (arm_adr2il immlo immhi Rd) armc.
+Proof.
+  intros. unfold arm_adr2il. econs.
+Qed.
+Hint Resolve hastyp_adr2il : lifter.
+
+Local Lemma hastyp_adrp2il :
+  forall immlo immhi Rd,
+  hastyp_stmt armc armc (arm_adrp2il immlo immhi Rd) armc.
+Proof.
+  intros. unfold arm_adrp2il. econs.
+Qed.
+Hint Resolve hastyp_adrp2il : lifter.
+
+
+  
+
 (*final arm2il-C6.2.5*)
 Definition arm2il (a:addr) inst:=
 let il := match inst with
@@ -5536,8 +5570,8 @@ let il := match inst with
 (*move wide*)
 | ARM_MOVE_IMM op Rd imm16 size shift => arm_mov_imm2il op Rd imm16 size shift
 (*PC relative addressing*)
-(*| ARM_ADRP_IMM
-| ARM_ADR_IMM *)
+| ARM_ADRP_IMM immlo immhi Rd => arm_adrp2il immlo immhi Rd
+| ARM_ADR_IMM immlo immhi Rd => arm_adr2il immlo immhi Rd
 (*compare immediate*)
 | ARM_CCMN_IMM sf Rn imm nzcv cond => arm_data_i_with_cond (ARM_CCMN_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond
 | ARM_CCMP_IMM sf Rn imm nzcv cond => arm_data_i_with_cond (ARM_CCMP_IMM sf Rn imm nzcv cond) sf Rn imm nzcv cond
