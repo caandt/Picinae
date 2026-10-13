@@ -52,7 +52,7 @@ Inductive arm8var :=
   | R_X11 | R_X12 | R_X13 | R_X14 | R_X15 | R_X16 | R_X17 | R_X18 | R_X19 | R_X20
   | R_X21 | R_X22 | R_X23 | R_X24 | R_X25 | R_X26 | R_X27 | R_X28 | R_X29 | R_X30
   (* SP = stack pointer *)
-  | R_SP | R_LR | R_PC
+  | R_SP | R_LR  (*| R_PC*)
   (* ng = negative, zr = zero reg, cy = carry, ov = overflow *)
   | R_NG | R_ZR | R_CY | R_OV
   (* nRW = AArch32 *)
@@ -73,7 +73,7 @@ Inductive arm8var :=
   | UXN
   (* System control register *)
   | SCTLR_E1
-  | V_TEMP (n:N) (* Temporaries introduced by the lifter: *).
+  | V_TEMP (n:N)  (* Temporaries introduced by the lifter: *).
 
 (* Declare the types (i.e., bitwidths) of all the CPU registers: *)
 Definition arm8typctx v :=
@@ -83,19 +83,22 @@ Definition arm8typctx v :=
   | R_X0 | R_X1 | R_X2 | R_X3 | R_X4 | R_X5 | R_X6 | R_X7 | R_X8 | R_X9 | R_X10 => Some 64
   | R_X11 | R_X12 | R_X13 | R_X14 | R_X15 | R_X16 | R_X17 | R_X18 | R_X19 | R_X20 => Some 64
   | R_X21 | R_X22 | R_X23 | R_X24 | R_X25 | R_X26 | R_X27 | R_X28 | R_X29 | R_X30 => Some 64 | R_XZR => Some 64
-  | R_SP | R_LR | R_PC => Some 64
+  | R_SP | R_LR (**| R_PC *)=> Some 64
   | R_NG | R_ZR | R_CY | R_OV => Some 1
   | R_TMPNG | R_TMPZR | R_TMPCY | R_TMPOV => Some 8
   | SCTLR_E1 => Some 64
   | R_nRW => Some 1
   | UXN | A_READ | A_WRITE => Some (2^64)
-  | V_TEMP _ => None
   | R_Z0 | R_Z1 | R_Z2 | R_Z3 | R_Z4 | R_Z5 | R_Z6 | R_Z7 | R_Z8 | R_Z9 | R_Z10 => Some 256
   | R_Z11 | R_Z12 | R_Z13 | R_Z14 | R_Z15 | R_Z16 | R_Z17 | R_Z18 | R_Z19 | R_Z20 => Some 256
   | R_Z21 | R_Z22 | R_Z23 | R_Z24 | R_Z25 | R_Z26 | R_Z27 | R_Z28 | R_Z29 | R_Z30 | R_Z31 => Some 256
   | R_TMPZ0 | R_TMPZ1 | R_TMPZ2 | R_TMPZ3 | R_TMPZ4 | R_TMPZ5 | R_TMPZ6 => Some 256
   | R_TMP_LDXN => Some 64
+  | V_TEMP 0 (*R_PC*) => Some 64
+  | V_TEMP _ => None
 end.
+
+Notation R_PC := (V_TEMP 0).
 
 Check arm8typctx.
 (* Create a UsualDecidableType module (which is an instance of Typ) to give as

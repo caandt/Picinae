@@ -288,7 +288,7 @@ Notation "'branch' e" := (BranchTo 64 e) (in custom PIL at level 0, e at level 9
 
 (*DP Imm - C4.1.2, page C4-252*)
 (*Add/Sub*)
-Variant arm_add_sub_imm :=
+Variant arm_add_sub_imm :=  
   | ARM_ADD_IMM
   | ARM_ADDS_IMM
   | ARM_SUB_IMM
@@ -722,12 +722,12 @@ Section Decoder.
   Definition UNDEF := <{var[14]:=PC-4#64}>.
   (* n = 0 \/ n = 1 *)
   Definition arm_ands_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 0) && (n =? 1) then None else
+    if (sf =? 0) && (n =? 1) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
     let result := <{ucast 64 (operand1 & imm#datasize)}> in
-    Some <{
+     <{
       var[Xd] := result;
       R_NG := result[{datasize-1}];
       R_ZR := result = 0#64;
@@ -737,33 +737,34 @@ Section Decoder.
 
   (* n = 0 \/ n = 1 *)
   Definition arm_and_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 0) && (n =? 1) then None else
+    if (sf =? 0) && (n =? 1) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
     let d := if Xd =? 31 then R_SP else arm_varid Xd in 
-    Some <{
+     <{
        d := ucast 64 (operand1 & imm#datasize)
     }>.
 
+
   Definition arm_eor_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 0) && (n =? 1) then None else
+    if (sf =? 0) && (n =? 1) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
     let UNDEF := <{ (sf#1 = 0#1 & n#1 <> 0#1) }> in
     let d := if Xd =? 31 then R_SP else arm_varid Xd in 
-    Some <{
+     <{
       d := ucast 64 (operand1 ^ imm#datasize)
     }>.
 
   Definition arm_orr_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 0) && (n =? 1) then None else
+    if (sf =? 0) && (n =? 1) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let imm := wmask n imms immr true datasize in
     let operand1 := <{lcast datasize X[Xn]}> in
     let d := if Xd =? 31 then R_SP else arm_varid Xd in 
-    Some <{
+    <{
       d := ucast 64 (operand1 | imm#datasize)
     }>.
 
@@ -815,21 +816,22 @@ Section Decoder.
       In both cases the destination bits below and above the bitfield are set to zero *)
 
   Definition arm_ubfm_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 1) && negb (n =? 1) then None else
-    if (sf =? 0) && ((negb (n =? 0)) || (negb ((xbits immr 5 6)=?0)) || (negb ((xbits imms 5 6) =? 0))) then None else
+    if (sf =? 1) && negb (n =? 1) then UNDEF else
+    if (sf =? 0) && ((negb (n =? 0)) || (negb ((xbits immr 5 6)=?0)) || (negb ((xbits imms 5 6) =? 0))) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let R := Word immr datasize in
     let wmask := wmask n imms immr false datasize in
     let tmask := tmask n imms immr false datasize in
     let src := <{lcast datasize X[Xn]}> in
     let bot := <{{RORExp datasize src immr} & wmask#datasize}> in
-    Some <{
-      var[Xd] := ucast 64 (bot & tmask#datasize)
+     let d := if Xd =? 31 then R_SP else arm_varid Xd in 
+     <{
+      d := ucast 64 (bot & tmask#datasize)
     }>.
 
   Definition arm_bfm_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 1) && negb (n =? 1) then None else
-    if (sf =? 0) && ((negb (n =? 0)) || (negb ((xbits immr 5 6)=?0)) || (negb ((xbits imms 5 6) =? 0))) then None else
+    if (sf =? 1) && negb (n =? 1) then UNDEF else
+    if (sf =? 0) && ((negb (n =? 0)) || (negb ((xbits immr 5 6)=?0)) || (negb ((xbits imms 5 6) =? 0))) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let wmask := wmask n imms immr false datasize in
     let tmask := tmask n imms immr false datasize in
@@ -837,16 +839,17 @@ Section Decoder.
     let src := <{lcast datasize X[Xn]}> in
     let bot := <{(dst & {N.lnot wmask datasize}#datasize)
                   | ({RORExp datasize src immr} & wmask#datasize)}> in
-    Some <{
-      var[Xd] := ucast 64 ((dst & !tmask#datasize) | (bot & tmask#datasize))
+     let d := if Xd =? 31 then R_SP else arm_varid Xd in 
+   <{
+      d := ucast 64 ((dst & !tmask#datasize) | (bot & tmask#datasize))
     }>.
 
   Definition pilxbits (w:N) (n lo hi:exp) :=
     <{ (n >> lo) % (1#w << (hi-lo)) }>.
 
   Definition arm_sbfm_imm2il (Xn Xd immr imms sf n:N) :=
-    if (sf =? 1) && negb (n =? 1) then None else
-    if (sf =? 0) && ((negb (n =? 0)) || (negb ((xbits immr 5 6)=?0)) || (negb ((xbits imms 5 6) =? 0))) then None else
+    if (sf =? 1) && negb (n =? 1) then UNDEF else
+    if (sf =? 0) && ((negb (n =? 0)) || (negb ((xbits immr 5 6)=?0)) || (negb ((xbits imms 5 6) =? 0))) then UNDEF else
     let datasize := (if sf =? 1 then 64 else 32) in
     let wmask := wmask n imms immr false datasize in
     let tmask := tmask n imms immr false datasize in
@@ -854,8 +857,9 @@ Section Decoder.
     let topbit := (if sf =? 0 then Word 0 1 else <{src[imms]}>) in
     let bot := <{ {RORExp datasize src immr} & wmask#datasize }> in
     let top := <{ite topbit ({N.ones datasize}#datasize) (0#datasize)}> in
-    Some <{
-      var[Xd] := ucast 64 ((top & !tmask#datasize) | (bot & tmask#datasize))
+     let d := if Xd =? 31 then R_SP else arm_varid Xd in 
+     <{
+      d := ucast 64 ((top & !tmask#datasize) | (bot & tmask#datasize))
     }>.
 
   Definition bitfield :=
@@ -3455,6 +3459,8 @@ Section Decoder.
   | ARM_UBFM_IMM => arm_ubfm_imm2il Rn Rd immr imms sf n_
   end.
 
+
+
   Definition arm_mov_imm2il op Rd imm16 size shift :=
   if (size=?32) && (1<?shift) then UNDEF else
   let scale := N.shiftl shift 4 in
@@ -3503,7 +3509,7 @@ Ltac unfold_rec a :=
   | _ => unfold a
   end.
 
-Notation temp0 := (V_TEMP 0).
+(*Notation temp0 := (V_TEMP 0).*)
 Local Ltac unfold_stmt := match goal with | |- hastyp_stmt _ _ ?a _ => unfold_rec a end.
 Local Ltac unfold_exp := match goal with | |- hastyp_exp _ ?a _ => unfold_rec a end.
 Local Lemma armct_sub sf: armc ⊆ armct sf.
@@ -3709,7 +3715,7 @@ Local Ltac stypc c :=
 
          | |- hastyp_stmt _ _ (Move (V_TEMP _) _) ?w' => apply TMove with (w := w')
 
-         | |- hastyp_stmt _ _ (Move temp0 _) _ => apply TMove with (w := 64)
+         | |- hastyp_stmt _ _ (Move R_PC _) _ => apply TMove with (w := 64)
          | |- hastyp_stmt _ _ (Move ?v _) _ => apply TMove with (w := sizeof v); [> right | | apply update_some_c]; try reflexivity
          | |- pfsub armc armc  => reflexivity
          | |- pfsub armc armct  => apply armct_sub
@@ -3728,7 +3734,7 @@ Local Ltac stypc_w c w' c1 c2 :=
          | |- hastyp_stmt _ ?cx (Move (V_TEMP ?v) _) _ =>
              apply TMove with (w := w') (c' := update c1 (V_TEMP v) (Some w'))
 
-         | |- hastyp_stmt _ _ (Move temp0 _) _ => apply TMove with (w := 64)
+         | |- hastyp_stmt _ _ (Move R_PC _) _ => apply TMove with (w := 64)
          | |- hastyp_stmt _ _ (Move ?v _) _ => apply TMove with (w := sizeof v); [> right | | apply update_some]; try reflexivity
          | |- pfsub armc armc  => reflexivity
          | |- pfsub armc armct  => apply armct_sub
@@ -3779,7 +3785,8 @@ Lemma seq_pc:
 Proof.
   intros a q H. 
   eapply TSeq with (c1:=arm8typctx). econstructor. right. reflexivity.
-  econstructor. lia. apply update_some. reflexivity. reflexivity. eassumption. reflexivity. 
+  econstructor. lia.
+  apply update_some. reflexivity.  reflexivity. eassumption. reflexivity. 
 Qed.
 
 Create HintDb lifter.
@@ -4173,7 +4180,7 @@ Proof.
   intros. unfold_stmt. estyp; try (reflexivity || lia).
   apply hastyp_XtoVar; reflexivity.
   apply hastyp_UsingAArch32; reflexivity.
-  repeat econstructor.
+  repeat econstructor. 
     apply scast_bound.
     reflexivity.
 Qed.
@@ -4361,11 +4368,14 @@ Local Lemma hastyp_ExtendReg:
 Proof.
   intros. unfold ExtendReg.
   econstructor. estyp;lia || reflexivity.
-  remember (N.min _ _) as min. econstructor. etyp;lia. estyp; try lia. apply hastyp_XtoVar; assumption.
+  remember (N.min _ _) as min. econstructor. etyp;lia. estyp; try lia.  
+  destruct regt as [|p]. right. reflexivity. left. reflexivity. 
+  apply hastyp_XtoVar; assumption.
   all: try reflexivity.
   assert (min <= 64). { rewrite Heqmin, N.min_le_iff. right. lia.  }
   estyp; try lia.
-  apply hastyp_XtoVar; etypeasy.
+  destruct regt as [|p]. right. reflexivity. left. reflexivity. 
+  apply hastyp_XtoVar; assumption.
 Qed.
 Hint Resolve  hastyp_ExtendReg : lifter.
 
@@ -4518,6 +4528,7 @@ Ltac subsolve :=
       let EQ := fresh "EQ" in let x := fresh "x" in let y := fresh "y" in
       simpl_c; intros x y EQ; c_varx
   end.
+
 
 
 Local Lemma hastyp_sp_xn:
@@ -5060,7 +5071,7 @@ Definition hastyp_arm_ldursw2il := hastyp_arm_ldur2il_size 32 true 64.
 Local Lemma hastyp_MemAtomic:
   forall c op w value address rettemp
     (B2:hastyp_exp c address 64) (B3:w=8\/w=16\/w=32\/w=64) (B4:hastyp_exp c value w)
-    (PF:pfsub armc c) (PF':c (V_TEMP rettemp) = None),
+    (PF:pfsub armc c) (PF':c (V_TEMP rettemp) = None) (RT: rettemp <> 0),
   hastyp_stmt armc c (MemAtomic op w value address rettemp) (update c (V_TEMP rettemp) (Some w)).
 Proof.
   intros; unfold_stmt. destruct_match. all: repeat econs.
@@ -5072,7 +5083,8 @@ Proof.
   all: try match goal with |- hastyp_exp _ <{load[_,_]}> ?w => replace w with (N.shiftr w 3 * 8) at 3 by lia; repeat econs;
            eapply hastyp_exp_weaken;[eassumption|subsolve] end.
   all:try subsolve.
-  all:lia.
+  all: try destruct rettemp as [|p].
+  all: try (reflexivity||contradiction); lia.  
 Qed.
 Hint Resolve  hastyp_MemAtomic : lifter.
 
@@ -5198,14 +5210,17 @@ Hint Resolve hastyp_arm_stz2g2il : lifter.
 
 Local Lemma hastyp_MemAtomicCompareAndSwap:
   forall w t addr expectedvalue newvalue
-    (B1:w=8\/w=16\/w=32\/w=64\/w=128) (B2:hastyp_exp armc expectedvalue w) (B3:hastyp_exp armc addr 64) (B4:hastyp_exp armc newvalue w),
-  hastyp_stmt armc armc (MemAtomicCompareAndSwap w t addr expectedvalue newvalue ) (update armc (V_TEMP t) (Some w)).
+    (B1:w=8\/w=16\/w=32\/w=64\/w=128) (B2:hastyp_exp armc expectedvalue w) (B3:hastyp_exp armc addr 64) (B4:hastyp_exp armc newvalue w) (RT: t <> 0),
+  hastyp_stmt armc armc (MemAtomicCompareAndSwap w t addr expectedvalue newvalue ) (update armc (V_TEMP t) (Some w)) .
 Proof.
   intros; unfold_stmt; repeat econs; esolve.
+  destruct t as [|p]. contradiction. reflexivity.
   1-5: apply hastyp_exp_weaken with (c1:=armc); try (assumption || solve_armc_sub).
-  split_cases; simpl; assumption.
-  split_cases; simpl; assumption.
-  rewrite update_frame in EQ; assumption.
+  all: try split_cases; simpl.
+  all: try assumption.
+  all: try (destruct t as [|p]; [ contradiction|
+  apply update_fresh; reflexivity]).
+  all: rewrite update_frame in EQ; assumption. 
 Qed.
 
 Local Lemma hastyp_arm_casp2il:
@@ -5224,7 +5239,6 @@ Proof.
   }
 Qed.
 Hint Resolve hastyp_arm_casp2il : lifter.
-
 
 Local Lemma hastyp_arm_cas2il_size:
   forall size Xn Xs Xt (B1:size=8\/size=16\/size=32\/size=64),
@@ -5289,28 +5303,6 @@ Proof.
   repeat (destruct p; try discriminate).
 Qed.
 
-Local Lemma hastyp_arm_log_imm2il:
-  forall op Rn Rd immr imms sf n_ q,
-   (n_ < 2)->(sf = 1\/ sf =0)->(imms < 2^6) -> (immr < 2^6)-> (Rn < 2^5) -> (Rd < 2 ^ 5) ->
-   arm_log_imm2il op Rn Rd immr imms sf n_ = Some q ->
-    hastyp_stmt armc armc q armc.
-Proof.
-  intros. unfold arm_log_imm2il in *. destruct op; match type of H5 with ?l = _ => revert H5; unfold_rec l end.
-  all: destruct_match_rmr.
-  all: try discriminate.
-  all: intros H5; try destruct_match_in H5; try discriminate; inversion H5; try subst q; clear H5.
-  all: try rewrite N.eqb_eq in *; try subst sf.
-  all: try solve [repeat econs; solve_armc_sub || lia].
-  - repeat econs; lia || solve_armc_sub || idtac. etyp'; try repeat casesolve.
-      apply lnot_bound, wmask_bound; lia.
-  - repeat econs; lia || solve_armc_sub || idtac. etyp'. 1,2,4,5: try repeat casesolve.
-      apply lnot_bound, wmask_bound; lia. apply hastyp_RORExp; try lia; etyp'; casesolve.
-  - repeat econs; lia || solve_armc_sub || idtac. etyp'; apply hastyp_RORExp || esolve; lia || esolve.
-  - repeat econs; lia || solve_armc_sub || idtac. etyp'; try repeat casesolve.
-  - repeat econs; lia || solve_armc_sub || idtac. etyp'; try repeat casesolve.
-  - repeat econs; lia || solve_armc_sub || idtac. etyp';  apply hastyp_RORExp || esolve; lia || esolve.
-Qed.
-Hint Resolve hastyp_arm_log_imm2il : lifter.
 
 Lemma Nmul_lt_le_mono:
   forall a b c d, 0<b -> 0<d -> a<c -> b<=d -> a*b<c*d.
@@ -5557,16 +5549,69 @@ Proof.
 Qed.
 Hint Resolve hastyp_adrp2il : lifter.
 
+Local Lemma hastyp_arm_log_imm2il:
+  forall op Rn Rd immr imms sf n_,
+   (n_ < 2)->(sf = 1\/ sf =0)->(imms < 2^6) -> (immr < 2^6)-> (Rn < 2^5) -> (Rd < 2 ^ 5) ->
+    hastyp_stmt armc armc (arm_log_imm2il op Rn Rd immr imms sf n_) armc.
+Proof.
+  intros. unfold arm_log_imm2il in *. destruct op; unfold_stmt.
+  all: destruct_match_rmr.
+  all: try (intros H5; try inversion H5; try subst q; clear H6).
+  all: destruct H0.
+  all: try rewrite N.eqb_eq in *; try subst sf.
+  all: try solve [repeat econs; solve_armc_sub || lia].
 
-  
+  all: try( econs;destruct_match; [right; reflexivity| right; apply typeof_arm_varid|
+  subsolve; reflexivity| subsolve]).
+
+  all: psimpl.
+  all: try psimpl (1=?1).
+  all: try psimpl (0=?1).
+
+  - destruct_match; econs; try eapply TCast with (w:=64). 2,5: lia.
+  2: subsolve;reflexivity. 
+  all: etyp. all: try eapply lnot_bound. all: try casesolve. 
+  all: rewrite XtoVar_arm_varid; apply hastyp_arm_varid; reflexivity.
+
+  - destruct_match. econs; subsolve.
+  -- econs; try eapply TCast with (w:=32). 3: subsolve; reflexivity. 2: lia.
+  etyp. 7: try apply hastyp_RORExp. 6: apply lnot_bound. all: try casesolve.
+  -- econs; try eapply TCast with (w:=32). 2: lia.
+  etyp. 7: try apply hastyp_RORExp. 6: apply lnot_bound. all: try casesolve.
+
+  - destruct_match; econs; try eapply TCast with (w:=64). 2,5: lia.
+  2: subsolve;reflexivity. 
+  all: etyp. all: try eapply lnot_bound. all: try casesolve. 
+  all: rewrite XtoVar_arm_varid; apply hastyp_arm_varid; reflexivity.
+
+  - destruct_match. econs; subsolve.
+  -- econs; try eapply TCast with (w:=32). 3: subsolve; reflexivity. 2: lia.
+  etyp. 2: try apply hastyp_RORExp. all: try casesolve.
+  -- econs; try eapply TCast with (w:=32). 2: lia.
+  etyp. 2: try apply hastyp_RORExp. all: try casesolve.
+
+  -  destruct_match; econs; try eapply TCast with (w:=64). 2,5: lia.
+  2: subsolve;reflexivity. 
+  all: etyp. all: try eapply lnot_bound. all: try casesolve. 
+  all: rewrite XtoVar_arm_varid; apply hastyp_arm_varid; reflexivity.
+
+  - destruct_match. econs; subsolve.
+  -- econs; try eapply TCast with (w:=32). 3: subsolve; reflexivity. 2: lia.
+  etyp. try apply hastyp_RORExp. all: try casesolve.
+  -- econs; try eapply TCast with (w:=32). 2: lia.
+  etyp. try apply hastyp_RORExp. all: try casesolve.
+
+Qed.
+Hint Resolve hastyp_arm_log_imm2il : lifter.
 
 (*final arm2il-C6.2.5*)
 Definition arm2il (a:addr) inst:=
 let il := match inst with
+| ARM_HINT => Nop
 (*DP imm*)
 | ARM_DATA_IMM op sf s sh imm12 Rn Rd => arm_data_imm2il op sf s sh imm12 Rn Rd
 (*logical imm*)
-| ARM_LOGICAL_IMM op Rn Rd immr imms sf n_ => Nop
+| ARM_LOGICAL_IMM op Rn Rd immr imms sf n_ => arm_log_imm2il op Rn Rd immr imms sf n_
 (*move wide*)
 | ARM_MOVE_IMM op Rd imm16 size shift => arm_mov_imm2il op Rd imm16 size shift
 (*PC relative addressing*)
