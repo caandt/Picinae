@@ -277,11 +277,17 @@ Definition HaveAtomicExt := 1.
 Definition havoc := <{ exn 0 }>.
 
 Definition UsingAArch32 := <{ {Var R_nRW} = 1#1 }>.
-Definition BranchTo w target :=
+(*Definition BranchTo w target :=
   match w with
   | 32 => <{if UsingAArch32 then jmp (ucast 64 target) else exn 0 end }>
   | 64 => <{if !UsingAArch32 then jmp target else exn 0 end}>
   | _ => <{exn 0}>
+ end.*)
+(*I'm assuming w is either 32 or 64 else lifter is wrong*)
+Definition BranchTo w target :=
+  match w with
+  | 32 => <{jmp(ucast 64 target)}>
+  | _ => <{jmp target}>
  end.
 
 Notation "'branch' e" := (BranchTo 64 e) (in custom PIL at level 0, e at level 99).
@@ -4163,31 +4169,27 @@ Hint Resolve  hastyp_MemRead : lifter.
 Local Lemma hastyp_BranchTo:
   forall t c size (B:size=32\/size=64) (T:hastyp_exp c t size) (PF:pfsub armc c), hastyp_stmt armc c (BranchTo size t) c.
 Proof.
-  intros; unfold BranchTo, UsingAArch32.
-  destruct B; subst.
-    econstructor. apply hastyp_exp_weaken with (c1:=armc); etyp || assumption.
-    repeat econstructor; try exact T; reflexivity || lia || econstructor.
-    econstructor. 1,2: reflexivity.
-    repeat econstructor; try reflexivity || exact T. replace 1 with (widthof_binop OP_EQ 1) at 3 by reflexivity.
-    repeat econstructor. now apply PF.
+  intros; unfold BranchTo. 
+  destruct_match. 
+  all: try (eapply TJmp; [eassumption | reflexivity]).
+  eapply TJmp. econstructor. eassumption. lia. reflexivity.
 Qed.
 Hint Resolve  hastyp_BranchTo : lifter.
 
 Local Lemma hastyp_arm_cbnz2il:
-  forall Xn imm19  size (B1:imm19 < 2^21) (B2:Xn<2^5) (B3:size=32\/size=64),
+  forall Xn imm19  size (B1:imm19 < 2^19) (B2:Xn<2^5) (B3:size=32\/size=64),
   hastyp_stmt armc armc (arm_cbnz2il Xn imm19 size) armc.
 Proof.
   intros. unfold_stmt. estyp; try (reflexivity || lia).
   apply hastyp_XtoVar; reflexivity.
-  apply hastyp_UsingAArch32; reflexivity.
-  repeat econstructor. 
-    apply scast_bound.
-    reflexivity.
+  eapply TJmp.
+  apply TBinOp with (bop:=OP_PLUS). econstructor. reflexivity.
+  etyp. apply scast_bound. reflexivity.
 Qed.
 Hint Resolve  hastyp_arm_cbnz2il : lifter.
 
 Local Lemma hastyp_arm_cbz2il:
-  forall Xn imm19 size (B1:imm19 < 2^21) (B2:Xn<2^5) (B3:size=32\/size=64),
+  forall Xn imm19 size (B1:imm19 < 2^19) (B2:Xn<2^5) (B3:size=32\/size=64),
   hastyp_stmt armc armc (arm_cbz2il Xn imm19 size) armc.
 Proof.
   intros. unfold_stmt. estyp; try (reflexivity || lia).
@@ -4288,7 +4290,7 @@ Local Lemma hastyp_arm_tbz2il:
 Proof.
   intros. unfold_stmt. stypc c. eapply hastyp_XtoVar; etypeasy.
   unfold cbits. change 64 with (2^(1+5)); eapply concat_bound; lia. lia.
-  all: etypeasy. assumption.
+  all: etypeasy.
 Qed.
 Hint Resolve  hastyp_arm_tbz2il : lifter.
 
@@ -4298,7 +4300,7 @@ Local Lemma hastyp_arm_tbnz2il:
 Proof.
   intros. unfold_stmt. stypc c. eapply hastyp_XtoVar; etypeasy.
   unfold cbits. change 64 with (2^(1+5)); eapply concat_bound; lia. lia.
-  all: etypeasy. assumption.
+  all: etypeasy.
 Qed.
 Hint Resolve  hastyp_arm_tbnz2il : lifter.
 
