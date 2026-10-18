@@ -94,7 +94,6 @@ Definition arm8typctx v :=
   | R_Z21 | R_Z22 | R_Z23 | R_Z24 | R_Z25 | R_Z26 | R_Z27 | R_Z28 | R_Z29 | R_Z30 | R_Z31 => Some 256
   | R_TMPZ0 | R_TMPZ1 | R_TMPZ2 | R_TMPZ3 | R_TMPZ4 | R_TMPZ5 | R_TMPZ6 => Some 256
   | R_TMP_LDXN => Some 64
-  | V_TEMP 0 (*R_PC*) => Some 64
   | V_TEMP _ => None
 end.
 
