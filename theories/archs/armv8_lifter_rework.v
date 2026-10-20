@@ -671,7 +671,7 @@ Definition DecodeBitMasks (immN imms immr:N) (immediate:bool) (M:N) :=
       let R := N.land immr levels in
       let diff := sbop2 Z.sub 6 S R in
       let esize := N.shiftl 1 len in
-      let d := xbits 0 len diff in
+      let d := xbits diff 0 len in
       let welem := N.ones (S+1) in
       let telem := N.ones (d+1) in
       let welem' := ROR esize R welem in
@@ -6252,7 +6252,7 @@ let imm := scast 21 64 (N.lor(N.shiftl immhi 2)immlo) in
 <{{arm_varid Rd } := PC + imm#64}>.
 
 Definition arm_adrp2il (immlo immhi Rd:N):=
-let imm := scast 33 64 (N.lor(N.shiftl immhi 2)immlo) in
+let imm := scast 33 64 (N.shiftl (N.lor(N.shiftl immhi 2)immlo) 12) in
 <{{arm_varid Rd } := (((PC) >> 12#64) << 12#64) + imm#64}>.
 
 Local Lemma hastyp_adr2il :
