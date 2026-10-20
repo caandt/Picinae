@@ -1819,10 +1819,12 @@ Section Decoder.
     let dbytes := N.shiftl 1 scale in
     let offset := (N.shiftl (scast 7 64 imm7) scale) mod 2^64 in
     let check := if Xn =? 31 then CheckSPAlignment else Nop in
-    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let base := if Xn =? 31 then Var R_SP else <{X[Xn]}> in
+    let address := if postindex then base else <{base + offset # 64}> in
     let data1 := if rtunknown && (Xt =? Xn) then <{unknown 64}> else <{X[Xt]}> in
     let data2 := if rtunknown && (Xt2 =? Xn) then <{unknown 64}> else <{X[Xt2]}> in
-    let wbblock := if negb wback then Nop else <{var[Xn]:=X[Xn]+offset#64}> in
+    let wbreg   := if Xn =? 31 then R_SP else arm_varid Xn in
+    let wbblock := if negb wback then Nop else <{ {wbreg} := base + offset # 64 }> in
     <{check; store[address,data1,dbytes]; store[address+dbytes#64,data2,dbytes]; wbblock}>.
 
   Definition arm_stp2il Xn Xt Xt2 imm7 scale wback postindex :=
@@ -1833,21 +1835,26 @@ Section Decoder.
       if unknown 1 then {arm_stp2il_constr Xn Xt Xt2 imm7 scale wback postindex false} else
                         {arm_stp2il_constr Xn Xt Xt2 imm7 scale wback postindex true} end end end}>.
 
-  (* scale is 2 or 3 *)
   Definition arm_ldp2il_constr Xn Xt Xt2 imm7 scale (wback postindex wbunknown rtunknown:bool) :=
     let size := N.shiftl 8 scale in   (* 32 or 64 *)
     let dbytes := N.shiftl 1 scale in (* 4 or 8 *)
     let datasize := N.shiftl 8 scale in
     let offset := (N.shiftl (scast 7 64 imm7) scale) mod 2^64 in
     let check := if Xn =? 31 then CheckSPAlignment else Nop in
-    let address := if postindex then <{X[Xn]}> else <{X[Xn]+offset#64}> in
+    let base := if Xn =? 31 then Var R_SP else <{X[Xn]}> in
+    let wbreg    := if Xn =? 31 then R_SP else arm_varid Xn in
+    let address := if postindex then base else <{base + offset # 64}> in
     let data1 := if rtunknown then <{ucast 64 (unknown datasize)}> else <{ucast 64 load[address,dbytes]}> in
     let data2 := if rtunknown then <{ucast 64 (unknown datasize)}> else <{ucast 64 load[address+dbytes#64,dbytes]}> in
-    let wbblock := if negb wback then Nop else
-                   let address := if wbunknown then <{unknown 64}> else if postindex then <{address+offset#64}> else address in
-                   <{var[Xn]:=address}> in
+    let wbblock :=
+    if negb wback then Nop else
+    let newbase := if wbunknown then <{unknown 64}>
+                   else if postindex then <{address + offset # 64}>
+                   else address in
+    <{ {wbreg} := newbase }> in
     <{
-      var[Xt] := data1;
+      check;
+      var[Xt]  := data1;
       var[Xt2] := data2;
       wbblock
     }>.
@@ -5103,9 +5110,10 @@ Proof.
   all: try rewrite armc_upd.
   all: try apply typeof_arm_varid.
   all: try reflexivity.
-  65: apply armc_pc_sub.
+  89: apply armc_pc_sub.
   all: try apply sub_update_same. 
-  all: reflexivity.  
+  all: try reflexivity.
+  all: try (etyp; destruct B4; subst; lia).
   Unshelve.
   all: exact 1.
 Qed.
@@ -5137,10 +5145,11 @@ Proof.
   all: time repeat econs. (* 7.17s *)
   all: try rewrite armc_upd.
   all: try reflexivity.
-  25: apply armc_pc_sub.
+  63: apply armc_pc_sub.
   all: try apply typeof_arm_varid.
   all: try apply sub_update_same.
   all: try apply typeof_arm_varid.
+  all: try (etyp; destruct B7; subst; lia).
   Unshelve.
   all: exact 0.
 Qed.
