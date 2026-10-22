@@ -655,6 +655,79 @@ Definition RORExp w x shift :=
     ite (m = 0#w) x ((x >> m) | (x << (w#w-m)))
 }>.
 
+  Compute (<{1#64 << ucast 64 32#64}>).
+
+  Definition Replicate_dummy rettemp t w w' x := <{
+  if w'#w' % w#w' <> 0#w' then exn 0 else nop end;
+  temp[t] := 0#w';
+  temp[rettemp] := 0#w';
+  rep w'#w' / w#w' do temp[rettemp] := Xtemp[rettemp] | ((ucast w' x) << (Xtemp[t] * w#w')); temp[t] := Xtemp[t]+1#w' end
+}>.
+
+(* J1-7389 *)
+(* Writes the M-bit wmask and tmask into temp[980] and temp[990]. *)
+Definition DecodeBitMasks (immN imms immr immediate M:N) :=
+  let imms := <{imms#6}> in
+  let immr := <{immr#6}> in
+  let immN := Word immN 1 in
+  let immediate := Word immediate 1 in
+  let immNNOTimms := <{immN ++ imms}> in
+  let levels := <{Xtemp[400]}> in
+  let S := <{Xtemp[401]}> in
+  let R := <{Xtemp[402]}> in
+  let lenw7 := <{Xtemp[300]}> in (* len <= 6 *)
+  let lenw6 := <{Xtemp[301]}> in (* len <= 6 *)
+  let esize := <{Xtemp[404]}> in
+  let d := <{Xtemp[405]}> in
+  <{
+    (* The highest setbit position of w bits is w-1;
+        casting the len down to 6-bits does not lose information
+        and is useful below. *)
+    (* lenw6 *) temp[301] := lcast 6 lenw7;
+    if Xtemp[300] < 1#7 then exn 0 else nop end;
+    if M#64 < (1#64 << ucast 64 Xtemp[300]) then exn 0 else nop end;
+
+    (* levels *) temp[400] := {Ones 6 lenw6};
+    if immediate & (imms & levels = levels) then exn 0 else nop end;
+    (* S *) temp[401] := imms & levels;
+    (* R *) temp[402] := immr & levels;
+    (* diff *) temp[403] := S-R;
+    (* esize *) temp[404] := 1#7 << lenw7;
+    (* d *) temp[405] := Xtemp[403] & levels;
+    if lenw6 = 1#6 then
+    (* welem *) temp[410] := {Ones 2 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 2 <{d+1#6}>};
+    (* wmask *) {Replicate_dummy 980 406 2 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate_dummy 990 406 2 M <{Xtemp[411]}>} else
+    if lenw6 = 2#6 then
+    (* welem *) temp[410] := {Ones 4 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 4 <{d+1#6}>};
+    (* wmask *) {Replicate_dummy 980 406 4 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate_dummy 990 406 4 M <{Xtemp[411]}>} else
+    if lenw6 = 3#6 then
+    (* welem *) temp[410] := {Ones 8 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 8 <{d+1#6}>};
+    (* wmask *) {Replicate_dummy 980 406 8 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate_dummy 990 406 8 M <{Xtemp[411]}>} else
+    if lenw6 = 4#6 then
+    (* welem *) temp[410] := {Ones 16 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 16 <{d+1#6}>};
+    (* wmask *) {Replicate_dummy 980 406 16 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate_dummy 990 406 16 M <{Xtemp[411]}>} else
+    if lenw6 = 5#6 then
+    (* welem *) temp[410] := {Ones 32 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 32 <{d+1#6}>};
+    (* wmask *) {Replicate_dummy 980 406 32 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate_dummy 990 406 32 M <{Xtemp[411]}>} else
+    if lenw6 = 6#6 then
+    (* welem *) temp[410] := {Ones 64 <{S+1#6}>};
+    (* telem *) temp[411] := {Ones 64 <{d+1#6}>};
+    (* wmask *) {Replicate_dummy 980 406 64 M <{Xtemp[410]}>};
+    (* tmask *) {Replicate_dummy 990 406 64 M <{Xtemp[411]}>} else
+    exn 0 end end end end end end
+}>.
+
+
 (* J1-7389 *)
 (* Returns the wmask and tmask as a pair of M-bit Gallina Ns.
    immN - 1 bit
@@ -4897,7 +4970,7 @@ Local Lemma update_same : forall (f : var -> option bitwidth) x y,
 Proof. 
   intros f x y E. extensionality v.
   destruct (v == x). rewrite e. rewrite E. 
-  apply update_updated.
+  apply update_updated. 
   apply update_frame. assumption.
 Qed.
 
@@ -5786,6 +5859,7 @@ Local Lemma hastyp_arm_casp2il:
   hastyp_stmt armc armc_pc (arm_casp2il Xn Xs Xt size ) armc.
 Proof.
   intros; unfold_stmt. econs. etyp. rewrite N.land_comm; apply land_bound; lia.
+
   {
   econs. eapply hastyp_CheckSPAlignment. eapply armc_pc_sub. 
   econs. apply hastyp_MemAtomicCompareAndSwap; casesolve. 
