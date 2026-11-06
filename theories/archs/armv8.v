@@ -73,7 +73,8 @@ Inductive arm8var :=
   | UXN
   (* System control register *)
   | SCTLR_E1
-  | V_TEMP (n:N)  (* Temporaries introduced by the lifter: *).
+  (* Temporaries introduced by the isa_semantics: *)
+  | V_TEMP (n:N).
 
 (* Declare the types (i.e., bitwidths) of all the CPU registers: *)
 Definition arm8typctx v :=

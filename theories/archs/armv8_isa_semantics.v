@@ -1,6 +1,6 @@
 
 (*
-   Armv8-A A64 lifter based on issue E.a
+   Armv8-A A64 isa_semantics based on issue E.a
    https://developer.arm.com/documentation/ddi0487/ea/
  *)
 Set Printing Depth 50.
@@ -283,7 +283,7 @@ Definition UsingAArch32 := <{ {Var R_nRW} = 1#1 }>.
   | 64 => <{if !UsingAArch32 then jmp target else exn 0 end}>
   | _ => <{exn 0}>
  end.*)
-(*I'm assuming w is either 32 or 64 else lifter is wrong*)
+(*I'm assuming w is either 32 or 64 else isa_semantics is wrong*)
 Definition BranchTo w target :=
   match w with
   | 32 => <{jmp(ucast 64 target)}>
@@ -2751,7 +2751,7 @@ Section Decoder.
     | "11    1  -  -" => UDF (* Unallocated. *)
     else UDF end.
 
-  (* The lifters for these and the *_IMM counterparts can be combined but
+  (* The isa_semanticss for these and the *_IMM counterparts can be combined but
      we'd need to add logic for calculating the offset. Might be worth it
      to cut down on loc. *)
 (*unsigned immediate*)
@@ -3817,16 +3817,16 @@ Proof.
   assumption.
 Qed.
 
-Create HintDb lifter.
-Hint Resolve xbits_bound : lifter.
-Hint Resolve scast_bound : lifter.
-Hint Resolve TNop : lifter.
-Hint Resolve pfsub_refl : lifter.
-Hint Resolve seq_pc : lifter.
+Create HintDb isa_semantics.
+Hint Resolve xbits_bound : isa_semantics.
+Hint Resolve scast_bound : isa_semantics.
+Hint Resolve TNop : isa_semantics.
+Hint Resolve pfsub_refl : isa_semantics.
+Hint Resolve seq_pc : isa_semantics.
 
-Hint Resolve N.lt_trans : lifter.
-Hint Extern 4 (2 ^ _ < 2 ^ _) => cbn; lia : lifter.
-Hint Extern 4 (_ <= _) => lia : lifter.
+Hint Resolve N.lt_trans : isa_semantics.
+Hint Extern 4 (2 ^ _ < 2 ^ _) => cbn; lia : isa_semantics.
+Hint Extern 4 (_ <= _) => lia : isa_semantics.
 
 Local Lemma armvarid_neq_mem:
   forall n, arm_varid n <> V_MEM64.
@@ -3840,7 +3840,7 @@ Proof.
   unfold AlignCheck. intros.
   etyp; lia || assumption.
 Qed.
-Hint Resolve  hastyp_AlignCheck : lifter.
+Hint Resolve  hastyp_AlignCheck : isa_semantics.
 
 Local Ltac c_var :=
   repeat rewrite update_frame by discriminate;
@@ -3871,7 +3871,7 @@ Local Lemma hastyp_UsingAArch32:
 Proof.
   intros; unfold UsingAArch32; etyp. apply PF. reflexivity.
 Qed.
-Hint Resolve  hastyp_UsingAArch32 : lifter.
+Hint Resolve  hastyp_UsingAArch32 : isa_semantics.
 
 Local Ltac etypeasy :=
   apply scast_bound || apply hastyp_UsingAArch32 || ((idtac+symmetry);apply typeof_arm_varid) ||
@@ -3959,7 +3959,7 @@ Ltac c_varx :=
             (* First case solves when the output context is a modification of the input;
                 second case solves when the output context is weakend to arm8typctx.
                 The latter case is useful for simplifying and indicating the theorems for
-                terminal lifter code as opposed to internal auxiliary functions. *)
+                terminal isa_semantics code as opposed to internal auxiliary functions. *)
             first [ assumption
                   | specialize (PF v val eq_refl) || specialize (PF v val (typeof_arm_varid _));
                     rewrite PF, <- EQ in *; reflexivity
@@ -4045,7 +4045,7 @@ Proof.
   intros. unfold_stmt. styp. 
   apply armc_pc_sub.
 Qed.
-Hint Resolve hastyp_havoc : lifter.
+Hint Resolve hastyp_havoc : isa_semantics.
 
 Import Lia.
 Lemma hastyp_Pack_NZCV:
@@ -4061,7 +4061,7 @@ Proof.
     [apply TBinOp with (w := 4) | apply TBinOp with (w := 4)].
   all: try eapply TBinOp with (w := 4); try eapply TCast with (w := 1); try eassumption; try lia; try etyps 4.
 Qed.
-Hint Resolve  hastyp_Pack_NZCV : lifter.
+Hint Resolve  hastyp_Pack_NZCV : isa_semantics.
 
 Lemma hastyp_Unpack_NZCV:
   forall c flags,
@@ -4073,7 +4073,7 @@ Proof.
   repeat split.
   all: etyps 4; apply H.
 Qed.
-Hint Resolve  hastyp_Unpack_NZCV : lifter.
+Hint Resolve  hastyp_Unpack_NZCV : isa_semantics.
 
 Lemma hastyp_arm_assign_flags:
   forall c flags,
@@ -4087,7 +4087,7 @@ Proof.
   rewrite Hunpack in Hcomp. destruct Hcomp as [Hn [Hz [Hc0 Hc]]].
   styp; cbn; try eassumption. eapply hastyp_exp_weaken with (c1:= arm8typctx) (c2:=c); eassumption.
 Qed.
-Hint Resolve  hastyp_arm_assign_flags : lifter.
+Hint Resolve  hastyp_arm_assign_flags : isa_semantics.
 
 Lemma hastyp_AddWithCarry:
   forall c datasize x y carry_in,
@@ -4106,7 +4106,7 @@ Proof.
   all: etyp; try eassumption. all: try unfold widthof_binop. all: try lia.
   all: try rewrite N.ones_equiv; apply N.lt_pred_l; apply N.pow_nonzero; try lia.
 Qed.
-Hint Resolve  hastyp_AddWithCarry : lifter.
+Hint Resolve  hastyp_AddWithCarry : isa_semantics.
 
 Local Lemma hastyp_assign_R:
   forall c n e,
@@ -4121,7 +4121,7 @@ Proof.
   assumption.
   rewrite sizeof_arm_varid. apply typeof_arm_varid. assumption.
 Qed.
-Hint Resolve  hastyp_assign_R : lifter.
+Hint Resolve  hastyp_assign_R : isa_semantics.
 
 Local Lemma hastyp_arm_data_il:
   forall c assign assign_flags Rn result flags,
@@ -4135,7 +4135,7 @@ Proof.
   destruct assign. apply hastyp_assign_R; assumption.
   styp. assumption.
 Qed.
-Hint Resolve  hastyp_arm_data_il : lifter.
+Hint Resolve  hastyp_arm_data_il : isa_semantics.
 
 Local Lemma hastyp_AddWithCarry_eq:
   forall c datasize x y carry_in r n,
@@ -4151,7 +4151,7 @@ Proof.
   rewrite H3 in Hac.
   assumption.
 Qed.
-Hint Resolve  hastyp_AddWithCarry_eq : lifter.
+Hint Resolve  hastyp_AddWithCarry_eq : isa_semantics.
 
 Ltac awc_sub_branch e:=
 apply hastyp_AddWithCarry_eq with (c:=arm8typctx) in e; destruct e;
@@ -4204,7 +4204,7 @@ Proof.
   all: destruct H1; subst; psimpl; etyp'.
   all: try unfold sizeof_c. all: try rewrite typeof_arm_varid. all: try (reflexivity||lia).
 Qed.
-Hint Resolve hastyp_ShiftC  : lifter.
+Hint Resolve hastyp_ShiftC  : isa_semantics.
 
 
 Local Lemma hastyp_ShiftReg :
@@ -4216,7 +4216,7 @@ datasize) datasize.
 Proof.
   intros. unfold ShiftReg. eapply hastyp_ShiftC; try assumption. lia.
 Qed.
-Hint Resolve hastyp_ShiftReg  : lifter.
+Hint Resolve hastyp_ShiftReg  : isa_semantics.
 
 
 Local Lemma hastyp_arm_data_imm:
@@ -4243,7 +4243,7 @@ Proof.
   + awc_branch e sh; apply armc_pc_sub.
   + awc_branch32 e sh Rn; apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_arm_data_imm : lifter.
+Hint Resolve  hastyp_arm_data_imm : isa_semantics.
 
 Local Lemma hastyp_Ones:
   forall c w e,
@@ -4253,7 +4253,7 @@ Proof.
   intros. assert (w < 2^w) by apply lt_pow2_lin.
   unfold Ones. new_etyp. all: first[lia|assumption].
 Qed.
-Hint Resolve  hastyp_Ones : lifter.
+Hint Resolve  hastyp_Ones : isa_semantics.
 
 Local Lemma sizeof_c_lookup:
   forall c v w,
@@ -4281,7 +4281,7 @@ Proof.
   intros. unfold ConditionHolds.
   destruct_match; etyp; etypeasy; unfold xbits; psimpl; lia.
 Qed.
-Hint Resolve  hastyp_ConditionHolds : lifter.
+Hint Resolve  hastyp_ConditionHolds : isa_semantics.
 
 Local Lemma hastyp_XtoVar:
   forall n c (PFSUB: pfsub arm8typctx c), hastyp_exp c (XtoVar n) 64.
@@ -4289,7 +4289,7 @@ Proof.
   intros. unfold XtoVar.
   repeat destruct_match; econstructor; apply PFSUB; reflexivity.
 Qed.
-Hint Resolve  hastyp_XtoVar : lifter.
+Hint Resolve  hastyp_XtoVar : isa_semantics.
 
 Local Lemma hastyp_AllocationTagFromAddress:
   forall e n c (PFSUB:pfsub arm8typctx c), hastyp_exp c e n -> n >= 60 -> hastyp_exp c (AllocationTagFromAddress e) 4.
@@ -4297,14 +4297,14 @@ Proof.
   unfold AllocationTagFromAddress; intros.
   etyp; try easy; eassumption || etypeasy.
 Qed.
-Hint Resolve  hastyp_AllocationTagFromAddress : lifter.
+Hint Resolve  hastyp_AllocationTagFromAddress : isa_semantics.
 
 Local Lemma hastyp_b2exp:
   forall b c, hastyp_exp c (b2exp b) 1.
 Proof.
   destruct b; repeat econstructor.
 Qed.
-Hint Resolve  hastyp_b2exp : lifter.
+Hint Resolve  hastyp_b2exp : isa_semantics.
 
 Local Lemma hastyp_AlignPow2:
   forall c e w p (T:hastyp_exp c e w) (PFSUB:pfsub arm8typctx c), 8 < 2^w -> hastyp_exp c (AlignPow2 e w p) w.
@@ -4312,7 +4312,7 @@ Proof.
   unfold AlignPow2. intros.
   destruct_match; try assumption; etyp; lia || assumption.
 Qed.
-Hint Resolve  hastyp_AlignPow2 : lifter.
+Hint Resolve  hastyp_AlignPow2 : isa_semantics.
 
 
 
@@ -4323,7 +4323,7 @@ Proof.
   repeat econstructor; etypeasy. etyp. all: try lia || reflexivity.
   1,3: apply PFSUB; reflexivity. lia.
 Qed.
-Hint Resolve  hastyp_CheckSPAlignment : lifter.
+Hint Resolve  hastyp_CheckSPAlignment : isa_semantics.
 
 Local Lemma hastyp_MemSingleWrite:
   forall a sz v c (T:hastyp_exp c a 64) (T2:hastyp_exp c v (sz*8)) (PFSUB:pfsub arm8typctx c),
@@ -4335,17 +4335,17 @@ Proof.
     right. 3: apply update_some. 3: apply PFSUB.
     all:try reflexivity. etyp; etypeasy.
 Qed.
-Hint Resolve  hastyp_MemSingleWrite : lifter.
+Hint Resolve  hastyp_MemSingleWrite : isa_semantics.
 
 Definition hastyp_MemWrite := hastyp_MemSingleWrite.
-Hint Resolve hastyp_MemWrite  : lifter.
+Hint Resolve hastyp_MemWrite  : isa_semantics.
 
 Local Lemma hastyp_MemRead:
   forall c a sz (T:hastyp_exp c a 64) (PFSUB:pfsub armc c), sz < 2^64 -> hastyp_exp c (MemRead a sz) (sz*8).
 Proof.
   intros; unfold MemRead. etyp; etypeasy.
 Qed.
-Hint Resolve  hastyp_MemRead : lifter.
+Hint Resolve  hastyp_MemRead : isa_semantics.
 
 Local Lemma hastyp_BranchTo:
   forall t c size (B:size=32\/size=64) (T:hastyp_exp c t size) (PF:pfsub armc c), hastyp_stmt armc c (BranchTo size t) c.
@@ -4355,7 +4355,7 @@ Proof.
   all: try (eapply TJmp; [eassumption | reflexivity]).
   eapply TJmp. econstructor. eassumption. lia. reflexivity.
 Qed.
-Hint Resolve  hastyp_BranchTo : lifter.
+Hint Resolve  hastyp_BranchTo : isa_semantics.
 
 Local Lemma hastyp_arm_cbnz2il:
   forall Xn imm19  size (B1:imm19 < 2^19) (B2:Xn<2^5) (B3:size=32\/size=64),
@@ -4366,7 +4366,7 @@ Proof.
   eapply TJmp. etyp. apply scast_bound. reflexivity.
   apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_arm_cbnz2il : lifter.
+Hint Resolve  hastyp_arm_cbnz2il : isa_semantics.
 
 Local Lemma hastyp_arm_cbz2il:
   forall Xn imm19 size (B1:imm19 < 2^19) (B2:Xn<2^5) (B3:size=32\/size=64),
@@ -4377,7 +4377,7 @@ Proof.
   eapply TJmp. etyp. apply scast_bound. reflexivity.
   apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_arm_cbz2il : lifter.
+Hint Resolve  hastyp_arm_cbz2il : isa_semantics.
 
 Local Lemma hastyp_arm_br2il:
   forall (Xn:N) (B:Xn < 2^5), hastyp_stmt armc armc_pc (arm_br2il Xn) armc.
@@ -4387,7 +4387,7 @@ Proof.
   apply hastyp_BranchTo; [lia |apply hastyp_XtoVar|]; reflexivity.
   apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_arm_br2il : lifter.
+Hint Resolve  hastyp_arm_br2il : isa_semantics.
 
 Lemma pfsub_remove2 {A B:Type} {E:EqDec A}:
   forall c1 c2 var (val:B), (forall x y, x<>var -> c1 x = Some y -> c2 x = Some y) -> update c1 var None ⊆ update c2 var (Some val).
@@ -4426,14 +4426,14 @@ Proof.
   - unfold armc_pc. subsolve. symmetry. reflexivity. symmetry.  
   cbn in EQ. discriminate. cbn in EQ. discriminate. 
 Qed.
-Hint Resolve  hastyp_arm_blr2il : lifter.
+Hint Resolve  hastyp_arm_blr2il : isa_semantics.
 
 Local Lemma hastyp_arm_ret2il:
   forall c (Xn:N) (B:Xn < 2^5) (PF:pfsub armc c), hastyp_stmt armc c (arm_ret2il Xn) c.
 Proof.
   intros; unfold_stmt. apply hastyp_BranchTo;[lia|etyp|assumption]. apply hastyp_XtoVar; assumption || lia.
 Qed.
-Hint Resolve  hastyp_arm_ret2il : lifter.
+Hint Resolve  hastyp_arm_ret2il : isa_semantics.
 
 Local Lemma hastyp_arm_b_cond2il:
   forall cond imm19 (B1:imm19<2^19),
@@ -4444,7 +4444,7 @@ Proof.
   econstructor. etyp. apply scast_bound. 
   reflexivity. econstructor. reflexivity. apply armc_pc_sub. 
 Qed.
-Hint Resolve  hastyp_arm_b_cond2il : lifter.
+Hint Resolve  hastyp_arm_b_cond2il : isa_semantics.
 
 Definition hastyp_arm_eret2il := hastyp_havoc.
 Definition hastyp_arm_drps2il:= hastyp_havoc.
@@ -4461,7 +4461,7 @@ Proof.
   intros; unfold_stmt. styp. apply scast_bound. 
   apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_arm_b2il : lifter.
+Hint Resolve  hastyp_arm_b2il : isa_semantics.
 
 Local Lemma hastyp_arm_bl2il:
   forall (imm26:N) (B:imm26<2^26), hastyp_stmt armc armc_pc (arm_bl2il imm26) armc.
@@ -4474,7 +4474,7 @@ Proof.
   symmetry. reflexivity. cbn in EQ. discriminate.
  
 Qed.
-Hint Resolve  hastyp_arm_bl2il : lifter.
+Hint Resolve  hastyp_arm_bl2il : isa_semantics.
 
 Local Lemma hastyp_arm_tbz2il:
   forall (Rt imm14 b5 b40:N) (B1:Rt<2^5) (B2:imm14<2^14) (B3:b5<2^1) (B4:b40<2^5) ,
@@ -4493,7 +4493,7 @@ Proof.
  - econstructor. reflexivity.
  - apply armc_pc_sub.
 Qed. 
-Hint Resolve  hastyp_arm_tbz2il : lifter.
+Hint Resolve  hastyp_arm_tbz2il : isa_semantics.
 
 Local Lemma hastyp_arm_tbnz2il:
   forall (Rt imm14 b5 b40:N) (B1:Rt<2^5) (B2:imm14<2^14) (B3:b5<2^1) (B4:b40<2^5),
@@ -4511,7 +4511,7 @@ Proof.
   - apply armc_pc_sub.
 Qed.   
   
-Hint Resolve  hastyp_arm_tbnz2il : lifter.
+Hint Resolve  hastyp_arm_tbnz2il : isa_semantics.
 
 Local Lemma DecodeBitMasks_bound:
   forall immN imms immr immediate M
@@ -4551,7 +4551,7 @@ Local Lemma hastyp_wmask:
 Proof.
   intros; econstructor. apply wmask_bound; lia.
 Qed.
-Hint Resolve  hastyp_wmask : lifter.
+Hint Resolve  hastyp_wmask : isa_semantics.
 
 Local Lemma tmask_bound:
   forall immN imms immr immediate M
@@ -4571,7 +4571,7 @@ Local Lemma hastyp_tmask:
 Proof.
   intros; econstructor. apply tmask_bound; lia.
 Qed.
-Hint Resolve  hastyp_tmask : lifter.
+Hint Resolve  hastyp_tmask : isa_semantics.
 
 Local Lemma hastyp_ExtendReg:
   forall regt regn exttype shift (B1:regn<2^5) (B2:shift<2^3) (B3:exttype<2^3),
@@ -4587,7 +4587,7 @@ Proof.
   -- reflexivity.
   -- apply pfsub_update. apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_ExtendReg : lifter.
+Hint Resolve  hastyp_ExtendReg : isa_semantics.
 
 Local Lemma hastyp_ExtendReg':
   forall c wout reg exttype shift (PF:pfsub armc c) (B1:reg<2^5) (B2:shift<2^3) (B3:exttype<2^3) (B4:8<wout<=64),
@@ -4603,7 +4603,7 @@ Proof.
   assumption.
   all: lia.
 Qed.
-Hint Resolve  hastyp_ExtendReg' : lifter.
+Hint Resolve  hastyp_ExtendReg' : isa_semantics.
 
 
 Local Lemma hastyp_sp_xn:
@@ -4612,7 +4612,7 @@ Proof.
   intros. destruct_match.
     etyp. apply hastyp_XtoVar. reflexivity.
 Qed.
-Hint Resolve  hastyp_sp_xn : lifter.
+Hint Resolve  hastyp_sp_xn : isa_semantics.
 
 Local Lemma hastyp_RORExp:
   forall w x shift
@@ -4622,7 +4622,7 @@ Proof.
   intros; unfold RORExp.
   etyp'. all: assumption || lia || apply lt_pow2_lin.
 Qed.
-Hint Resolve  hastyp_RORExp : lifter.
+Hint Resolve  hastyp_RORExp : isa_semantics.
 
 (* Try to solve a hastyp_exp goal, dealing with fairly complex context subset subgoals. *)
 (* casesolve tries esolve and other things.  To break the circular dependency we parameterize
@@ -4652,7 +4652,7 @@ Proof.
   apply armc_pc_sub.
   estyp. apply armc_pc_sub.
 Qed.
-Hint Resolve  hastyp_check : lifter.
+Hint Resolve  hastyp_check : isa_semantics.
 
 (* Try to solve a hastyp_stmt goal using aux-function lemmas. *)
 Local Ltac ssolve H :=
@@ -4883,20 +4883,20 @@ Proof.
     apply sub_update_same. apply armc_pc_sub, typeof_arm_varid.
 Qed.
     
-Hint Resolve  hastyp_arm_stxr2il_constr : lifter.
-Hint Resolve  hastyp_arm_stxr2il_constr_strong : lifter.
+Hint Resolve  hastyp_arm_stxr2il_constr : isa_semantics.
+Hint Resolve  hastyp_arm_stxr2il_constr_strong : isa_semantics.
 
 Local Lemma hastyp_UNDEF_strong:
 hastyp_stmt arm8typctx armc_pc UNDEF armc_pc.
 Proof. econs. unfold armc_pc. subsolve. symmetry. reflexivity.
  Qed.
-Hint Resolve  hastyp_UNDEF_strong : lifter.
+Hint Resolve  hastyp_UNDEF_strong : isa_semantics.
 
 Local Lemma hastyp_UNDEF_weak:
 hastyp_stmt arm8typctx armc_pc UNDEF arm8typctx.
 Proof. econs. unfold armc_pc. subsolve. symmetry. reflexivity.
 cbn in EQ. discriminate. Qed.
-Hint Resolve  hastyp_UNDEF_weak : lifter.
+Hint Resolve  hastyp_UNDEF_weak : isa_semantics.
 
 From Stdlib Require Import FunctionalExtensionality.
 (*TODO why did i add this again?*)
@@ -4959,7 +4959,7 @@ Proof.
   - apply hastyp_arm_stxr2il_constr; try assumption.
 Qed.
 
-Hint Resolve  hastyp_arm_stxr2il_size : lifter.
+Hint Resolve  hastyp_arm_stxr2il_size : isa_semantics.
 
 (* TODO retype the updated *_constr definitions and the instructions that use them. *)
 Local Lemma hastyp_arm_stxp2il_constr:
@@ -4981,7 +4981,7 @@ Proof.
   all: try lia.   
   all : try solve [apply hastyp_XtoVar, armc_pc_sub].
 Qed.
-Hint Resolve  hastyp_arm_stxp2il_constr : lifter.
+Hint Resolve  hastyp_arm_stxp2il_constr : isa_semantics.
 
 Local Lemma hastyp_arm_stxp2il_size:
   forall (size Xn Xs Xt Xt2:N)
@@ -5018,7 +5018,7 @@ Proof.
   all: try lia.   
   all : try solve [apply hastyp_XtoVar, armc_pc_sub].
 Qed.
-Hint Resolve hastyp_arm_stxp2il_size : lifter.
+Hint Resolve hastyp_arm_stxp2il_size : isa_semantics.
 
 Local Lemma hastyp_arm_ldxp2il_constr:
   forall (size Xn Xt Xt2:N) (rtunknown:bool)
@@ -5045,7 +5045,7 @@ Proof.
   Unshelve.
   all: exact 4.
 Qed.
-Hint Resolve  hastyp_arm_ldxp2il_constr : lifter.
+Hint Resolve  hastyp_arm_ldxp2il_constr : isa_semantics.
 
 Local Lemma hastyp_arm_ldxp2il_size:
   forall (size Xn Xt Xt2:N)
@@ -5059,7 +5059,7 @@ Proof.
   all: try apply armc_pc_sub. all: try reflexivity.
   try apply typeof_arm_varid. 
 Qed.
-Hint Resolve  hastyp_arm_ldxp2il_size : lifter.
+Hint Resolve  hastyp_arm_ldxp2il_size : isa_semantics.
 
 Local Lemma hastyp_arm_ldnp2il_constr:
   forall Xn Xt Xt2 imm7 scale rtunknown
@@ -5092,7 +5092,7 @@ Proof.
   Unshelve.
   all: exact 2.  (*TODO: fix this its ugly*)
 Qed.
-Hint Resolve  hastyp_arm_ldnp2il_constr : lifter.
+Hint Resolve  hastyp_arm_ldnp2il_constr : isa_semantics.
 
 Local Lemma hastyp_arm_ldnp2il:
   forall Xn Xt Xt2 imm7 scale
@@ -5107,7 +5107,7 @@ Proof.
   apply hastyp_arm_ldnp2il_constr; assumption.
   reflexivity.
 Qed. (*TODO: need to fix TIf automation*)
-Hint Resolve  hastyp_arm_ldnp2il : lifter.
+Hint Resolve  hastyp_arm_ldnp2il : isa_semantics.
 
 Local Lemma hastyp_arm_stp2il_constr:
   forall Xn Xt Xt2 imm7 scale wback (postindex:bool) rtunknown
@@ -5126,7 +5126,7 @@ Proof.
   Unshelve.
   all: exact 1.
 Qed.
-Hint Resolve  hastyp_arm_stp2il_constr : lifter.
+Hint Resolve  hastyp_arm_stp2il_constr : isa_semantics.
 
 Local Lemma hastyp_arm_stp2il:
   forall Xn Xt Xt2 imm7 scale wback (postindex:bool)
@@ -5142,7 +5142,7 @@ Proof.
   apply hastyp_arm_stp2il_constr; assumption.
   reflexivity.
 Qed.
-Hint Resolve  hastyp_arm_stp2il : lifter.
+Hint Resolve  hastyp_arm_stp2il : isa_semantics.
 
 Local Lemma hastyp_arm_ldp2il_constr:
   forall Xn Xt Xt2 imm7 scale wback wb_unknown rt_unknown postindex
@@ -5162,7 +5162,7 @@ Proof.
   Unshelve.
   all: exact 0.
 Qed.
-Hint Resolve  hastyp_arm_ldp2il_constr : lifter.
+Hint Resolve  hastyp_arm_ldp2il_constr : isa_semantics.
 
 Local Lemma hastyp_arm_ldp2il:
   forall Xn Xt Xt2 imm7 scale wback postindex
@@ -5183,7 +5183,7 @@ Proof.
   all: try apply typeof_arm_varid.
 
 Qed.
-Hint Resolve  hastyp_arm_ldp2il : lifter.
+Hint Resolve  hastyp_arm_ldp2il : isa_semantics.
 
 Local Lemma hastyp_arm_ldpsw2il_constr:
   forall Xn Xt Xt2 imm7 wback wb_unknown rt_unknown postindex
@@ -5195,7 +5195,7 @@ Proof.
   all: try solve [repeat econs].
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; apply typeof_arm_varid].
 Qed.
-Hint Resolve  hastyp_arm_ldpsw2il_constr : lifter.
+Hint Resolve  hastyp_arm_ldpsw2il_constr : isa_semantics.
 (*TODO: use what u did in the func above to make the others shorter*)
 Local Lemma hastyp_arm_ldpsw2il:
   forall Xn Xt Xt2 imm7 wback postindex
@@ -5215,7 +5215,7 @@ Proof.
   all: rewrite armc_pc_upd; apply armc_pc_sub; apply typeof_arm_varid.
 Qed. 
   
-Hint Resolve  hastyp_arm_ldpsw2il : lifter.
+Hint Resolve  hastyp_arm_ldpsw2il : isa_semantics.
 
 Local Lemma hastyp_arm_str_imm2il_size_constr:
   forall size (Xn Xt imm912:N) (signed wback postindex rtunknown:bool)
@@ -5227,7 +5227,7 @@ Proof.
   29: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; reflexivity]. 
 Qed.
-Hint Resolve  hastyp_arm_str_imm2il_size_constr : lifter.
+Hint Resolve  hastyp_arm_str_imm2il_size_constr : isa_semantics.
 
 Local Lemma hastyp_arm_str_imm2il_size:
   forall size (Xn Xt imm912:N) (signed wback postindex:bool)
@@ -5247,7 +5247,7 @@ Proof.
   all: econs.
   rewrite armc_pc_upd; apply armc_pc_sub; apply typeof_arm_varid.
 Qed.
-Hint Resolve  hastyp_arm_str_imm2il_size : lifter.
+Hint Resolve  hastyp_arm_str_imm2il_size : isa_semantics.
 
 Definition hastyp_arm_str_imm2il := hastyp_arm_str_imm2il_size.
 Definition hastyp_arm_strb_imm2il := hastyp_arm_str_imm2il_size 8.
@@ -5263,7 +5263,7 @@ Proof.
   21: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)]. 
 Qed.
-Hint Resolve  hastyp_arm_ldr_imm2il_size_constr : lifter.
+Hint Resolve  hastyp_arm_ldr_imm2il_size_constr : isa_semantics.
 
 Local Lemma hastyp_arm_ldr_imm2il_size:
   forall size (Xn Xt imm912:N) (signed wback postindex:bool)
@@ -5282,7 +5282,7 @@ Proof.
   all: econs.
   rewrite armc_pc_upd; apply armc_pc_sub; apply typeof_arm_varid.
 Qed.
-Hint Resolve  hastyp_arm_ldr_imm2il_size : lifter.
+Hint Resolve  hastyp_arm_ldr_imm2il_size : isa_semantics.
 
 Definition hastyp_arm_ldr_imm2il := hastyp_arm_ldr_imm2il_size.
 Definition hastyp_arm_ldrb_imm2il := hastyp_arm_ldr_imm2il_size 8.
@@ -5297,7 +5297,7 @@ Proof.
   21: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)]. 
 Qed.
-Hint Resolve  hastyp_arm_ldrs_imm2il_size_constr : lifter.
+Hint Resolve  hastyp_arm_ldrs_imm2il_size_constr : isa_semantics.
 
 Local Lemma hastyp_arm_ldrs_imm2il_size:
   forall size w' (Xn Xt imm912:N) (signed wback postindex:bool)
@@ -5316,7 +5316,7 @@ Proof.
   all: econs.
   rewrite armc_pc_upd; apply armc_pc_sub; apply typeof_arm_varid.
 Qed.
-Hint Resolve  hastyp_arm_ldrs_imm2il_size : lifter.
+Hint Resolve  hastyp_arm_ldrs_imm2il_size : isa_semantics.
 
 Definition hastyp_arm_ldrsb_imm2il := hastyp_arm_ldrs_imm2il_size 8.
 Definition hastyp_arm_ldrsh_imm2il := hastyp_arm_ldrs_imm2il_size 16.
@@ -5331,7 +5331,7 @@ Proof.
   7: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)]. 
 Qed.
-Hint Resolve  hastyp_arm_ldraa2il_constr : lifter.
+Hint Resolve  hastyp_arm_ldraa2il_constr : isa_semantics.
 
 Local Lemma hastyp_arm_ldraa2il:
   forall (Xn Xt S imm9:N) (wback:bool)
@@ -5350,7 +5350,7 @@ Proof.
   all: econs.
   rewrite armc_pc_upd; apply armc_pc_sub; apply typeof_arm_varid.
 Qed.
-Hint Resolve  hastyp_arm_ldraa2il : lifter.
+Hint Resolve  hastyp_arm_ldraa2il : isa_semantics.
 
 Local Lemma hastyp_arm_ldr_reg2il_size_signed:
   forall size signed w' S Xn Xm Xt extend 
@@ -5365,7 +5365,7 @@ Proof.
   89: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)]. 
 Qed.
-Hint Resolve  hastyp_arm_ldr_reg2il_size_signed : lifter.
+Hint Resolve  hastyp_arm_ldr_reg2il_size_signed : isa_semantics.
 
 Definition hastyp_arm_ldrb_reg2il := hastyp_arm_ldr_reg2il_size_signed 8 false 32 0.
 Definition hastyp_arm_ldrh_reg2il := hastyp_arm_ldr_reg2il_size_signed 16 false 32 0.
@@ -5385,14 +5385,14 @@ Proof.
   intros; unfold_stmt. split_cases.
   all: time repeat econs. (* 1.14s *)
 Qed.
-Hint Resolve  hastyp_arm_str_reg2il_size : lifter.
+Hint Resolve  hastyp_arm_str_reg2il_size : isa_semantics.
 
 
 Definition hastyp_arm_strb_reg2il := hastyp_arm_str_reg2il_size 8 0.
 Definition hastyp_arm_strh_reg2il := hastyp_arm_str_reg2il_size 16 0.
 Definition hastyp_arm_str_reg2il := hastyp_arm_str_reg2il_size.
 
-Hint Unfold arm_str_reg2il arm_strb_reg2il arm_strh_reg2il : lifter.
+Hint Unfold arm_str_reg2il arm_strb_reg2il arm_strh_reg2il : isa_semantics.
 
 
 Definition hastyp_arm_prfm_lit2il  := hastyp_havoc.
@@ -5407,7 +5407,7 @@ Proof.
   3: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)]. 
 Qed.
-Hint Resolve  hastyp_arm_stlur2il_size : lifter.
+Hint Resolve  hastyp_arm_stlur2il_size : isa_semantics.
 
 Definition hastyp_arm_stlurb2il := hastyp_arm_stlur2il_size 8.
 Definition hastyp_arm_stlurh2il := hastyp_arm_stlur2il_size 16.
@@ -5427,7 +5427,7 @@ Proof.
   all: symmetry in Hequpcast; apply Neqb_ok in Hequpcast; rewrite Hequpcast.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)].
 Qed.
-Hint Resolve hastyp_arm_ldapur2il_size_signed : lifter.
+Hint Resolve hastyp_arm_ldapur2il_size_signed : isa_semantics.
 
 Definition hastyp_arm_ldapurb2il := hastyp_arm_ldapur2il_size_signed 8 false 32.
 Definition hastyp_arm_ldapurh2il := hastyp_arm_ldapur2il_size_signed 16 false 32.
@@ -5449,7 +5449,7 @@ Proof.
   3: apply armc_pc_sub.
   all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)].
 Qed.
-Hint Resolve  hastyp_arm_stur2il_size : lifter.
+Hint Resolve  hastyp_arm_stur2il_size : isa_semantics.
 
 Definition hastyp_arm_sturb2il := hastyp_arm_stur2il_size 8.
 Definition hastyp_arm_sturh2il := hastyp_arm_stur2il_size 16.
@@ -5467,7 +5467,7 @@ Proof.
   5: apply armc_pc_sub. all: try solve [repeat econs; try reflexivity; subsolve; symmetry; (reflexivity||apply typeof_arm_varid)].
 Qed.
 
-Hint Resolve  hastyp_arm_ldur2il_size : lifter.
+Hint Resolve  hastyp_arm_ldur2il_size : isa_semantics.
 
 Definition hastyp_arm_ldurb2il := hastyp_arm_ldur2il_size 8 false 0.
 Definition hastyp_arm_ldurh2il := hastyp_arm_ldur2il_size 16 false 0.
@@ -5507,7 +5507,7 @@ apply hastyp_stmt_weaken with (c1 := arm8typctx). destruct_match.
   subsolve]].
   all: subsolve; symmetry; reflexivity.
   Qed.
-Hint Resolve  hastyp_MemAtomic : lifter.
+Hint Resolve  hastyp_MemAtomic : isa_semantics.
 
 Local Lemma hastyp_arm_ldatomic2il_size:
   forall op size Xn Xs Xt
@@ -5534,7 +5534,7 @@ Proof.
   econs. 2: reflexivity. subsolve. symmetry. apply typeof_arm_varid.
   cbv in EQ. discriminate. 
   Qed.  
-Hint Resolve  hastyp_arm_ldatomic2il_size : lifter.
+Hint Resolve  hastyp_arm_ldatomic2il_size : isa_semantics.
 
 Definition hastyp_arm_ldaddb2il := hastyp_arm_ldatomic2il_size MemAtomicOp_ADD 8.
 Definition hastyp_arm_ldaddh2il := hastyp_arm_ldatomic2il_size MemAtomicOp_ADD 16.
@@ -5586,12 +5586,12 @@ Proof.
   cbv in EQ. discriminate.
 
 Qed.
-Hint Resolve  hastyp_arm_swp2il_size : lifter.
+Hint Resolve  hastyp_arm_swp2il_size : isa_semantics.
 
 Definition hastyp_arm_swpb2il := hastyp_arm_swp2il_size 8.
 Definition hastyp_arm_swph2il := hastyp_arm_swp2il_size 16.
 Definition hastyp_arm_swp2il := hastyp_arm_swp2il_size.
-Hint Resolve  hastyp_arm_swp2il : lifter.
+Hint Resolve  hastyp_arm_swp2il : isa_semantics.
 
 Local Lemma hastyp_arm_ldapr2il_size:
   forall size Xn Xt (B1:Xn<2^5) (B2:Xt<2^5) (B3:size=8\/size=16\/size=32\/size=64),
@@ -5610,7 +5610,7 @@ Proof.
    all: try apply armc_pc_sub. apply typeof_arm_varid.
   
 Qed.
-Hint Resolve  hastyp_arm_ldapr2il_size : lifter.
+Hint Resolve  hastyp_arm_ldapr2il_size : isa_semantics.
 
 Definition hastyp_arm_ldaprb2il := hastyp_arm_ldapr2il_size 8.
 Definition hastyp_arm_ldaprh2il := hastyp_arm_ldapr2il_size 16.
@@ -5638,7 +5638,7 @@ Proof.
     - econs. econs. apply TBinOp with (w := 64). eapply hastyp_XtoVar. apply armc_pc_sub.
     econs. 2: reflexivity. rewrite armc_pc_upd. all: try apply armc_pc_sub. apply typeof_arm_varid.
 Qed.
-Hint Resolve hastyp_arm_stg2il : lifter.
+Hint Resolve hastyp_arm_stg2il : isa_semantics.
 
 Local Lemma hastyp_arm_ldg2il:
   forall Xn Xt imm9 (B1:imm9<2^9),
@@ -5650,7 +5650,7 @@ Proof.
   all: try econs. apply armc_pc_sub. rewrite armc_pc_upd. all: apply armc_pc_sub.
   apply typeof_arm_varid.
 Qed.
-Hint Resolve hastyp_arm_ldg2il : lifter.
+Hint Resolve hastyp_arm_ldg2il : isa_semantics.
 
 Local Lemma hastyp_arm_stzg2il:
   forall Xn a imm9 writeback postindex (B1:imm9<2^9),
@@ -5692,7 +5692,7 @@ Proof.
   apply pfsub_trans with (g:=armc_pc). apply armc_pc_sub. subsolve. reflexivity.
   - apply armc_pc_sub.
   Qed.
-Hint Resolve hastyp_arm_stzg2il : lifter.
+Hint Resolve hastyp_arm_stzg2il : isa_semantics.
 
 Local Lemma hastyp_arm_st2g2il:
   forall Xn a imm9 writeback postindex (B1:imm9<2^9),
@@ -5724,7 +5724,7 @@ Proof.
   - apply armc_pc_sub.  
 
 Qed.
-Hint Resolve hastyp_arm_st2g2il : lifter.
+Hint Resolve hastyp_arm_st2g2il : isa_semantics.
 
 
 Local Lemma hastyp_arm_stz2g2il:
@@ -5761,7 +5761,7 @@ Proof.
   apply pfsub_trans with (g:=armc_pc). apply armc_pc_sub. subsolve. reflexivity. 
   - apply armc_pc_sub. 
 Qed.
-Hint Resolve hastyp_arm_stz2g2il : lifter.
+Hint Resolve hastyp_arm_stz2g2il : isa_semantics.
 
 Lemma armc_pc_temp_none : forall t, t <> 0 -> armc_pc (V_TEMP t) = None.
 Proof.
@@ -5820,7 +5820,7 @@ Proof.
     cbv in EQ. discriminate.
   }
 Qed.
-Hint Resolve hastyp_arm_casp2il : lifter.
+Hint Resolve hastyp_arm_casp2il : isa_semantics.
 
 Local Lemma hastyp_arm_cas2il_size:
   forall size Xn Xs Xt (B1:size=8\/size=16\/size=32\/size=64),
@@ -5839,7 +5839,7 @@ Proof.
     econs. all: try reflexivity. subsolve; try symmetry; try apply typeof_arm_varid.
     cbv in EQ. discriminate.
 Qed.
-Hint Resolve hastyp_arm_cas2il_size : lifter.
+Hint Resolve hastyp_arm_cas2il_size : isa_semantics.
 
 Local Lemma hastyp_arm_stllr2il_size:
   forall size Xn Xt (B1:size=8\/size=16\/size=32\/size=64),
@@ -5862,7 +5862,7 @@ intros.
   econs. rewrite H. eapply TCast with (w := 64).  apply hastyp_XtoVar. apply armc_pc_sub. lia.
  rewrite armc_pc_upd. apply armc_pc_sub. reflexivity.
 Qed.
-Hint Resolve hastyp_arm_stllr2il_size : lifter.
+Hint Resolve hastyp_arm_stllr2il_size : isa_semantics.
 
 Local Lemma hastyp_arm_ldr_lit2il_size_signed :
   forall size signed w' Xt imm19 
@@ -5875,7 +5875,7 @@ Proof.
   apply typeof_arm_varid. 
   
 Qed.
-Hint Resolve hastyp_arm_ldr_lit2il_size_signed  : lifter.
+Hint Resolve hastyp_arm_ldr_lit2il_size_signed  : isa_semantics.
 
 Local Lemma hastyp_arm_stnp2il:
   forall scale Xn Xt Xt2 imm7 (B1:scale=2\/scale=3) (B2:imm7<2^7),
@@ -5912,7 +5912,7 @@ reflexivity.
 - repeat rewrite update_same. apply armc_pc_sub. all: reflexivity.
 Qed. 
 
-Hint Resolve hastyp_arm_stnp2il : lifter.
+Hint Resolve hastyp_arm_stnp2il : isa_semantics.
 
 Local Lemma hastyp_arm_stgp2il:
   forall Xn Xt Xt2 imm7 wback postindex (B1:imm7<2^7) (BXn : Xn < 2^5) (BXt : Xt < 2^5) (BXt2 : Xt2 < 2^5),
@@ -5995,7 +5995,7 @@ apply hastyp_XtoVar. apply armc_pc_sub.
  all: reflexivity.
  
 Qed.
-Hint Resolve hastyp_arm_stgp2il : lifter.
+Hint Resolve hastyp_arm_stgp2il : isa_semantics.
 
 Local Lemma hastyp_arm_ldtr2il_size_signed:
   forall size signed w' Xn Xt imm9 (B1:size=8\/size=16\/size=32\/size=64) (B2:imm9<2^9) (B3:w'=32\/w'=64)
@@ -6011,7 +6011,7 @@ all: repeat econs.
 all: try reflexivity. 
 all: rewrite update_same; [reflexivity| apply typeof_arm_varid].
 Qed.
-Hint Resolve hastyp_arm_ldtr2il_size_signed : lifter.
+Hint Resolve hastyp_arm_ldtr2il_size_signed : isa_semantics.
 
 Lemma varid_neq_temp :
  forall v a, <{ var[ {v} ] }> <> (V_TEMP a).
@@ -6059,7 +6059,7 @@ Proof.
       destruct shift; repeat (nia || destruct p as [p|p|]).
   - all: rewrite update_same. all: apply armc_pc_sub. all: apply typeof_arm_varid.
 Qed.
-Hint Resolve  hastyp_arm_mov_imm2il : lifter.
+Hint Resolve  hastyp_arm_mov_imm2il : isa_semantics.
 
 Ltac match_awcs:=
 repeat match goal with 
@@ -6091,7 +6091,7 @@ Proof.
   all: destruct_match_rmr; awc_sub_branch e. 
   all: match_awcs.
 Qed.
-Hint Resolve  hastyp_arm_datashft_reg2il : lifter.
+Hint Resolve  hastyp_arm_datashft_reg2il : isa_semantics.
 
 Local Lemma hastyp_arm_logshft_reg2il:
 forall op sf shift Rm Rd imm6 Rn,
@@ -6108,7 +6108,7 @@ Proof.
   all: try estyp.
   all: match_awcs.
 Qed.
-Hint Resolve  hastyp_arm_logshft_reg2il : lifter.
+Hint Resolve  hastyp_arm_logshft_reg2il : isa_semantics.
 
 Local Lemma hastyp_ExtendReg2:
 forall imm3 Rm option_ datasize,
@@ -6121,7 +6121,7 @@ Proof.
   destruct H. subst. discriminate e. 
    subst. discriminate e.
 Qed. 
-Hint Resolve  hastyp_ExtendReg2 : lifter.
+Hint Resolve  hastyp_ExtendReg2 : isa_semantics.
 
 Local Lemma hastyp_arm_extend_reg2il:
 forall op sf s Rm option_ imm3 Rn Rd,
@@ -6139,7 +6139,7 @@ Proof.
   all: match_awcs.
   all: unfold sizeof_c; reflexivity. 
 Qed.
-Hint Resolve  hastyp_arm_extend_reg2il : lifter.
+Hint Resolve  hastyp_arm_extend_reg2il : isa_semantics.
 
 Local Lemma hastyp_arm_withcarry_2il:
 forall op sf Rm Rn Rd,
@@ -6154,7 +6154,7 @@ Proof.
   all: match_awcs.
   all: reflexivity.
 Qed.
-Hint Resolve  hastyp_arm_withcarry_2il : lifter.
+Hint Resolve  hastyp_arm_withcarry_2il : isa_semantics.
 
 Local Lemma hastyp_arm_data_r_shift_il:
 forall sf Rm op2 Rn Rd ,
@@ -6210,7 +6210,7 @@ Proof.
   econs. apply hastyp_ConditionHolds; esolve'.
   destruct e. 1-2: apply hastyp_AddWithCarry_eq with (c:=armc) in H; esolve' || apply typeof_arm_varid || easy; apply typeof_arm_varid || lia.
 Qed.
-Hint Resolve hastyp_arm_data_r_with_cond : lifter.
+Hint Resolve hastyp_arm_data_r_with_cond : isa_semantics.
 
 Local Lemma hastyp_arm_data_i_with_cond:
 forall i sf Rn imm nzcv cond,
@@ -6253,7 +6253,7 @@ Proof.
   econs. apply hastyp_ConditionHolds; esolve'.
   destruct e. 1-2: apply hastyp_AddWithCarry_eq with (c:=armc) in H; esolve'; apply typeof_arm_varid || easy.
 Qed.
-Hint Resolve  hastyp_arm_data_i_with_cond : lifter.
+Hint Resolve  hastyp_arm_data_i_with_cond : isa_semantics.
 
 
 Local Lemma hastyp_arm_data_rev_il:
@@ -6264,7 +6264,7 @@ Proof.
   2: try apply armc_pc_sub. unfold_stmt. destruct op. 
   all: apply hastyp_assign_R; esolve'; destruct_match; lia.
 Qed.
-Hint Resolve hastyp_arm_data_rev_il : lifter.
+Hint Resolve hastyp_arm_data_rev_il : isa_semantics.
 
 Definition arm_adr2il (immlo immhi Rd:N):=
 let imm := scast 21 64 (N.lor(N.shiftl immhi 2)immlo) in
@@ -6283,7 +6283,7 @@ Proof.
   apply armc_pc_sub. rewrite update_same. reflexivity.
   apply armc_pc_sub, typeof_arm_varid.  
 Qed.
-Hint Resolve hastyp_adr2il : lifter.
+Hint Resolve hastyp_adr2il : isa_semantics.
 
 Local Lemma hastyp_adrp2il :
   forall immlo immhi Rd,
@@ -6293,7 +6293,7 @@ Proof.
   apply armc_pc_sub. rewrite update_same. reflexivity.
   apply armc_pc_sub, typeof_arm_varid.  
 Qed.
-Hint Resolve hastyp_adrp2il : lifter.
+Hint Resolve hastyp_adrp2il : isa_semantics.
 
 Local Lemma hastyp_arm_log_imm2il:
   forall op Rn Rd immr imms sf n_,
@@ -6336,7 +6336,7 @@ Proof.
   ; try repeat rewrite update_same; try reflexivity]. 
 
 Qed.
-Hint Resolve hastyp_arm_log_imm2il : lifter.
+Hint Resolve hastyp_arm_log_imm2il : isa_semantics.
 
 (*final arm2il-C6.2.5*)
 Definition arm2il (a:addr) inst:=
@@ -6539,18 +6539,18 @@ Proof.
   apply armc_pc_sub. rewrite update_same. all: reflexivity. 
 Qed.
 
-Hint Resolve hastyp_UDF : lifter.
+Hint Resolve hastyp_UDF : isa_semantics.
 
 Lemma unpair_ {A B:Type}:
   forall (a:A) (b:B) (x:A) (y:B), (a,b)=(x,y) -> a = x /\ b = y.
 Proof. intros. inversion H. easy. Qed.
 
-Hint Extern 4 (_=_) => reflexivity || lia : lifter.
-Hint Extern 20 (hastyp_stmt _ _ _ _) => unfold_stmt : lifter.
-Hint Extern 21 (_\/_) => lia : lifter.
-Hint Extern 21 (xbits ?n ?i (N.succ ?i) = _ \/_) => pose proof (xbits_bound n i (N.succ i)); cbn in *; lia : lifter.
-Hint Extern 21 (_<_) => lia || (eapply N.lt_trans;[apply xbits_bound|]) : lifter.
-Hint Resolve armc_pc_sub : lifter.
+Hint Extern 4 (_=_) => reflexivity || lia : isa_semantics.
+Hint Extern 20 (hastyp_stmt _ _ _ _) => unfold_stmt : isa_semantics.
+Hint Extern 21 (_\/_) => lia : isa_semantics.
+Hint Extern 21 (xbits ?n ?i (N.succ ?i) = _ \/_) => pose proof (xbits_bound n i (N.succ i)); cbn in *; lia : isa_semantics.
+Hint Extern 21 (_<_) => lia || (eapply N.lt_trans;[apply xbits_bound|]) : isa_semantics.
+Hint Resolve armc_pc_sub : isa_semantics.
 
 Theorem welltyped_arm82il:
   forall a, hastyp_stmt armc armc (arm2il a (arm_decode)) arm8typctx.
@@ -6576,7 +6576,7 @@ Proof.
   end.
   all: apply hastyp_UDF || intros; apply seq_pc.
 
-  all: autounfold with lifter; auto with lifter.
+  all: autounfold with isa_semantics; auto with isa_semantics.
   all: try apply TExn. all: try apply armc_pc_sub. 
 Qed.
 

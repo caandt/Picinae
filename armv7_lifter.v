@@ -1,4 +1,4 @@
-(* decoder/lifter for ARMv7 *)
+(* decoder/isa_semantics for ARMv7 *)
 
 Require Export Picinae_armv7.
 Require Import NArith.
