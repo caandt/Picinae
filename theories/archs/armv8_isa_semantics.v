@@ -1868,8 +1868,6 @@ Section Decoder.
       wbblock
     }>.
 
-  Print arm_ldp2il_constr.
-
   (* C6-970; semantic deviation for some constraint conditions *)
   Definition arm_ldp2il (Xn Xt Xt2 imm7 scale:N) (wback postindex:bool) :=
     let constraint1 := wback && ((Xt=?Xn) || (Xt2 =? Xn)) && (negb (Xn =? 31)) in
