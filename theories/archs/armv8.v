@@ -46,7 +46,7 @@ Open Scope N.
 (* Variables found in IL code lifted from ARM native code: *)
 Inductive arm8var :=
   (* Main memory: support both 32 bit(ARMv1-v8) mode and 64 bit(ARMv8) *)
-  | V_MEM32 | V_MEM64
+  | V_MEM32 | V_MEM64 | H_MEM64
   (* X0-30 = 64bit registers. No need to explicitly define W0-30 since lifted code addresses the lower 32 bits when using W registers *)
   | R_X0 | R_X1 | R_X2 | R_X3 | R_X4 | R_X5 | R_X6 | R_X7 | R_X8 | R_X9 | R_X10
   | R_X11 | R_X12 | R_X13 | R_X14 | R_X15 | R_X16 | R_X17 | R_X18 | R_X19 | R_X20
@@ -80,7 +80,7 @@ Inductive arm8var :=
 Definition arm8typctx v :=
   match v with
   | V_MEM32 => Some (8*2^32)
-  | V_MEM64 => Some (8*2^64)
+  | V_MEM64 | H_MEM64 => Some (8*2^64)
   | R_X0 | R_X1 | R_X2 | R_X3 | R_X4 | R_X5 | R_X6 | R_X7 | R_X8 | R_X9 | R_X10 => Some 64
   | R_X11 | R_X12 | R_X13 | R_X14 | R_X15 | R_X16 | R_X17 | R_X18 | R_X19 | R_X20 => Some 64
   | R_X21 | R_X22 | R_X23 | R_X24 | R_X25 | R_X26 | R_X27 | R_X28 | R_X29 | R_X30 => Some 64 | R_XZR => Some 64
